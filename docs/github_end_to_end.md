@@ -29,15 +29,17 @@ emission without requiring a host web app.
 ## Local Host Harness
 
 This umbrella currently contains only `jido_connect` and `jido_connect_github`.
-For the first GitHub live loop, `jido_connect_github` includes a tiny Mix-task
-HTTP harness. It is intentionally not the long-term Phoenix demo host; it just
-keeps callbacks and webhook testing available while the package split settles.
+For the first GitHub live loop, this repo includes a Phoenix demo host at
+`dev/demo`. It is intentionally outside the package umbrella so the publishable
+apps remain only `jido_connect` and provider packages.
 
 Run it with:
 
 ```sh
 set -a && source .env && set +a
-mix jido.connect.github.demo.server --port 4001
+cd dev/demo
+mix deps.get
+mix phx.server
 ```
 
 The harness exposes GitHub routes:
@@ -45,8 +47,8 @@ The harness exposes GitHub routes:
 - `GET /health`
 - `GET /integrations/github/setup`
 - `GET /integrations/github/setup/complete`
-- `GET /integrations/github/oauth/start`
 - `GET /integrations/github/oauth/callback`
+- `GET /integrations/github/oauth/start`
 - `POST /integrations/github/webhook`
 
 The host should store connections in memory first. A connection record only
@@ -59,7 +61,7 @@ through `CredentialLease`.
 Once the demo host is running locally, start a tunnel with:
 
 ```sh
-mix jido.connect.github.ngrok --port 4000
+mix jido.connect.ngrok --provider github --port 4000
 ```
 
 The task stays attached until interrupted. It prints the public base URL plus
@@ -68,7 +70,7 @@ the callback, setup, and webhook URLs to paste into the GitHub App settings.
 If your local host requires a specific host header, pass:
 
 ```sh
-mix jido.connect.github.ngrok --port 4000 --host-header localhost:4000
+mix jido.connect.ngrok --provider github --port 4000 --host-header localhost:4000
 ```
 
 Local credential names are listed in `.env.example`. Copy that file to `.env`
@@ -79,13 +81,13 @@ pass it once:
 
 ```sh
 set -a && source .env && set +a
-mix jido.connect.github.ngrok --port 4000
+mix jido.connect.ngrok --provider github --port 4000
 ```
 
 or pass the token directly once:
 
 ```sh
-mix jido.connect.github.ngrok --port 4000 --authtoken ...
+mix jido.connect.ngrok --provider github --port 4000 --authtoken ...
 ```
 
 The task runs `ngrok config add-authtoken` before opening the tunnel.
@@ -145,9 +147,9 @@ next step once the action and poll demo is green.
 
 For a GitHub App demo, configure:
 
-- Callback URL: value printed by `mix jido.connect.github.ngrok`
-- Setup URL: value printed by `mix jido.connect.github.ngrok`
-- Webhook URL: value printed by `mix jido.connect.github.ngrok`
+- Callback URL: value printed by `mix jido.connect.ngrok --provider github`
+- Setup URL: value printed by `mix jido.connect.ngrok --provider github`
+- Webhook URL: value printed by `mix jido.connect.ngrok --provider github`
 - Webhook secret: same value as `GITHUB_WEBHOOK_SECRET`
 - Repository permissions:
   - Issues: read/write

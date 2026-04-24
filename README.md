@@ -12,6 +12,8 @@ Current slice:
 - GitHub integration app at `apps/jido_connect_github`
 - GitHub actions for `github.issue.list` and `github.issue.create`
 - GitHub poll trigger contract for `github.issue.new`
+- Generic ngrok tunnel helper: `mix jido.connect.ngrok`
+- Local Phoenix demo host under `dev/demo`
 
 See `docs/github_end_to_end.md` for the local demo and live integration testing
 plan.
@@ -19,6 +21,21 @@ plan.
 Copy `.env.example` to `.env` for local ngrok and GitHub credentials. `.env` is
 ignored by git.
 
-The previous Phoenix demo host is intentionally not part of this umbrella yet;
-this first move keeps the umbrella to only `jido_connect` and
-`jido_connect_github`.
+The Phoenix demo host is intentionally outside the package umbrella at
+`dev/demo`. It depends on the local packages by path and gives us one place to
+exercise OAuth callbacks, GitHub App setup callbacks, webhooks, and future
+provider routes without turning every provider into a demo app.
+
+Run the demo host:
+
+```sh
+cd dev/demo
+mix deps.get
+mix phx.server
+```
+
+In another shell, from the repo root:
+
+```sh
+mix jido.connect.ngrok --provider github --port 4000
+```

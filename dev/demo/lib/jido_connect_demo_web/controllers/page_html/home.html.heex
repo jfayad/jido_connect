@@ -1,0 +1,55 @@
+<Layouts.flash_group flash={@flash} />
+
+<main class="mx-auto max-w-5xl px-6 py-10">
+  <div class="flex items-center justify-between border-b border-base-300 pb-6">
+    <div>
+      <p class="text-sm font-semibold text-base-content/60">Local Demo Host</p>
+      <h1 class="mt-1 text-3xl font-semibold tracking-normal">Jido Connect</h1>
+    </div>
+    <Layouts.theme_toggle />
+  </div>
+
+  <section class="grid gap-4 py-8 md:grid-cols-3">
+    <a class="rounded-lg border border-base-300 p-4 hover:bg-base-200" href="/health">
+      <p class="text-sm font-semibold">Health</p>
+      <p class="mt-2 text-sm text-base-content/70">JSON readiness check for tunnels.</p>
+    </a>
+    <a class="rounded-lg border border-base-300 p-4 hover:bg-base-200" href="/integrations">
+      <p class="text-sm font-semibold">Integrations</p>
+      <p class="mt-2 text-sm text-base-content/70">Registered local callback routes.</p>
+    </a>
+    <a
+      class="rounded-lg border border-base-300 p-4 hover:bg-base-200"
+      href="/integrations/github/setup"
+    >
+      <p class="text-sm font-semibold">GitHub Setup</p>
+      <p class="mt-2 text-sm text-base-content/70">GitHub App setup callback target.</p>
+    </a>
+  </section>
+
+  <section class="border-t border-base-300 py-8">
+    <h2 class="text-lg font-semibold">GitHub routes</h2>
+    <dl class="mt-4 grid gap-3 text-sm md:grid-cols-2">
+      <div>
+        <dt class="font-mono text-base-content/60">GET /integrations/github/oauth/start</dt>
+        <dd class="mt-1 text-base-content/75">Starts the OAuth app authorization flow.</dd>
+      </div>
+      <div>
+        <dt class="font-mono text-base-content/60">GET /integrations/github/oauth/callback</dt>
+        <dd class="mt-1 text-base-content/75">
+          Captures OAuth callback params for local testing.
+        </dd>
+      </div>
+      <div>
+        <dt class="font-mono text-base-content/60">GET /integrations/github/setup/complete</dt>
+        <dd class="mt-1 text-base-content/75">Captures GitHub App manifest setup codes.</dd>
+      </div>
+      <div>
+        <dt class="font-mono text-base-content/60">POST /integrations/github/webhook</dt>
+        <dd class="mt-1 text-base-content/75">
+          Verifies signatures and stores webhook payloads.
+        </dd>
+      </div>
+    </dl>
+  </section>
+</main>

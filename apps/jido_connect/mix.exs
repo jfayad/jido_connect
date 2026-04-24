@@ -29,6 +29,7 @@ defmodule JidoConnectCore.MixProject do
       {:jido, "~> 2.2"},
       {:jido_action, "~> 2.2"},
       {:jido_signal, "~> 2.1"},
+      {:jason, "~> 1.4"},
       {:spark, "~> 2.6"},
       {:zoi, "~> 0.17.1"}
     ]
