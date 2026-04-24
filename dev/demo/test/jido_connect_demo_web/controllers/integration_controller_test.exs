@@ -9,7 +9,9 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
   test "GET /integrations lists github routes", %{conn: conn} do
     conn = get(conn, ~p"/integrations")
 
-    assert %{"integrations" => [%{"id" => "github"}]} = json_response(conn, 200)
+    assert %{"integrations" => integrations} = json_response(conn, 200)
+    assert Enum.any?(integrations, &match?(%{"id" => "github", "status" => "available"}, &1))
+    assert Enum.any?(integrations, &match?(%{"id" => "slack", "status" => "planned"}, &1))
   end
 
   test "setup complete stores manifest code", %{conn: conn} do

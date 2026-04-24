@@ -1,55 +1,137 @@
 <Layouts.flash_group flash={@flash} />
 
-<main class="mx-auto max-w-5xl px-6 py-10">
-  <div class="flex items-center justify-between border-b border-base-300 pb-6">
+<main class="mx-auto max-w-6xl px-5 py-6 sm:px-8">
+  <header class="flex flex-col gap-4 border-b border-base-300 pb-6 md:flex-row md:items-end md:justify-between">
     <div>
-      <p class="text-sm font-semibold text-base-content/60">Local Demo Host</p>
+      <p class="text-sm font-semibold text-base-content/60">Local Integration Console</p>
       <h1 class="mt-1 text-3xl font-semibold tracking-normal">Jido Connect</h1>
     </div>
-    <Layouts.theme_toggle />
-  </div>
+    <div class="flex items-center gap-3">
+      <a class="btn btn-sm btn-outline" href="/health">Health</a>
+      <a class="btn btn-sm btn-outline" href="/integrations">JSON</a>
+      <Layouts.theme_toggle />
+    </div>
+  </header>
 
-  <section class="grid gap-4 py-8 md:grid-cols-3">
-    <a class="rounded-lg border border-base-300 p-4 hover:bg-base-200" href="/health">
-      <p class="text-sm font-semibold">Health</p>
-      <p class="mt-2 text-sm text-base-content/70">JSON readiness check for tunnels.</p>
-    </a>
-    <a class="rounded-lg border border-base-300 p-4 hover:bg-base-200" href="/integrations">
-      <p class="text-sm font-semibold">Integrations</p>
-      <p class="mt-2 text-sm text-base-content/70">Registered local callback routes.</p>
-    </a>
-    <a
-      class="rounded-lg border border-base-300 p-4 hover:bg-base-200"
-      href="/integrations/github/setup"
-    >
-      <p class="text-sm font-semibold">GitHub Setup</p>
-      <p class="mt-2 text-sm text-base-content/70">GitHub App setup callback target.</p>
-    </a>
+  <section class="grid gap-4 py-6 md:grid-cols-3">
+    <div class="rounded-lg border border-base-300 p-4">
+      <p class="text-sm font-medium text-base-content/60">Providers</p>
+      <p class="mt-2 text-3xl font-semibold">{length(@integrations)}</p>
+    </div>
+    <div class="rounded-lg border border-base-300 p-4">
+      <p class="text-sm font-medium text-base-content/60">Runnable Today</p>
+      <p class="mt-2 text-3xl font-semibold">
+        {Enum.count(@integrations, &(&1.status == :available))}
+      </p>
+    </div>
+    <div class="rounded-lg border border-base-300 p-4">
+      <p class="text-sm font-medium text-base-content/60">Demo Surface</p>
+      <p class="mt-3 text-sm text-base-content/75">OAuth, setup callbacks, and webhooks.</p>
+    </div>
   </section>
 
-  <section class="border-t border-base-300 py-8">
-    <h2 class="text-lg font-semibold">GitHub routes</h2>
-    <dl class="mt-4 grid gap-3 text-sm md:grid-cols-2">
-      <div>
-        <dt class="font-mono text-base-content/60">GET /integrations/github/oauth/start</dt>
-        <dd class="mt-1 text-base-content/75">Starts the OAuth app authorization flow.</dd>
+  <section class="grid gap-4 lg:grid-cols-3">
+    <article
+      :for={integration <- @integrations}
+      id={"integration-#{integration.id}"}
+      class="rounded-lg border border-base-300 bg-base-100 p-5"
+    >
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase text-base-content/50">
+            {integration.package}
+          </p>
+          <h2 class="mt-1 text-xl font-semibold">{integration.name}</h2>
+        </div>
+        <span class={[
+          "rounded-md px-2 py-1 text-xs font-semibold",
+          integration.status == :available && "bg-success/15 text-success",
+          integration.status != :available && "bg-base-200 text-base-content/60"
+        ]}>
+          {status_label(integration.status)}
+        </span>
       </div>
-      <div>
-        <dt class="font-mono text-base-content/60">GET /integrations/github/oauth/callback</dt>
-        <dd class="mt-1 text-base-content/75">
-          Captures OAuth callback params for local testing.
-        </dd>
+
+      <p class="mt-4 min-h-14 text-sm leading-6 text-base-content/75">
+        {integration.description}
+      </p>
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <span
+          :for={mode <- integration.auth_modes}
+          class="rounded-md bg-base-200 px-2 py-1 text-xs text-base-content/70"
+        >
+          {mode}
+        </span>
       </div>
-      <div>
-        <dt class="font-mono text-base-content/60">GET /integrations/github/setup/complete</dt>
-        <dd class="mt-1 text-base-content/75">Captures GitHub App manifest setup codes.</dd>
+
+      <div class="mt-5 flex flex-wrap gap-2">
+        <a
+          :if={integration.paths[:setup]}
+          class="btn btn-sm btn-primary"
+          href={integration.paths.setup}
+        >
+          Setup
+        </a>
+        <a
+          :if={integration.paths[:oauth_start]}
+          class="btn btn-sm btn-outline"
+          href={integration.paths.oauth_start}
+        >
+          OAuth
+        </a>
+        <button :if={integration.status != :available} class="btn btn-sm" disabled>
+          Planned
+        </button>
       </div>
-      <div>
-        <dt class="font-mono text-base-content/60">POST /integrations/github/webhook</dt>
-        <dd class="mt-1 text-base-content/75">
-          Verifies signatures and stores webhook payloads.
-        </dd>
-      </div>
-    </dl>
+    </article>
+  </section>
+
+  <section class="mt-8 rounded-lg border border-base-300">
+    <div class="border-b border-base-300 px-5 py-4">
+      <h2 class="text-lg font-semibold">Callback And Webhook Routes</h2>
+      <p class="mt-1 text-sm text-base-content/65">
+        Provider routes registered in this local host for tunnel-based testing.
+      </p>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>Method</th>
+            <th>Path</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <%= for integration <- @integrations, check <- integration.checks do %>
+            <tr>
+              <td class="font-semibold">{integration.name}</td>
+              <td><span class="font-mono text-xs">{check.method}</span></td>
+              <td><code class="text-xs">{check.path}</code></td>
+              <td class="text-sm text-base-content/70">{check.label}</td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="mt-8 grid gap-4 lg:grid-cols-2">
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Tunnel Command</h2>
+      <p class="mt-2 text-sm text-base-content/70">
+        Use the provider flag to print callback URLs for the selected integration.
+      </p>
+      <pre class="mt-4 overflow-x-auto rounded-md bg-base-200 p-4 text-xs"><code>mix jido.connect.ngrok --provider github --port 4001</code></pre>
+    </div>
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Captured Local State</h2>
+      <p class="mt-2 text-sm text-base-content/70">
+        The demo host writes callback codes and webhook payloads to the configured secret directory.
+      </p>
+      <pre class="mt-4 overflow-x-auto rounded-md bg-base-200 p-4 text-xs"><code>JIDO_CONNECT_DEMO_SECRET_DIR=.secrets/dev-demo</code></pre>
+    </div>
   </section>
 </main>

@@ -7,4 +7,8 @@ defmodule Jido.Connect.DemoWeb.PageHTML do
   use Jido.Connect.DemoWeb, :html
 
   embed_templates "page_html/*"
+
+  def status_label(:available), do: "Available"
+  def status_label(:planned), do: "Planned"
+  def status_label(status), do: status |> to_string() |> String.capitalize()
 end

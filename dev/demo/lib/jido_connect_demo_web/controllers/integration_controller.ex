@@ -4,17 +4,7 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
   @github_authorize_url "https://github.com/login/oauth/authorize"
 
   def index(conn, _params) do
-    json(conn, %{
-      integrations: [
-        %{
-          id: "github",
-          setup_path: "/integrations/github/setup",
-          oauth_start_path: "/integrations/github/oauth/start",
-          oauth_callback_path: "/integrations/github/oauth/callback",
-          webhook_path: "/integrations/github/webhook"
-        }
-      ]
-    })
+    json(conn, %{integrations: Jido.Connect.Demo.Integrations.api_index()})
   end
 
   def health(conn, _params), do: json(conn, %{ok: true})
