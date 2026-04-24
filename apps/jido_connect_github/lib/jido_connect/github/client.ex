@@ -39,6 +39,20 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_list_response()
   end
 
+  def fetch_authenticated_user(access_token) when is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/user")
+    |> handle_map_response()
+  end
+
+  def fetch_installation(installation_id, access_token) when is_integer(installation_id) do
+    access_token
+    |> request()
+    |> Req.get(url: "/app/installations/#{installation_id}")
+    |> handle_map_response()
+  end
+
   defp request(access_token) do
     Req.new(
       base_url: base_url(),
@@ -71,6 +85,12 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_issue_response(response), do: handle_error_response(response)
+
+  defp handle_map_response({:ok, %{status: status, body: body}}) when status in 200..299 do
+    {:ok, body}
+  end
+
+  defp handle_map_response(response), do: handle_error_response(response)
 
   defp handle_error_response({:ok, %{status: status, body: body}}) do
     {:error, {:github_http_error, status, error_message(body)}}

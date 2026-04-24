@@ -1,7 +1,8 @@
 defmodule Jido.Connect.DemoWeb.IntegrationController do
   use Jido.Connect.DemoWeb, :controller
 
-  @github_authorize_url "https://github.com/login/oauth/authorize"
+  alias Jido.Connect.Demo.{GitHubRuntime, Ngrok, Store}
+  alias Jido.Connect.GitHub.{OAuth, Webhook}
 
   def index(conn, _params) do
     json(conn, %{integrations: Jido.Connect.Demo.Integrations.api_index()})
@@ -9,8 +10,30 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
 
   def health(conn, _params), do: json(conn, %{ok: true})
 
+  def github_show(conn, _params) do
+    render(conn, :github,
+      public_url: Ngrok.public_base_url(),
+      github_urls: Ngrok.github_urls(),
+      env: github_env(),
+      connections: Store.list_connections(:github),
+      deliveries: Store.recent_deliveries(),
+      results: Store.recent_results()
+    )
+  end
+
   def github_setup(conn, _params) do
     text(conn, "GitHub setup endpoint is reachable.\n")
+  end
+
+  def github_setup_complete(conn, %{"installation_id" => installation_id} = params) do
+    connection =
+      installation_id
+      |> String.to_integer()
+      |> GitHubRuntime.create_installation_connection(params)
+
+    Store.put_result(:github_setup, :ok, %{connection_id: connection.id})
+
+    redirect(conn, to: ~p"/integrations/github")
   end
 
   def github_setup_complete(conn, %{"code" => code}) do
@@ -43,15 +66,15 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
       state = random_token()
       write_secret!("github-oauth-state.txt", state)
 
-      query =
-        URI.encode_query(%{
-          client_id: client_id,
-          redirect_uri: github_callback_url(conn),
-          scope: Map.get(params, "scope", "repo"),
-          state: state
-        })
-
-      redirect(conn, external: @github_authorize_url <> "?" <> query)
+      redirect(conn,
+        external:
+          OAuth.authorize_url(
+            client_id: client_id,
+            redirect_uri: github_callback_url(conn),
+            scope: Map.get(params, "scope", "repo"),
+            state: state
+          )
+      )
     end
   end
 
@@ -70,14 +93,76 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
           %{ok: true, params: params}
       end
 
-    path = write_secret!("github-oauth-callback.json", Jason.encode!(result, pretty: true))
+    write_secret!("github-oauth-callback.json", Jason.encode!(result, pretty: true))
 
-    if result.ok do
-      text(conn, "OAuth callback captured in #{path}\n")
+    cond do
+      not result.ok ->
+        conn
+        |> put_status(:bad_request)
+        |> json(result)
+
+      blank?(System.get_env("GITHUB_CLIENT_SECRET")) ->
+        Store.put_result(:github_oauth, :captured, result)
+        redirect(conn, to: ~p"/integrations/github")
+
+      true ->
+        exchange_oauth_callback(conn, params)
+    end
+  end
+
+  def github_manual_connection(conn, params) do
+    connection = GitHubRuntime.create_manual_connection(params)
+    Store.put_result(:connection, :ok, %{connection_id: connection.id, mode: :manual_token})
+    redirect(conn, to: ~p"/integrations/github")
+  end
+
+  def github_list_issues(conn, params) do
+    connection_id = Map.fetch!(params, "connection_id")
+    action_params = %{repo: Map.fetch!(params, "repo"), state: Map.get(params, "state", "open")}
+
+    result = GitHubRuntime.run_list_issues(connection_id, action_params)
+    Store.put_result(:github_issue_list, result_status(result), result)
+    redirect(conn, to: ~p"/integrations/github")
+  end
+
+  def github_create_issue(conn, params) do
+    connection_id = Map.fetch!(params, "connection_id")
+
+    action_params = %{
+      repo: Map.fetch!(params, "repo"),
+      title: Map.fetch!(params, "title"),
+      body: Map.get(params, "body"),
+      labels: []
+    }
+
+    result = GitHubRuntime.run_create_issue(connection_id, action_params)
+    Store.put_result(:github_issue_create, result_status(result), result)
+    redirect(conn, to: ~p"/integrations/github")
+  end
+
+  def github_poll_new_issues(conn, params) do
+    connection_id = Map.fetch!(params, "connection_id")
+    result = GitHubRuntime.poll_new_issues(connection_id, %{repo: Map.fetch!(params, "repo")})
+    Store.put_result(:github_issue_poll, result_status(result), result)
+    redirect(conn, to: ~p"/integrations/github")
+  end
+
+  defp exchange_oauth_callback(conn, params) do
+    with {:ok, token} <-
+           OAuth.exchange_code(Map.fetch!(params, "code"),
+             redirect_uri: github_callback_url(conn),
+             state: Map.get(params, "state")
+           ),
+         connection <- GitHubRuntime.create_manual_connection(%{"token" => token.access_token}) do
+      Store.put_result(:github_oauth, :ok, %{connection_id: connection.id, scopes: token.scope})
+      redirect(conn, to: ~p"/integrations/github")
     else
-      conn
-      |> put_status(:bad_request)
-      |> json(result)
+      {:error, reason} ->
+        Store.put_result(:github_oauth, :error, reason)
+
+        conn
+        |> put_status(:bad_request)
+        |> json(%{ok: false, error: inspect(reason)})
     end
   end
 
@@ -87,21 +172,34 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
 
     body = conn.assigns[:raw_body] || ""
 
-    with :ok <- verify_signature(conn, body) do
+    headers = %{
+      "x-github-delivery" => delivery,
+      "x-github-event" => event,
+      "x-hub-signature-256" => get_req_header(conn, "x-hub-signature-256") |> List.first()
+    }
+
+    with {:ok, verified} <-
+           Webhook.verify_request(body, headers, System.get_env("GITHUB_WEBHOOK_SECRET")) do
       path = write_secret!("github-webhook-#{delivery}.json", body)
+      signal = normalize_webhook_signal(verified)
+
+      Store.put_delivery(%{
+        delivery_id: delivery,
+        event: event,
+        duplicate?: Store.delivery_seen?(delivery),
+        signal: signal,
+        stored: path,
+        received_at: DateTime.utc_now()
+      })
 
       json(conn, %{
         ok: true,
         event: event,
         delivery: delivery,
-        stored: path
+        stored: path,
+        signal: signal
       })
     else
-      {:error, reason} when is_binary(reason) ->
-        conn
-        |> put_status(:unauthorized)
-        |> json(%{ok: false, error: reason})
-
       {:error, reason} ->
         conn
         |> put_status(:unauthorized)
@@ -113,49 +211,12 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     Jido.Connect.DemoWeb.Endpoint.url() <> ~p"/integrations/github/oauth/callback"
   end
 
-  defp verify_signature(conn, body) do
-    secret = System.get_env("GITHUB_WEBHOOK_SECRET")
-
-    if blank?(secret) do
-      :ok
-    else
-      signature = get_req_header(conn, "x-hub-signature-256") |> List.first()
-
-      cond do
-        is_nil(signature) ->
-          {:error, "missing signature"}
-
-        valid_signature?(secret, body, signature) ->
-          :ok
-
-        true ->
-          {:error, "invalid signature"}
-      end
+  defp normalize_webhook_signal(%{event: event, payload: payload}) do
+    case Webhook.normalize_signal(event, payload) do
+      {:ok, signal} -> signal
+      {:error, reason} -> %{error: reason}
     end
   end
-
-  defp valid_signature?(secret, body, "sha256=" <> expected) do
-    actual =
-      :hmac
-      |> :crypto.mac(:sha256, secret, body)
-      |> Base.encode16(case: :lower)
-
-    secure_compare(actual, expected)
-  end
-
-  defp valid_signature?(_secret, _body, _signature), do: false
-
-  defp secure_compare(left, right) when byte_size(left) == byte_size(right) do
-    left
-    |> :binary.bin_to_list()
-    |> Enum.zip(:binary.bin_to_list(right))
-    |> Enum.reduce(0, fn {left_byte, right_byte}, acc ->
-      :erlang.bor(acc, :erlang.bxor(left_byte, right_byte))
-    end)
-    |> Kernel.==(0)
-  end
-
-  defp secure_compare(_left, _right), do: false
 
   defp random_token do
     32
@@ -185,6 +246,22 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     System.get_env("JIDO_CONNECT_DEMO_SECRET_DIR") ||
       Path.expand("../../.secrets/dev-demo", File.cwd!())
   end
+
+  defp github_env do
+    %{
+      "GITHUB_APP_ID" => present?("GITHUB_APP_ID"),
+      "GITHUB_CLIENT_ID" => present?("GITHUB_CLIENT_ID"),
+      "GITHUB_CLIENT_SECRET" => present?("GITHUB_CLIENT_SECRET"),
+      "GITHUB_WEBHOOK_SECRET" => present?("GITHUB_WEBHOOK_SECRET"),
+      "GITHUB_PRIVATE_KEY_PATH" => present?("GITHUB_PRIVATE_KEY_PATH"),
+      "GITHUB_TOKEN" => present?("GITHUB_TOKEN")
+    }
+  end
+
+  defp present?(name), do: not blank?(System.get_env(name))
+  defp result_status({:ok, _value}), do: :ok
+  defp result_status({:ok, _state, _directives}), do: :ok
+  defp result_status({:error, _reason}), do: :error
 
   defp blank?(value), do: is_nil(value) or value == ""
 end

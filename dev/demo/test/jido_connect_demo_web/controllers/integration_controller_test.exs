@@ -1,6 +1,35 @@
 defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
   use Jido.Connect.DemoWeb.ConnCase
 
+  alias Jido.Connect.Demo.{GitHubRuntime, Store}
+
+  defmodule FakeGitHubClient do
+    def list_issues("org/repo", "open", "token") do
+      {:ok, [%{number: 1, url: "https://github.test/1", title: "First", state: "open"}]}
+    end
+
+    def create_issue("org/repo", %{title: "Bug", body: "", labels: []}, "token") do
+      {:ok, %{number: 2, url: "https://github.test/2", title: "Bug", state: "open"}}
+    end
+
+    def list_new_issues("org/repo", nil, "token") do
+      {:ok,
+       [
+         %{
+           number: 3,
+           url: "https://github.test/3",
+           title: "Third",
+           updated_at: "2026-04-24T20:00:00Z"
+         }
+       ]}
+    end
+  end
+
+  setup do
+    Store.reset!()
+    :ok
+  end
+
   test "GET /health", %{conn: conn} do
     conn = get(conn, ~p"/health")
     assert json_response(conn, 200) == %{"ok" => true}
@@ -29,6 +58,13 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
     assert File.read!(Path.join(secret_dir, "github-app-code.txt")) == "abc123"
   end
 
+  test "setup complete stores GitHub App installation connection", %{conn: conn} do
+    conn = get(conn, ~p"/integrations/github/setup/complete?installation_id=42")
+
+    assert redirected_to(conn) == ~p"/integrations/github"
+    assert [%{id: "github-installation-42"}] = Store.list_connections(:github)
+  end
+
   test "webhook validates signature when secret is configured", %{conn: conn} do
     secret_dir = tmp_dir()
     previous_secret = System.get_env("GITHUB_WEBHOOK_SECRET")
@@ -54,6 +90,18 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
 
     assert %{"ok" => true, "event" => "issues"} = json_response(conn, 200)
     assert File.read!(Path.join(secret_dir, "github-webhook-delivery-1.json")) == body
+  end
+
+  test "in-memory connection can mint lease and run generated action" do
+    connection = GitHubRuntime.create_manual_connection(%{"token" => "token"})
+
+    assert {:ok, %{issues: [%{number: 1}]}} =
+             GitHubRuntime.run_list_issues(
+               connection.id,
+               %{repo: "org/repo"},
+               access_token: "token",
+               github_client: FakeGitHubClient
+             )
   end
 
   defp hmac(secret, body) do

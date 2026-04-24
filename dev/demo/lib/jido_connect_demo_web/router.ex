@@ -22,6 +22,18 @@ defmodule Jido.Connect.DemoWeb.Router do
     get "/integrations/github/setup/complete", IntegrationController, :github_setup_complete
     get "/integrations/github/oauth/start", IntegrationController, :github_oauth_start
     get "/integrations/github/oauth/callback", IntegrationController, :github_oauth_callback
+    get "/integrations/github", IntegrationController, :github_show
+
+    post "/integrations/github/connections/manual",
+         IntegrationController,
+         :github_manual_connection
+
+    post "/integrations/github/actions/list_issues", IntegrationController, :github_list_issues
+    post "/integrations/github/actions/create_issue", IntegrationController, :github_create_issue
+
+    post "/integrations/github/sensors/new_issues/poll",
+         IntegrationController,
+         :github_poll_new_issues
   end
 
   scope "/", Jido.Connect.DemoWeb do

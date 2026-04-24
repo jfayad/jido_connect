@@ -9,6 +9,7 @@ defmodule Jido.Connect.Demo.Application do
   def start(_type, _args) do
     children = [
       Jido.Connect.DemoWeb.Telemetry,
+      Jido.Connect.Demo.Store,
       {DNSCluster, query: Application.get_env(:jido_connect_demo, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Jido.Connect.Demo.PubSub},
       # Start a worker by calling: Jido.Connect.Demo.Worker.start_link(arg)

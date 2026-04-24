@@ -1,0 +1,140 @@
+<Layouts.flash_group flash={@flash} />
+
+<main class="mx-auto max-w-6xl px-5 py-6 sm:px-8">
+  <header class="flex items-center justify-between border-b border-base-300 pb-6">
+    <div>
+      <p class="text-sm font-semibold text-base-content/60">GitHub Integration</p>
+      <h1 class="mt-1 text-3xl font-semibold">Jido Connect</h1>
+    </div>
+    <a class="btn btn-sm btn-outline" href="/">Back</a>
+  </header>
+
+  <section class="mt-6 grid gap-4 lg:grid-cols-2">
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Public URLs</h2>
+      <p :if={!@public_url} class="mt-2 text-sm text-warning">
+        No ngrok URL detected. Run the tunnel task or set JIDO_CONNECT_PUBLIC_BASE_URL.
+      </p>
+      <dl class="mt-4 space-y-2 text-sm">
+        <div :for={{label, url} <- @github_urls}>
+          <dt class="font-medium capitalize">{String.replace(to_string(label), "_", " ")}</dt>
+          <dd><code class="text-xs">{url}</code></dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Environment</h2>
+      <dl class="mt-4 grid grid-cols-2 gap-2 text-sm">
+        <div :for={{name, present?} <- @env} class="flex items-center justify-between gap-3">
+          <dt class="font-mono text-xs">{name}</dt>
+          <dd class={if(present?, do: "text-success", else: "text-warning")}>
+            {env_status(present?)}
+          </dd>
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="mt-6 grid gap-4 lg:grid-cols-2">
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Create Manual Token Connection</h2>
+      <.form
+        for={%{}}
+        action="/integrations/github/connections/manual"
+        method="post"
+        class="mt-4 grid gap-3"
+      >
+        <input class="input input-bordered" name="owner_id" value="local-user" />
+        <input
+          class="input input-bordered"
+          name="token"
+          placeholder="GITHUB_TOKEN or paste token"
+        />
+        <button class="btn btn-primary" type="submit">Create Connection</button>
+      </.form>
+    </div>
+
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Connections</h2>
+      <div class="mt-4 space-y-3">
+        <p :if={@connections == []} class="text-sm text-base-content/65">
+          No local connections yet.
+        </p>
+        <div :for={connection <- @connections} class="rounded-md bg-base-200 p-3 text-sm">
+          <p class="font-semibold">{connection.id}</p>
+          <p class="text-base-content/70">
+            {connection.status} · {connection.owner_type} · scopes: {Enum.join(
+              connection.scopes,
+              ", "
+            )}
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-6 rounded-lg border border-base-300 p-5">
+    <h2 class="text-lg font-semibold">Run Generated Jido Tools</h2>
+    <div class="mt-4 grid gap-4 lg:grid-cols-3">
+      <.form
+        for={%{}}
+        action="/integrations/github/actions/list_issues"
+        method="post"
+        class="grid gap-3"
+      >
+        <input class="input input-bordered" name="connection_id" placeholder="connection id" />
+        <input class="input input-bordered" name="repo" placeholder="org/repo" />
+        <input class="input input-bordered" name="state" value="open" />
+        <button class="btn btn-outline" type="submit">List Issues</button>
+      </.form>
+
+      <.form
+        for={%{}}
+        action="/integrations/github/actions/create_issue"
+        method="post"
+        class="grid gap-3"
+      >
+        <input class="input input-bordered" name="connection_id" placeholder="connection id" />
+        <input class="input input-bordered" name="repo" placeholder="org/repo" />
+        <input class="input input-bordered" name="title" placeholder="Issue title" />
+        <input class="input input-bordered" name="body" placeholder="Issue body" />
+        <button class="btn btn-outline" type="submit">Create Issue</button>
+      </.form>
+
+      <.form
+        for={%{}}
+        action="/integrations/github/sensors/new_issues/poll"
+        method="post"
+        class="grid gap-3"
+      >
+        <input class="input input-bordered" name="connection_id" placeholder="connection id" />
+        <input class="input input-bordered" name="repo" placeholder="org/repo" />
+        <button class="btn btn-outline" type="submit">Poll Once</button>
+      </.form>
+    </div>
+  </section>
+
+  <section class="mt-6 grid gap-4 lg:grid-cols-2">
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Recent Webhooks</h2>
+      <div class="mt-4 space-y-3">
+        <p :if={@deliveries == []} class="text-sm text-base-content/65">
+          No webhook deliveries yet.
+        </p>
+        <pre
+          :for={delivery <- @deliveries}
+          class="overflow-x-auto rounded-md bg-base-200 p-3 text-xs"
+        ><code>{result_value(delivery)}</code></pre>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Recent Results</h2>
+      <div class="mt-4 space-y-3">
+        <p :if={@results == []} class="text-sm text-base-content/65">No local runs yet.</p>
+        <pre :for={result <- @results} class="overflow-x-auto rounded-md bg-base-200 p-3 text-xs"><code>{result_value(result)}</code></pre>
+      </div>
+    </div>
+  </section>
+</main>

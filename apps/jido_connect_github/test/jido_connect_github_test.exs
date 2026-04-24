@@ -69,6 +69,9 @@ defmodule Jido.Connect.GitHubTest do
     projection = Jido.Connect.GitHub.Actions.CreateIssue.jido_connect_projection()
 
     assert projection.action_id == "github.issue.create"
+    assert projection.label == "Create issue"
+    assert Enum.map(projection.input, & &1.name) == [:repo, :title, :body, :labels]
+    assert Enum.map(projection.output, & &1.name) == [:number, :url, :title, :state]
     assert projection.risk == :write
     assert projection.confirmation == :required_for_ai
     assert Jido.Connect.GitHub.Actions.CreateIssue.name() == "github_issue_create"

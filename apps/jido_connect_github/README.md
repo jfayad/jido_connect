@@ -1,15 +1,17 @@
 # Jido Connect GitHub
 
-GitHub provider app for `Jido.Connect`.
+`jido_connect_github` is the GitHub provider package for `jido_connect`.
 
-The provider module is `Jido.Connect.GitHub`.
+It includes:
 
-**TODO: Add description**
+- `Jido.Connect.GitHub`, a Spark-authored provider that compiles into Jido tools
+- GitHub issue actions and a poll sensor
+- OAuth App helpers in `Jido.Connect.GitHub.OAuth`
+- GitHub App helpers in `Jido.Connect.GitHub.AppAuth`
+- REST client helpers in `Jido.Connect.GitHub.Client`
+- Webhook verification and normalization in `Jido.Connect.GitHub.Webhook`
 
 ## Installation
-
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `jido_connect_github` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -19,6 +21,22 @@ def deps do
 end
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/jido_connect_github>.
+## GitHub App Flow
+
+Hosts store the GitHub App private key path and installation id, then mint a
+short-lived credential lease when a Jido tool runs:
+
+```elixir
+{:ok, lease} =
+  Jido.Connect.GitHub.AppAuth.installation_credential_lease(
+    installation_id,
+    %{tenant_id: "tenant_1", actor: %{id: "user_1"}},
+    connection_id: "conn_1"
+  )
+```
+
+## Webhooks
+
+Use `Jido.Connect.GitHub.Webhook.verify_request/3` from a Plug or Phoenix
+controller before normalizing event payloads. The package verifies signatures
+and produces signal-shaped maps; the host owns persistence and delivery dedupe.

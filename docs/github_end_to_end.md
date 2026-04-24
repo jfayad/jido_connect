@@ -15,12 +15,8 @@ The fastest end-to-end path today is a manual-token demo:
 3. Build a short-lived `Jido.Connect.CredentialLease` with:
    - `access_token`
    - `github_client: Jido.Connect.GitHub.Client`
-4. Invoke generated actions:
-   - `Jido.Connect.GitHub.Actions.ListIssues.run/2`
-   - `Jido.Connect.GitHub.Actions.CreateIssue.run/2`
-5. Initialize and tick the generated poll sensor:
-   - `Jido.Connect.GitHub.Sensors.NewIssues.init/2`
-   - `Jido.Connect.GitHub.Sensors.NewIssues.handle_event/2`
+4. Invoke the generated list and create issue actions.
+5. Initialize and tick the generated new issues poll sensor.
 
 This proves the compile-time modules, Jido adapter contract, credential lease
 boundary, GitHub HTTP client, action execution, poll execution, and Jido signal

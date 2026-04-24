@@ -1,14 +1,13 @@
-# Jido Connect Core
+# Jido Connect
 
-Core contracts, Spark DSL, compile-time Jido projections, and generated module
-runtimes for `Jido.Connect`.
+`jido_connect` is the core package for authoring integration providers with a
+Spark DSL and compiling them into concrete Jido actions, sensors, and plugins.
 
-**TODO: Add description**
+The package owns contracts and runtime boundaries only. Host applications own
+durable connection storage, credential storage, audit storage, OAuth sessions,
+and webhook HTTP ingress.
 
 ## Installation
-
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `jido_connect` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
@@ -18,6 +17,27 @@ def deps do
 end
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/jido_connect>.
+## Host Boundary
+
+A host app creates a durable `Jido.Connect.Connection`, mints a short-lived
+`Jido.Connect.CredentialLease`, then calls generated Jido modules with both
+values in context. Raw credentials should never be placed in plugin config,
+agent state, or generated module metadata.
+
+```elixir
+Jido.Connect.GitHub.Actions.ListIssues.run(
+  %{repo: "org/repo"},
+  %{integration_context: context, credential_lease: lease}
+)
+```
+
+## Generated Modules
+
+Every `use Jido.Connect` provider compiles thin generated modules:
+
+- `<Provider>.Actions.*`
+- `<Provider>.Sensors.*`
+- `<Provider>.Plugin`
+
+Generated modules expose `jido_connect_projection/0` for stable host
+introspection and delegate execution to `Jido.Connect` runtimes.

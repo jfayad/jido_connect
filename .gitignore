@@ -18,6 +18,8 @@ erl_crash.dump
 
 # Also ignore archive artifacts (built via "mix archive.build").
 *.ez
+*.tar
+apps/*/*-0.1.0/
 
 # Local demo credentials and generated GitHub App artifacts.
 .env
