@@ -13,8 +13,8 @@ defmodule Jido.Connect.GitHub.Webhook do
 
   def verify_signature(body, signature, secret)
 
-  def verify_signature(_body, _signature, nil), do: :ok
-  def verify_signature(_body, _signature, ""), do: :ok
+  def verify_signature(_body, _signature, nil), do: {:error, :missing_secret}
+  def verify_signature(_body, _signature, ""), do: {:error, :missing_secret}
   def verify_signature(_body, nil, _secret), do: {:error, :missing_signature}
 
   def verify_signature(body, "sha256=" <> expected, secret)
@@ -38,7 +38,7 @@ defmodule Jido.Connect.GitHub.Webhook do
     end
   end
 
-  def normalize_signal("issues", payload) when is_map(payload) do
+  def normalize_signal("issues", %{"action" => "opened"} = payload) do
     issue = get(payload, "issue") || %{}
     repo = get(payload, "repository") || %{}
 
@@ -49,6 +49,14 @@ defmodule Jido.Connect.GitHub.Webhook do
        title: get(issue, "title"),
        url: get(issue, "html_url") || get(issue, "url")
      }}
+  end
+
+  def normalize_signal("issues", %{action: "opened"} = payload) do
+    normalize_signal("issues", stringify_keys(payload))
+  end
+
+  def normalize_signal("issues", payload) when is_map(payload) do
+    {:error, {:unsupported_issue_action, get(payload, "action")}}
   end
 
   def normalize_signal(_event, _payload), do: {:error, :unsupported_event}
@@ -67,6 +75,10 @@ defmodule Jido.Connect.GitHub.Webhook do
   end
 
   defp get(map, key), do: Map.get(map, key) || Map.get(map, String.to_atom(key))
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {key, value} -> {to_string(key), value} end)
+  end
 
   defp secure_compare(left, right) when byte_size(left) == byte_size(right) do
     left

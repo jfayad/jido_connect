@@ -12,7 +12,10 @@ defmodule Jido.Connect.GitHub.Client do
   def list_issues(repo, state, access_token) when is_binary(access_token) do
     access_token
     |> request()
-    |> Req.get(url: "/repos/#{repo}/issues", params: [state: state])
+    |> Req.get(
+      url: "/repos/#{repo}/issues",
+      params: [state: state, sort: "created", direction: "desc", per_page: 100]
+    )
     |> handle_list_response()
   end
 
@@ -20,6 +23,17 @@ defmodule Jido.Connect.GitHub.Client do
     access_token
     |> request()
     |> Req.post(url: "/repos/#{repo}/issues", json: attrs)
+    |> handle_issue_response()
+  end
+
+  def close_issue(repo, number, access_token)
+      when is_integer(number) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.patch(
+      url: "/repos/#{repo}/issues/#{number}",
+      json: %{state: "closed", state_reason: "completed"}
+    )
     |> handle_issue_response()
   end
 

@@ -11,12 +11,15 @@ defmodule Jido.Connect.GitHub.WebhookTest do
   end
 
   test "rejects missing and invalid signatures" do
+    assert {:error, :missing_secret} = Webhook.verify_signature("{}", "sha256=anything", nil)
+    assert {:error, :missing_secret} = Webhook.verify_signature("{}", "sha256=anything", "")
     assert {:error, :missing_signature} = Webhook.verify_signature("{}", nil, "secret")
     assert {:error, :invalid_signature} = Webhook.verify_signature("{}", "sha256=bad", "secret")
   end
 
   test "normalizes GitHub issues event into poll signal shape" do
     payload = %{
+      "action" => "opened",
       "repository" => %{"full_name" => "org/repo"},
       "issue" => %{
         "number" => 10,
@@ -32,6 +35,11 @@ defmodule Jido.Connect.GitHub.WebhookTest do
               title: "Bug",
               url: "https://github.com/org/repo/issues/10"
             }} = Webhook.normalize_signal("issues", payload)
+  end
+
+  test "does not normalize non-opened issue events into new issue signals" do
+    assert {:error, {:unsupported_issue_action, "closed"}} =
+             Webhook.normalize_signal("issues", %{"action" => "closed"})
   end
 
   test "detects duplicate delivery ids from host-provided seen set" do

@@ -43,4 +43,12 @@ short-lived credential lease when a Jido tool runs:
 
 Use `Jido.Connect.GitHub.Webhook.verify_request/3` from a Plug or Phoenix
 controller before normalizing event payloads. The package verifies signatures
-and produces signal-shaped maps; the host owns persistence and delivery dedupe.
+and produces signal-shaped maps for `issues.opened`; the host owns persistence
+and delivery dedupe. Webhook verification requires a configured secret.
+
+## Live Testing Notes
+
+GitHub's list endpoints can lag immediately after issue writes. For
+read-after-write demos, retry generated `ListIssues` briefly before treating a
+missing just-created issue as a failure. Cleanup flows can use
+`Jido.Connect.GitHub.Client.close_issue/3`.

@@ -7,16 +7,15 @@ delegation, provider action handlers, and GitHub API calls.
 
 ## Current Runnable Path
 
-The fastest end-to-end path today is a manual-token demo:
+The primary end-to-end path today is the GitHub App flow:
 
-1. Create a fine-grained GitHub token for a test repository with issue read and
-   write access.
-2. Build a `Jido.Connect.Connection` for that repository owner.
-3. Build a short-lived `Jido.Connect.CredentialLease` with:
-   - `access_token`
-   - `github_client: Jido.Connect.GitHub.Client`
-4. Invoke the generated list and create issue actions.
-5. Initialize and tick the generated new issues poll sensor.
+1. Create a local GitHub App from the generated manifest.
+2. Install it on a writable test repository.
+3. Store durable connection metadata in the host.
+4. Mint a short-lived installation-token `CredentialLease`.
+5. Invoke the generated list and create issue actions.
+6. Initialize and tick the generated new issues poll sensor.
+7. Verify issue webhooks through the local ngrok endpoint.
 
 This proves the compile-time modules, Jido adapter contract, credential lease
 boundary, GitHub HTTP client, action execution, poll execution, and Jido signal
@@ -120,10 +119,16 @@ The conversion task uses `gh api`, writes `.secrets/github-app.json`, writes the
 private key to `.secrets/github-app.pem`, and upserts these `.env` keys:
 
 - `GITHUB_APP_ID`
+- `GITHUB_APP_SLUG`
 - `GITHUB_CLIENT_ID`
 - `GITHUB_CLIENT_SECRET`
 - `GITHUB_WEBHOOK_SECRET`
 - `GITHUB_PRIVATE_KEY_PATH`
+
+After conversion, restart the demo with `.env` loaded and use the GitHub page's
+install URL. GitHub App installation callbacks can return to
+`/integrations/github/oauth/callback` with both `installation_id` and `code`;
+the demo stores the installation connection from that callback.
 
 ## OAuth Flow
 
@@ -169,8 +174,9 @@ Webhook support should be tested at the host boundary before adding webhook DSL:
 Until webhook DSL exists, local webhook testing should verify:
 
 - signature validation
-- event routing by GitHub event name
-- payload normalization into the same signal shape used by poll sensors
+- event routing by GitHub event name and action
+- `issues.opened` payload normalization into the same signal shape used by poll
+  sensors
 - duplicate delivery behavior using GitHub delivery id
 
 ## Local Webhook Simulation
@@ -197,6 +203,11 @@ The first complete demo should show:
 5. `NewIssues` poll emits a `github.issue.new` Jido signal.
 6. A webhook payload posted to the local host is verified and normalized into
    the same signal shape.
+
+For write demos, create in a disposable or package test repository, verify the
+new issue with a brief retry loop around generated `ListIssues`, then close the
+created issue through `Jido.Connect.GitHub.Client.close_issue/3`. GitHub's issue
+list endpoint can be briefly eventually consistent after create and close.
 
 ## Remaining Package Work
 

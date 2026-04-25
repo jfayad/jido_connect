@@ -170,7 +170,7 @@ defmodule Jido.Connect do
 
     cond do
       is_nil(connection) ->
-        :ok
+        {:error, :connection_required}
 
       connection.status != :connected ->
         {:error, :connection_required}

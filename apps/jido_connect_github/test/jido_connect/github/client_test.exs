@@ -17,7 +17,14 @@ defmodule Jido.Connect.GitHub.ClientTest do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"
       assert conn.request_path == "/repos/org/repo/issues"
-      assert conn.query_string == "state=open"
+
+      assert %{
+               "direction" => "desc",
+               "per_page" => "100",
+               "sort" => "created",
+               "state" => "open"
+             } = URI.decode_query(conn.query_string)
+
       assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
 
       Req.Test.json(conn, [
@@ -44,6 +51,26 @@ defmodule Jido.Connect.GitHub.ClientTest do
 
     assert {:ok, %{number: 2, title: "Bug"}} =
              Client.create_issue("org/repo", %{title: "Bug"}, "token")
+  end
+
+  test "close issue sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "PATCH"
+      assert conn.request_path == "/repos/org/repo/issues/2"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{"state" => "closed", "state_reason" => "completed"} = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        number: 2,
+        html_url: "https://github.test/2",
+        title: "Bug",
+        state: "closed"
+      })
+    end)
+
+    assert {:ok, %{number: 2, state: "closed"}} = Client.close_issue("org/repo", 2, "token")
   end
 
   test "normalizes error responses" do

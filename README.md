@@ -7,7 +7,7 @@ The public core entrypoint is `Jido.Connect`. The first provider app is
 
 Current slice:
 
-- Zoi-backed top-level contracts in `apps/jido_connect/lib/jido_connect/jido_connect.ex`
+- Zoi-backed top-level contracts in `apps/jido_connect/lib/jido_connect/`
 - Spark DSL extension under `apps/jido_connect/lib/jido_connect/dsl/`
 - GitHub integration app at `apps/jido_connect_github`
 - GitHub actions for `github.issue.list` and `github.issue.create`
@@ -39,3 +39,7 @@ In another shell, from the repo root:
 ```sh
 mix jido.connect.ngrok --provider github --port 4000
 ```
+
+Live GitHub App validation has covered app creation, app installation,
+installation-token minting, generated issue creation/listing, issue cleanup,
+and verified issue webhooks through ngrok.

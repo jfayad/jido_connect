@@ -29,6 +29,11 @@ A host app creates a durable `Jido.Connect.Connection`, mints a short-lived
 values in context. Raw credentials should never be placed in plugin config,
 agent state, or generated module metadata.
 
+Authenticated generated actions and sensors require both a connection and a
+matching credential lease. The connection is durable host-owned metadata; the
+lease is short-lived credential material and has a redacted `Inspect`
+implementation so accidental logs do not print tokens.
+
 ```elixir
 Jido.Connect.GitHub.Actions.ListIssues.run(
   %{repo: "org/repo"},
