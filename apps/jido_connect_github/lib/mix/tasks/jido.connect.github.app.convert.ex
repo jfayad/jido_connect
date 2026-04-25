@@ -40,6 +40,7 @@ defmodule Mix.Tasks.Jido.Connect.Github.App.Convert do
 
     json_path = Path.join(secrets_dir, "github-app.json")
     pem_path = Path.join(secrets_dir, "github-app.pem")
+    private_key_path = Path.expand(pem_path)
 
     File.write!(json_path, Jason.encode!(conversion, pretty: true))
     File.write!(pem_path, Map.fetch!(conversion, "pem"))
@@ -50,14 +51,14 @@ defmodule Mix.Tasks.Jido.Connect.Github.App.Convert do
       "GITHUB_CLIENT_ID" => Map.fetch!(conversion, "client_id"),
       "GITHUB_CLIENT_SECRET" => Map.fetch!(conversion, "client_secret"),
       "GITHUB_WEBHOOK_SECRET" => Map.fetch!(conversion, "webhook_secret"),
-      "GITHUB_PRIVATE_KEY_PATH" => pem_path
+      "GITHUB_PRIVATE_KEY_PATH" => private_key_path
     })
 
     Mix.shell().info("""
     Converted GitHub App manifest.
 
     Raw response: #{json_path}
-    Private key:  #{pem_path}
+    Private key:  #{private_key_path}
     Env file:     #{env_path}
 
     Next:
