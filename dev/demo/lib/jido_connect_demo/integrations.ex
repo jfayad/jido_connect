@@ -41,8 +41,22 @@ defmodule Jido.Connect.Demo.Integrations do
       auth_modes: ["OAuth 2.0 Bot Token"],
       description:
         "Generated channel listing and message posting actions, plus OAuth and signed request helpers.",
-      paths: %{},
-      checks: []
+      paths: %{
+        console: "/integrations/slack",
+        oauth_callback: "/integrations/slack/oauth/callback",
+        events: "/integrations/slack/events",
+        interactivity: "/integrations/slack/interactivity"
+      },
+      checks: [
+        %{label: "Local Slack console", method: "GET", path: "/integrations/slack"},
+        %{label: "OAuth callback", method: "GET", path: "/integrations/slack/oauth/callback"},
+        %{label: "Events receiver", method: "POST", path: "/integrations/slack/events"},
+        %{
+          label: "Interactivity receiver",
+          method: "POST",
+          path: "/integrations/slack/interactivity"
+        }
+      ]
     },
     %{
       id: "google",

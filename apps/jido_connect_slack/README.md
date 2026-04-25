@@ -28,6 +28,16 @@ end
 Slack apps use OAuth v2. Hosts own state, installation storage, and credential
 storage. This package builds authorize URLs and exchanges callback codes:
 
+For local development, generate a Slack app creation URL from the current ngrok
+tunnel:
+
+```sh
+mix jido.connect.slack.app.manifest_url
+```
+
+Pass `--events` and `--interactivity` only after the host exposes routes that
+can answer Slack verification requests.
+
 ```elixir
 url =
   Jido.Connect.Slack.OAuth.authorize_url(

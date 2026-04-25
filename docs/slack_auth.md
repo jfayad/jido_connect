@@ -7,7 +7,20 @@ routes.
 
 ## App Setup
 
-Create a Slack app and configure OAuth scopes:
+Generate a Slack app creation URL from the current ngrok tunnel:
+
+```sh
+mix jido.connect.slack.app.manifest_url
+```
+
+The task writes the manifest to `.secrets/dev-demo/slack-app-manifest.json` and
+the creation URL to `.secrets/dev-demo/slack-app-manifest.url`.
+
+The default manifest configures OAuth only. Pass `--events` and
+`--interactivity` after the demo host exposes those routes and can answer Slack
+verification requests.
+
+The base OAuth scopes are:
 
 - `channels:read`
 - `chat:write`

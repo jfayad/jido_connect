@@ -67,9 +67,9 @@
 
       <div class="mt-5 flex flex-wrap gap-2">
         <a
-          :if={integration.paths[:setup]}
+          :if={integration.paths[:console] || integration.paths[:setup]}
           class="btn btn-sm btn-primary"
-          href={"/integrations/#{integration.id}"}
+          href={integration.paths[:console] || "/integrations/#{integration.id}"}
         >
           Open
         </a>
@@ -124,7 +124,7 @@
       <p class="mt-2 text-sm text-base-content/70">
         Use the provider flag to print callback URLs for the selected integration.
       </p>
-      <pre class="mt-4 overflow-x-auto rounded-md bg-base-200 p-4 text-xs"><code>mix jido.connect.ngrok --provider github --port 4001</code></pre>
+      <pre class="mt-4 overflow-x-auto rounded-md bg-base-200 p-4 text-xs"><code>mix jido.connect.ngrok --provider slack --port 4001</code></pre>
     </div>
     <div class="rounded-lg border border-base-300 p-5">
       <h2 class="text-lg font-semibold">Captured Local State</h2>

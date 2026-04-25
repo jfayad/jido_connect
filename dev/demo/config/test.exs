@@ -8,4 +8,6 @@ config :jido_connect_demo, Jido.Connect.DemoWeb.Endpoint,
 
 config :logger, level: :warning
 
+config :jido_connect_demo, read_dotenv?: false
+
 config :phoenix, :plug_init_mode, :runtime

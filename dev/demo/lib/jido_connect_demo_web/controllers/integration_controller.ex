@@ -1,8 +1,9 @@
 defmodule Jido.Connect.DemoWeb.IntegrationController do
   use Jido.Connect.DemoWeb, :controller
 
-  alias Jido.Connect.Demo.{GitHubRuntime, Ngrok, Store}
+  alias Jido.Connect.Demo.{GitHubRuntime, Ngrok, SlackRuntime, Store}
   alias Jido.Connect.GitHub.{OAuth, Webhook}
+  alias Jido.Connect.Slack.Webhook, as: SlackWebhook
 
   def index(conn, _params) do
     json(conn, %{integrations: Jido.Connect.Demo.Integrations.api_index()})
@@ -17,6 +18,19 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
       github_install_url: github_install_url(),
       env: github_env(),
       connections: Store.list_connections(:github),
+      deliveries: Store.recent_deliveries(),
+      results: Store.recent_results()
+    )
+  end
+
+  def slack_show(conn, _params) do
+    maybe_create_slack_env_connection()
+
+    render(conn, :slack,
+      public_url: Ngrok.public_base_url(),
+      slack_urls: Ngrok.slack_urls(),
+      env: SlackRuntime.env(),
+      connections: Store.list_connections(:slack),
       deliveries: Store.recent_deliveries(),
       results: Store.recent_results()
     )
@@ -125,6 +139,22 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     redirect(conn, to: ~p"/integrations/github")
   end
 
+  def slack_bot_connection(conn, params) do
+    case SlackRuntime.create_bot_connection(params) do
+      {:ok, connection} ->
+        Store.put_result(:slack_connection, :ok, %{
+          connection_id: connection.id,
+          team: connection.metadata.team,
+          mode: :bot_token
+        })
+
+      {:error, reason} ->
+        Store.put_result(:slack_connection, :error, reason)
+    end
+
+    redirect(conn, to: ~p"/integrations/slack")
+  end
+
   def github_list_issues(conn, params) do
     connection_id = Map.fetch!(params, "connection_id")
     action_params = %{repo: Map.fetch!(params, "repo"), state: Map.get(params, "state", "open")}
@@ -132,6 +162,24 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     result = GitHubRuntime.run_list_issues(connection_id, action_params)
     Store.put_result(:github_issue_list, result_status(result), result)
     redirect(conn, to: ~p"/integrations/github")
+  end
+
+  def slack_list_channels(conn, params) do
+    connection_id = Map.fetch!(params, "connection_id")
+
+    action_params =
+      %{
+        types: Map.get(params, "types", "public_channel"),
+        exclude_archived: truthy?(Map.get(params, "exclude_archived", "true")),
+        limit: params |> Map.get("limit", "100") |> parse_integer(100),
+        cursor: Map.get(params, "cursor"),
+        team_id: Map.get(params, "team_id")
+      }
+      |> compact()
+
+    result = SlackRuntime.run_list_channels(connection_id, action_params)
+    Store.put_result(:slack_channel_list, result_status(result), result)
+    redirect(conn, to: ~p"/integrations/slack")
   end
 
   def github_create_issue(conn, params) do
@@ -149,11 +197,34 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     redirect(conn, to: ~p"/integrations/github")
   end
 
+  def slack_post_message(conn, params) do
+    connection_id = Map.fetch!(params, "connection_id")
+
+    action_params =
+      %{
+        channel: Map.fetch!(params, "channel"),
+        text: Map.fetch!(params, "text"),
+        thread_ts: Map.get(params, "thread_ts"),
+        reply_broadcast: truthy?(Map.get(params, "reply_broadcast"))
+      }
+      |> compact()
+
+    result = SlackRuntime.run_post_message(connection_id, action_params)
+    Store.put_result(:slack_message_post, result_status(result), result)
+    redirect(conn, to: ~p"/integrations/slack")
+  end
+
   def github_poll_new_issues(conn, params) do
     connection_id = Map.fetch!(params, "connection_id")
     result = GitHubRuntime.poll_new_issues(connection_id, %{repo: Map.fetch!(params, "repo")})
     Store.put_result(:github_issue_poll, result_status(result), result)
     redirect(conn, to: ~p"/integrations/github")
+  end
+
+  def slack_oauth_callback(conn, params) do
+    path = write_secret!("slack-oauth-callback.json", Jason.encode!(params, pretty: true))
+    Store.put_result(:slack_oauth, :captured, %{stored: path, params: Map.drop(params, ["code"])})
+    redirect(conn, to: ~p"/integrations/slack")
   end
 
   defp exchange_oauth_callback(conn, params, installation_connection) do
@@ -231,6 +302,65 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     end
   end
 
+  def slack_events(conn, _params) do
+    body = conn.assigns[:raw_body] || ""
+
+    headers = %{
+      "x-slack-signature" => get_req_header(conn, "x-slack-signature") |> List.first(),
+      "x-slack-request-timestamp" =>
+        get_req_header(conn, "x-slack-request-timestamp") |> List.first()
+    }
+
+    with {:ok, payload} <- SlackWebhook.verify_request(body, headers, slack_signing_secret()),
+         {:challenge, {:error, :not_url_verification}} <-
+           {:challenge, SlackWebhook.url_verification_challenge(payload)} do
+      delivery_id = Map.get(payload, "event_id") || "slack-#{System.unique_integer([:positive])}"
+      event = get_in(payload, ["event", "type"]) || Map.get(payload, "type", "unknown")
+      signal = normalize_slack_signal(payload)
+      path = write_secret!("slack-event-#{delivery_id}.json", body)
+
+      Store.put_delivery(%{
+        delivery_id: delivery_id,
+        event: event,
+        duplicate?: Store.delivery_seen?(delivery_id),
+        signal: signal,
+        stored: path,
+        received_at: DateTime.utc_now()
+      })
+
+      json(conn, %{ok: true, event: event, delivery: delivery_id, signal: signal})
+    else
+      {:challenge, {:ok, challenge}} ->
+        text(conn, challenge)
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unauthorized)
+        |> json(%{ok: false, error: inspect(reason)})
+    end
+  end
+
+  def slack_interactivity(conn, _params) do
+    body = conn.assigns[:raw_body] || ""
+
+    headers = %{
+      "x-slack-signature" => get_req_header(conn, "x-slack-signature") |> List.first(),
+      "x-slack-request-timestamp" =>
+        get_req_header(conn, "x-slack-request-timestamp") |> List.first()
+    }
+
+    case SlackWebhook.verify_signature(body, headers, slack_signing_secret()) do
+      :ok ->
+        Store.put_result(:slack_interactivity, :captured, %{bytes: byte_size(body)})
+        json(conn, %{ok: true})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unauthorized)
+        |> json(%{ok: false, error: inspect(reason)})
+    end
+  end
+
   defp github_callback_url(_conn) do
     base_url =
       case Ngrok.public_base_url() do
@@ -254,6 +384,29 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     case Webhook.normalize_signal(event, payload) do
       {:ok, signal} -> signal
       {:error, reason} -> %{error: reason}
+    end
+  end
+
+  defp normalize_slack_signal(payload) do
+    case SlackWebhook.normalize_event(payload) do
+      {:ok, signal} -> signal
+      {:error, reason} -> %{error: reason}
+    end
+  end
+
+  defp maybe_create_slack_env_connection do
+    if SlackRuntime.env()["SLACK_BOT_TOKEN"] and Store.list_connections(:slack) == [] do
+      case SlackRuntime.ensure_env_connection() do
+        {:ok, connection} ->
+          Store.put_result(:slack_connection, :ok, %{
+            connection_id: connection.id,
+            team: connection.metadata.team,
+            mode: :env_bot_token
+          })
+
+        {:error, reason} ->
+          Store.put_result(:slack_connection, :error, reason)
+      end
     end
   end
 
@@ -326,10 +479,32 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     }
   end
 
+  defp slack_signing_secret do
+    SlackRuntime.env_value("SLACK_SIGNING_SECRET")
+  end
+
+  defp parse_integer(value, default) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, ""} -> integer
+      _other -> default
+    end
+  end
+
+  defp parse_integer(value, _default) when is_integer(value), do: value
+  defp parse_integer(_value, default), do: default
+
+  defp compact(map) do
+    map
+    |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+    |> Map.new()
+  end
+
   defp present?(name), do: not blank?(System.get_env(name))
   defp result_status({:ok, _value}), do: :ok
   defp result_status({:ok, _state, _directives}), do: :ok
   defp result_status({:error, _reason}), do: :error
+
+  defp truthy?(value), do: value in [true, "true", "1", "on", "yes"]
 
   defp blank?(value), do: is_nil(value) or value == ""
 end

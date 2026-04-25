@@ -1,7 +1,7 @@
 defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
   use Jido.Connect.DemoWeb.ConnCase
 
-  alias Jido.Connect.Demo.{GitHubRuntime, Store}
+  alias Jido.Connect.Demo.{GitHubRuntime, SlackRuntime, Store}
 
   defmodule FakeGitHubClient do
     def list_issues("org/repo", "open", "token") do
@@ -25,9 +25,57 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
     end
   end
 
+  defmodule FakeSlackClient do
+    def auth_test("xoxb-test") do
+      {:ok,
+       %{
+         "team" => "Demo Workspace",
+         "team_id" => "T123",
+         "url" => "https://demo.slack.com/",
+         "user" => "jido_connect",
+         "user_id" => "U123",
+         "bot_id" => "B123"
+       }}
+    end
+
+    def list_channels(%{types: "public_channel"}, "xoxb-test") do
+      {:ok,
+       %{
+         channels: [
+           %{
+             id: "C123",
+             name: "general",
+             is_archived: false,
+             is_private: false,
+             is_member: true
+           }
+         ],
+         next_cursor: ""
+       }}
+    end
+
+    def post_message(%{channel: "C123", text: "Hello"}, "xoxb-test") do
+      {:ok, %{channel: "C123", ts: "1700000000.000100", message: %{text: "Hello"}}}
+    end
+  end
+
   setup do
     Store.reset!()
-    :ok
+    previous_slack_client = Application.get_env(:jido_connect_demo, :slack_client)
+    previous_slack_bot_token = System.get_env("SLACK_BOT_TOKEN")
+
+    Application.put_env(:jido_connect_demo, :slack_client, FakeSlackClient)
+    System.delete_env("SLACK_BOT_TOKEN")
+
+    on_exit(fn ->
+      if previous_slack_client do
+        Application.put_env(:jido_connect_demo, :slack_client, previous_slack_client)
+      else
+        Application.delete_env(:jido_connect_demo, :slack_client)
+      end
+
+      restore_env("SLACK_BOT_TOKEN", previous_slack_bot_token)
+    end)
   end
 
   test "GET /health", %{conn: conn} do
@@ -57,6 +105,13 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
 
     assert text_response(conn, 200) =~ "GitHub App manifest code captured"
     assert File.read!(Path.join(secret_dir, "github-app-code.txt")) == "abc123"
+  end
+
+  test "GET /integrations/slack renders Slack console", %{conn: conn} do
+    conn = get(conn, ~p"/integrations/slack")
+
+    assert html_response(conn, 200) =~ "Slack Integration"
+    assert html_response(conn, 200) =~ "List Channels"
   end
 
   test "setup complete stores GitHub App installation connection", %{conn: conn} do
@@ -140,6 +195,47 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
 
     assert %{"ok" => true, "event" => "issues"} = json_response(conn, 200)
     assert File.read!(Path.join(secret_dir, "github-webhook-delivery-1.json")) == body
+  end
+
+  test "Slack bot token connection can run generated list channels action", %{conn: conn} do
+    conn =
+      post(conn, ~p"/integrations/slack/connections/bot", %{
+        "token" => "xoxb-test",
+        "tenant_id" => "local"
+      })
+
+    assert redirected_to(conn) == ~p"/integrations/slack"
+    assert [%{id: "slack-bot-T123"}] = Store.list_connections(:slack)
+
+    conn =
+      post(conn, ~p"/integrations/slack/actions/list_channels", %{
+        "connection_id" => "slack-bot-T123",
+        "types" => "public_channel",
+        "limit" => "10",
+        "exclude_archived" => "true"
+      })
+
+    assert redirected_to(conn) == ~p"/integrations/slack"
+
+    assert [
+             %{type: :slack_channel_list, status: :ok, value: {:ok, %{channels: [%{id: "C123"}]}}}
+             | _
+           ] =
+             Store.recent_results()
+  end
+
+  test "Slack runtime posts through generated action" do
+    assert {:ok, connection} =
+             SlackRuntime.create_bot_connection(%{"token" => "xoxb-test"},
+               slack_client: FakeSlackClient
+             )
+
+    assert {:ok, %{channel: "C123", message: %{text: "Hello"}}} =
+             SlackRuntime.run_post_message(
+               connection.id,
+               %{channel: "C123", text: "Hello"},
+               slack_client: FakeSlackClient
+             )
   end
 
   test "in-memory connection can mint lease and run generated action" do

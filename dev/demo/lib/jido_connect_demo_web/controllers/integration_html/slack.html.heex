@@ -1,0 +1,152 @@
+<Layouts.flash_group flash={@flash} />
+
+<% default_connection_id =
+  case @connections do
+    [connection | _] -> connection.id
+    [] -> ""
+  end %>
+
+<main class="mx-auto max-w-6xl px-5 py-6 sm:px-8">
+  <header class="flex items-center justify-between border-b border-base-300 pb-6">
+    <div>
+      <p class="text-sm font-semibold text-base-content/60">Slack Integration</p>
+      <h1 class="mt-1 text-3xl font-semibold">Jido Connect</h1>
+    </div>
+    <a class="btn btn-sm btn-outline" href="/">Back</a>
+  </header>
+
+  <section class="mt-6 grid gap-4 lg:grid-cols-2">
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Public URLs</h2>
+      <p :if={!@public_url} class="mt-2 text-sm text-warning">
+        No ngrok URL detected. Run the tunnel task or set JIDO_CONNECT_PUBLIC_BASE_URL.
+      </p>
+      <dl class="mt-4 space-y-2 text-sm">
+        <div :for={{label, url} <- @slack_urls}>
+          <dt class="font-medium capitalize">{String.replace(to_string(label), "_", " ")}</dt>
+          <dd><code class="break-all text-xs">{url}</code></dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Slack App Manifest</h2>
+      <p class="mt-2 text-sm text-base-content/70">
+        Generate a manifest URL whenever the ngrok hostname changes.
+      </p>
+      <pre class="mt-4 overflow-x-auto rounded-md bg-base-200 p-3 text-xs"><code>mix jido.connect.slack.app.manifest_url --name "Jido Connect Dev"</code></pre>
+    </div>
+
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Environment</h2>
+      <dl class="mt-4 grid grid-cols-2 gap-2 text-sm">
+        <div :for={{name, present?} <- @env} class="flex items-center justify-between gap-3">
+          <dt class="font-mono text-xs">{name}</dt>
+          <dd class={if(present?, do: "text-success", else: "text-warning")}>
+            {env_status(present?)}
+          </dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Connections</h2>
+      <div class="mt-4 space-y-3">
+        <p :if={@connections == []} class="text-sm text-base-content/65">
+          No local Slack connections yet.
+        </p>
+        <div :for={connection <- @connections} class="rounded-md bg-base-200 p-3 text-sm">
+          <p class="font-semibold">{connection.id}</p>
+          <p class="text-base-content/70">
+            {connection.status} · {connection.owner_type} · {connection.metadata.team}
+          </p>
+          <p class="mt-1 text-xs text-base-content/60">
+            scopes: {Enum.join(connection.scopes, ", ")}
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mt-6 grid gap-4 lg:grid-cols-3">
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Create Bot Token Connection</h2>
+      <.form
+        for={%{}}
+        action="/integrations/slack/connections/bot"
+        method="post"
+        class="mt-4 grid gap-3"
+      >
+        <input class="input input-bordered" name="tenant_id" value="local" />
+        <input
+          class="input input-bordered"
+          name="token"
+          placeholder="Uses SLACK_BOT_TOKEN when blank"
+        />
+        <button class="btn btn-primary" type="submit">Create Connection</button>
+      </.form>
+    </div>
+
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">List Channels</h2>
+      <.form
+        for={%{}}
+        action="/integrations/slack/actions/list_channels"
+        method="post"
+        class="mt-4 grid gap-3"
+      >
+        <input class="input input-bordered" name="connection_id" value={default_connection_id} />
+        <input class="input input-bordered" name="types" value="public_channel" />
+        <input class="input input-bordered" name="limit" value="20" />
+        <label class="flex items-center gap-2 text-sm">
+          <input class="checkbox checkbox-sm" type="checkbox" name="exclude_archived" checked />
+          Exclude archived
+        </label>
+        <button class="btn btn-outline" type="submit">List Channels</button>
+      </.form>
+    </div>
+
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Post Message</h2>
+      <.form
+        for={%{}}
+        action="/integrations/slack/actions/post_message"
+        method="post"
+        class="mt-4 grid gap-3"
+      >
+        <input class="input input-bordered" name="connection_id" value={default_connection_id} />
+        <input class="input input-bordered" name="channel" placeholder="channel id" />
+        <textarea
+          class="textarea textarea-bordered min-h-24"
+          name="text"
+          placeholder="Message text"
+        ></textarea>
+        <input class="input input-bordered" name="thread_ts" placeholder="thread ts optional" />
+        <button class="btn btn-outline" type="submit">Post Message</button>
+      </.form>
+    </div>
+  </section>
+
+  <section class="mt-6 grid gap-4 lg:grid-cols-2">
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Recent Events</h2>
+      <div class="mt-4 space-y-3">
+        <p :if={@deliveries == []} class="text-sm text-base-content/65">
+          No Slack events yet.
+        </p>
+        <pre
+          :for={delivery <- @deliveries}
+          class="overflow-x-auto rounded-md bg-base-200 p-3 text-xs"
+        ><code>{result_value(delivery)}</code></pre>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">Recent Results</h2>
+      <div class="mt-4 space-y-3">
+        <p :if={@results == []} class="text-sm text-base-content/65">No local runs yet.</p>
+        <pre :for={result <- @results} class="overflow-x-auto rounded-md bg-base-200 p-3 text-xs"><code>{result_value(result)}</code></pre>
+      </div>
+    </div>
+  </section>
+</main>
