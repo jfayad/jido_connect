@@ -7,6 +7,11 @@ The package owns contracts and runtime boundaries only. Host applications own
 durable connection storage, credential storage, audit storage, OAuth sessions,
 and webhook HTTP ingress.
 
+Core Zoi-backed contract modules live in individual files under
+`lib/jido_connect/`, including `Jido.Connect.Spec`, `Jido.Connect.ActionSpec`,
+`Jido.Connect.TriggerSpec`, `Jido.Connect.Context`,
+`Jido.Connect.Connection`, and `Jido.Connect.CredentialLease`.
+
 ## Installation
 
 ```elixir

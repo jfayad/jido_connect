@@ -11,6 +11,10 @@ It includes:
 - REST client helpers in `Jido.Connect.GitHub.Client`
 - Webhook verification and normalization in `Jido.Connect.GitHub.Webhook`
 
+The Spark DSL declaration lives in
+`lib/jido_connect/github/integration.ex`. Provider handlers live under
+`lib/jido_connect/github/handlers/`.
+
 ## Installation
 
 ```elixir
