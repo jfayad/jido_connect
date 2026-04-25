@@ -65,6 +65,55 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
     assert [%{id: "github-installation-42"}] = Store.list_connections(:github)
   end
 
+  test "OAuth callback from GitHub App install stores installation connection", %{conn: conn} do
+    secret_dir = tmp_dir()
+    previous_dir = System.get_env("JIDO_CONNECT_DEMO_SECRET_DIR")
+    previous_secret = System.get_env("GITHUB_CLIENT_SECRET")
+
+    System.put_env("JIDO_CONNECT_DEMO_SECRET_DIR", secret_dir)
+    System.delete_env("GITHUB_CLIENT_SECRET")
+    File.write!(Path.join(secret_dir, "github-oauth-state.txt"), "stale-oauth-state")
+
+    on_exit(fn ->
+      restore_env("JIDO_CONNECT_DEMO_SECRET_DIR", previous_dir)
+      restore_env("GITHUB_CLIENT_SECRET", previous_secret)
+    end)
+
+    conn =
+      get(
+        conn,
+        ~p"/integrations/github/oauth/callback?code=abc123&installation_id=42&setup_action=install"
+      )
+
+    assert redirected_to(conn) == ~p"/integrations/github"
+    assert [%{id: "github-installation-42"}] = Store.list_connections(:github)
+    assert File.exists?(Path.join(secret_dir, "github-oauth-callback.json"))
+  end
+
+  test "OAuth callback treats blank secret dir env as unset", %{conn: conn} do
+    tmp_root = tmp_dir()
+    cwd = Path.join(tmp_root, "dev/demo")
+    default_secret_dir = Path.join(tmp_root, ".secrets/dev-demo")
+    previous_dir = System.get_env("JIDO_CONNECT_DEMO_SECRET_DIR")
+    previous_secret = System.get_env("GITHUB_CLIENT_SECRET")
+
+    File.mkdir_p!(cwd)
+    System.put_env("JIDO_CONNECT_DEMO_SECRET_DIR", "")
+    System.delete_env("GITHUB_CLIENT_SECRET")
+
+    on_exit(fn ->
+      restore_env("JIDO_CONNECT_DEMO_SECRET_DIR", previous_dir)
+      restore_env("GITHUB_CLIENT_SECRET", previous_secret)
+    end)
+
+    File.cd!(cwd, fn ->
+      conn = get(conn, ~p"/integrations/github/oauth/callback?code=abc123")
+
+      assert redirected_to(conn) == ~p"/integrations/github"
+      assert File.exists?(Path.join(default_secret_dir, "github-oauth-callback.json"))
+    end)
+  end
+
   test "webhook validates signature when secret is configured", %{conn: conn} do
     secret_dir = tmp_dir()
     previous_secret = System.get_env("GITHUB_WEBHOOK_SECRET")

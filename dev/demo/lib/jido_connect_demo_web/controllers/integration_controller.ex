@@ -80,14 +80,17 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
   end
 
   def github_oauth_callback(conn, params) do
+    installation_connection = maybe_store_installation_connection(params)
     stored_state = read_secret("github-oauth-state.txt")
+    app_install_callback? = not blank?(Map.get(params, "installation_id"))
 
     result =
       cond do
         blank?(Map.get(params, "code")) ->
           %{ok: false, error: "missing code", params: params}
 
-        not blank?(stored_state) and Map.get(params, "state") != stored_state ->
+        not app_install_callback? and not blank?(stored_state) and
+            Map.get(params, "state") != stored_state ->
           %{ok: false, error: "invalid state", params: params}
 
         true ->
@@ -103,11 +106,16 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
         |> json(result)
 
       blank?(System.get_env("GITHUB_CLIENT_SECRET")) ->
-        Store.put_result(:github_oauth, :captured, result)
+        Store.put_result(
+          :github_oauth,
+          :captured,
+          Map.merge(result, installation_result(installation_connection))
+        )
+
         redirect(conn, to: ~p"/integrations/github")
 
       true ->
-        exchange_oauth_callback(conn, params)
+        exchange_oauth_callback(conn, params, installation_connection)
     end
   end
 
@@ -148,22 +156,37 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     redirect(conn, to: ~p"/integrations/github")
   end
 
-  defp exchange_oauth_callback(conn, params) do
+  defp exchange_oauth_callback(conn, params, installation_connection) do
     with {:ok, token} <-
            OAuth.exchange_code(Map.fetch!(params, "code"),
              redirect_uri: github_callback_url(conn),
              state: Map.get(params, "state")
            ),
          connection <- GitHubRuntime.create_manual_connection(%{"token" => token.access_token}) do
-      Store.put_result(:github_oauth, :ok, %{connection_id: connection.id, scopes: token.scope})
+      Store.put_result(
+        :github_oauth,
+        :ok,
+        %{connection_id: connection.id, scopes: token.scope}
+        |> Map.merge(installation_result(installation_connection))
+      )
+
       redirect(conn, to: ~p"/integrations/github")
     else
       {:error, reason} ->
-        Store.put_result(:github_oauth, :error, reason)
+        if installation_connection do
+          Store.put_result(:github_oauth, :error, %{
+            reason: reason,
+            installation_connection_id: installation_connection.id
+          })
 
-        conn
-        |> put_status(:bad_request)
-        |> json(%{ok: false, error: inspect(reason)})
+          redirect(conn, to: ~p"/integrations/github")
+        else
+          Store.put_result(:github_oauth, :error, reason)
+
+          conn
+          |> put_status(:bad_request)
+          |> json(%{ok: false, error: inspect(reason)})
+        end
     end
   end
 
@@ -209,7 +232,14 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
   end
 
   defp github_callback_url(_conn) do
-    Jido.Connect.DemoWeb.Endpoint.url() <> ~p"/integrations/github/oauth/callback"
+    base_url =
+      case Ngrok.public_base_url() do
+        nil -> Jido.Connect.DemoWeb.Endpoint.url()
+        "" -> Jido.Connect.DemoWeb.Endpoint.url()
+        url -> url
+      end
+
+    base_url <> ~p"/integrations/github/oauth/callback"
   end
 
   defp github_install_url do
@@ -252,8 +282,36 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
   end
 
   defp secret_dir do
-    System.get_env("JIDO_CONNECT_DEMO_SECRET_DIR") ||
-      Path.expand("../../.secrets/dev-demo", File.cwd!())
+    case System.get_env("JIDO_CONNECT_DEMO_SECRET_DIR") do
+      nil -> default_secret_dir()
+      "" -> default_secret_dir()
+      dir -> Path.expand(dir)
+    end
+  end
+
+  defp default_secret_dir do
+    Path.expand("../../.secrets/dev-demo", File.cwd!())
+  end
+
+  defp maybe_store_installation_connection(%{"installation_id" => installation_id} = params) do
+    case Integer.parse(installation_id) do
+      {id, ""} ->
+        connection = GitHubRuntime.create_installation_connection(id, params)
+        Store.put_result(:github_setup, :ok, %{connection_id: connection.id})
+        connection
+
+      _other ->
+        Store.put_result(:github_setup, :error, %{installation_id: installation_id})
+        nil
+    end
+  end
+
+  defp maybe_store_installation_connection(_params), do: nil
+
+  defp installation_result(nil), do: %{}
+
+  defp installation_result(connection) do
+    %{installation_connection_id: connection.id}
   end
 
   defp github_env do
