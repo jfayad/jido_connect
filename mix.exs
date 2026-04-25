@@ -36,6 +36,7 @@ defmodule JidoConnect.MixProject do
         "docs/github_auth.md",
         "docs/github_webhooks.md",
         "docs/github_end_to_end.md",
+        "docs/slack_auth.md",
         "docs/release_checklist.md"
       ],
       groups_for_extras: [

@@ -26,6 +26,9 @@
 
    cd ../jido_connect_github
    mix hex.build
+
+   cd ../jido_connect_slack
+   mix hex.build
    ```
 
 4. Publish order:
@@ -36,7 +39,10 @@
 
    cd ../jido_connect_github
    mix hex.publish
+
+   cd ../jido_connect_slack
+   mix hex.publish
    ```
 
 `dev/demo`, `.env`, `.secrets`, `_build`, `deps`, and generated docs are not
-included in either Hex package.
+included in Hex packages.

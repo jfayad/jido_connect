@@ -1,0 +1,57 @@
+# Slack Auth And Webhooks
+
+`jido_connect_slack` currently ships the provider package slice: generated Jido
+actions, OAuth helpers, Web API client helpers, and signed request helpers. The
+demo host does not yet persist Slack installations or expose Slack callback
+routes.
+
+## App Setup
+
+Create a Slack app and configure OAuth scopes:
+
+- `channels:read`
+- `chat:write`
+
+Add the ngrok redirect URL:
+
+```text
+https://example.ngrok-free.app/integrations/slack/oauth/callback
+```
+
+For future Events API work, configure:
+
+```text
+https://example.ngrok-free.app/integrations/slack/events
+```
+
+Local env keys:
+
+```sh
+SLACK_CLIENT_ID=
+SLACK_CLIENT_SECRET=
+SLACK_SIGNING_SECRET=
+SLACK_BOT_TOKEN=
+```
+
+## Package Boundary
+
+Hosts own OAuth state, durable installation storage, credential storage, and
+event delivery dedupe. The provider package owns:
+
+- `Jido.Connect.Slack.OAuth.authorize_url/1`
+- `Jido.Connect.Slack.OAuth.exchange_code/2`
+- `Jido.Connect.Slack.Client.list_channels/2`
+- `Jido.Connect.Slack.Client.post_message/2`
+- `Jido.Connect.Slack.Webhook.verify_request/4`
+
+Generated actions stay thin. The first generated modules are the Slack
+ListChannels and PostMessage action adapters.
+
+## Signed Requests
+
+Slack signs requests with `X-Slack-Signature` and
+`X-Slack-Request-Timestamp`. Verification uses the raw request body and rejects
+timestamps outside the replay window.
+
+Use `Jido.Connect.Slack.Webhook.url_verification_challenge/1` for Events API
+URL verification callbacks.

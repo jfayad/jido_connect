@@ -64,7 +64,8 @@ defmodule Jido.Connect.Demo.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       {:jido_connect, path: "../../apps/jido_connect"},
-      {:jido_connect_github, path: "../../apps/jido_connect_github"}
+      {:jido_connect_github, path: "../../apps/jido_connect_github"},
+      {:jido_connect_slack, path: "../../apps/jido_connect_slack"}
     ]
   end
 

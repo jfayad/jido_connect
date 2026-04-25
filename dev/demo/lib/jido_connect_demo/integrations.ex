@@ -37,10 +37,10 @@ defmodule Jido.Connect.Demo.Integrations do
       id: "slack",
       name: "Slack",
       package: "jido_connect_slack",
-      status: :planned,
-      auth_modes: ["OAuth 2.0"],
+      status: :available,
+      auth_modes: ["OAuth 2.0 Bot Token"],
       description:
-        "Placeholder for future install callbacks, event subscriptions, and slash commands.",
+        "Generated channel listing and message posting actions, plus OAuth and signed request helpers.",
       paths: %{},
       checks: []
     },

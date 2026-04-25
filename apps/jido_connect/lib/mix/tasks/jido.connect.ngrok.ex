@@ -5,6 +5,7 @@ defmodule Mix.Tasks.Jido.Connect.Ngrok do
       mix jido.connect.ngrok
       mix jido.connect.ngrok --port 4001
       mix jido.connect.ngrok --provider github
+      mix jido.connect.ngrok --provider slack
 
   The task runs until interrupted. It assumes `ngrok` is installed and available
   on `PATH`.
@@ -181,6 +182,10 @@ defmodule Mix.Tasks.Jido.Connect.Ngrok do
     if provider == "github" do
       print_github_urls(public_url)
     end
+
+    if provider == "slack" do
+      print_slack_urls(public_url)
+    end
   end
 
   defp print_github_urls(public_url) do
@@ -200,6 +205,25 @@ defmodule Mix.Tasks.Jido.Connect.Ngrok do
     GITHUB_CLIENT_SECRET=
     GITHUB_WEBHOOK_SECRET=
     GITHUB_PRIVATE_KEY_PATH=
+    """)
+  end
+
+  defp print_slack_urls(public_url) do
+    callback_url = public_url <> "/integrations/slack/oauth/callback"
+    events_url = public_url <> "/integrations/slack/events"
+    interactivity_url = public_url <> "/integrations/slack/interactivity"
+
+    Mix.shell().info("""
+    Slack App URLs:
+    OAuth Redirect URL:      #{callback_url}
+    Events Request URL:      #{events_url}
+    Interactivity Request URL: #{interactivity_url}
+
+    Local env keys:
+    SLACK_CLIENT_ID=
+    SLACK_CLIENT_SECRET=
+    SLACK_SIGNING_SECRET=
+    SLACK_BOT_TOKEN=
     """)
   end
 

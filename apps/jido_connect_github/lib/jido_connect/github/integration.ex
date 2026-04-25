@@ -2,12 +2,9 @@ defmodule Jido.Connect.GitHub do
   @moduledoc """
   GitHub integration authored with the `Jido.Connect` Spark DSL.
 
-  This module is the provider declaration. It compiles into:
-
-  - `Jido.Connect.GitHub.Actions.ListIssues`
-  - `Jido.Connect.GitHub.Actions.CreateIssue`
-  - `Jido.Connect.GitHub.Sensors.NewIssues`
-  - `Jido.Connect.GitHub.Plugin`
+  This module is the provider declaration. It compiles into hidden generated
+  adapter modules under provider-specific Actions, Sensors, and Plugin
+  namespaces.
   """
 
   use Jido.Connect

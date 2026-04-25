@@ -10,8 +10,10 @@ Current slice:
 - Zoi-backed top-level contracts in `apps/jido_connect/lib/jido_connect/`
 - Spark DSL extension under `apps/jido_connect/lib/jido_connect/dsl/`
 - GitHub integration app at `apps/jido_connect_github`
+- Slack integration app at `apps/jido_connect_slack`
 - GitHub actions for `github.issue.list` and `github.issue.create`
 - GitHub poll trigger contract for `github.issue.new`
+- Slack actions for `slack.channel.list` and `slack.message.post`
 - Generic ngrok tunnel helper: `mix jido.connect.ngrok`
 - Local Phoenix demo host under `dev/demo`
 
