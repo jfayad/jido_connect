@@ -14,6 +14,7 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     render(conn, :github,
       public_url: Ngrok.public_base_url(),
       github_urls: Ngrok.github_urls(),
+      github_install_url: github_install_url(),
       env: github_env(),
       connections: Store.list_connections(:github),
       deliveries: Store.recent_deliveries(),
@@ -211,6 +212,14 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     Jido.Connect.DemoWeb.Endpoint.url() <> ~p"/integrations/github/oauth/callback"
   end
 
+  defp github_install_url do
+    case System.get_env("GITHUB_APP_SLUG") do
+      nil -> nil
+      "" -> nil
+      slug -> "https://github.com/apps/#{slug}/installations/new"
+    end
+  end
+
   defp normalize_webhook_signal(%{event: event, payload: payload}) do
     case Webhook.normalize_signal(event, payload) do
       {:ok, signal} -> signal
@@ -250,6 +259,7 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
   defp github_env do
     %{
       "GITHUB_APP_ID" => present?("GITHUB_APP_ID"),
+      "GITHUB_APP_SLUG" => present?("GITHUB_APP_SLUG"),
       "GITHUB_CLIENT_ID" => present?("GITHUB_CLIENT_ID"),
       "GITHUB_CLIENT_SECRET" => present?("GITHUB_CLIENT_SECRET"),
       "GITHUB_WEBHOOK_SECRET" => present?("GITHUB_WEBHOOK_SECRET"),

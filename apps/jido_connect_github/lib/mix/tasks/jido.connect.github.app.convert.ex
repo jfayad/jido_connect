@@ -48,6 +48,7 @@ defmodule Mix.Tasks.Jido.Connect.Github.App.Convert do
 
     upsert_env!(env_path, %{
       "GITHUB_APP_ID" => to_string(Map.fetch!(conversion, "id")),
+      "GITHUB_APP_SLUG" => Map.fetch!(conversion, "slug"),
       "GITHUB_CLIENT_ID" => Map.fetch!(conversion, "client_id"),
       "GITHUB_CLIENT_SECRET" => Map.fetch!(conversion, "client_secret"),
       "GITHUB_WEBHOOK_SECRET" => Map.fetch!(conversion, "webhook_secret"),
@@ -60,6 +61,7 @@ defmodule Mix.Tasks.Jido.Connect.Github.App.Convert do
     Raw response: #{json_path}
     Private key:  #{private_key_path}
     Env file:     #{env_path}
+    Install URL:  https://github.com/apps/#{Map.fetch!(conversion, "slug")}/installations/new
 
     Next:
     set -a && source #{env_path} && set +a

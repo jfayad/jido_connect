@@ -24,6 +24,17 @@
     </div>
 
     <div class="rounded-lg border border-base-300 p-5">
+      <h2 class="text-lg font-semibold">GitHub App Install</h2>
+      <p :if={!@github_install_url} class="mt-2 text-sm text-warning">
+        GITHUB_APP_SLUG is missing. Convert a manifest before installing the app.
+      </p>
+      <div :if={@github_install_url} class="mt-4 grid gap-3">
+        <code class="break-all rounded bg-base-200 p-3 text-xs">{@github_install_url}</code>
+        <a class="btn btn-primary" href={@github_install_url}>Install GitHub App</a>
+      </div>
+    </div>
+
+    <div class="rounded-lg border border-base-300 p-5">
       <h2 class="text-lg font-semibold">Environment</h2>
       <dl class="mt-4 grid grid-cols-2 gap-2 text-sm">
         <div :for={{name, present?} <- @env} class="flex items-center justify-between gap-3">
