@@ -20,6 +20,22 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def list_channels(%{types: "private_channel"}, "token") do
+      {:ok,
+       %{
+         channels: [
+           %{
+             id: "G123",
+             name: "private",
+             is_archived: false,
+             is_private: true,
+             is_member: true
+           }
+         ],
+         next_cursor: ""
+       }}
+    end
+
     def post_message(
           %{channel: "C123", text: "Hello", reply_broadcast: false},
           "token"
@@ -80,6 +96,9 @@ defmodule Jido.Connect.SlackTest do
     assert projection.risk == :write
     assert projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.PostMessage.name() == "slack_message_post"
+
+    list_projection = Jido.Connect.Slack.Actions.ListChannels.jido_connect_projection()
+    assert list_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
   end
 
   test "generated list channels action delegates through integration runtime" do
@@ -89,6 +108,31 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ListChannels.run(
                %{types: "public_channel"},
                %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "list channels resolves scopes from requested conversation types" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.AuthError{reason: :missing_scopes, missing_scopes: ["groups:read"]}} =
+             Jido.Connect.Slack.Actions.ListChannels.run(
+               %{types: "private_channel"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    private_context = %{
+      context
+      | connection: %{
+          context.connection
+          | scopes: ["channels:read", "groups:read", "chat:write"]
+        }
+    }
+
+    assert {:ok, %{channels: [%{id: "G123", name: "private"}], next_cursor: ""}} =
+             Jido.Connect.Slack.Actions.ListChannels.run(
+               %{types: "private_channel"},
+               %{integration_context: private_context, credential_lease: lease}
              )
   end
 

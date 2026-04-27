@@ -1,6 +1,7 @@
 defmodule Jido.Connect.Slack.ClientTest do
   use ExUnit.Case, async: false
 
+  alias Jido.Connect.Error
   alias Jido.Connect.Slack.Client
 
   setup {Req.Test, :verify_on_exit!}
@@ -69,13 +70,45 @@ defmodule Jido.Connect.Slack.ClientTest do
              Client.post_message(%{channel: "C123", text: "Hello"}, "token")
   end
 
+  test "auth test returns successful response maps" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/auth.test"
+
+      Req.Test.json(conn, %{ok: true, team_id: "T123", user_id: "U123"})
+    end)
+
+    assert {:ok, %{"team_id" => "T123", "user_id" => "U123"}} = Client.auth_test("token")
+  end
+
   test "normalizes Slack API errors" do
     Req.Test.stub(__MODULE__, fn conn ->
       Req.Test.json(conn, %{ok: false, error: "invalid_auth"})
     end)
 
     assert {:error,
-            {:slack_api_error, "invalid_auth", 200, %{"ok" => false, "error" => "invalid_auth"}}} =
+            %Error.ProviderError{
+              provider: :slack,
+              reason: "invalid_auth",
+              status: 200,
+              details: %{body: %{"ok" => false, "error" => "invalid_auth"}}
+            }} =
              Client.auth_test("bad-token")
+  end
+
+  test "normalizes non-API HTTP errors" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      conn
+      |> Plug.Conn.put_status(500)
+      |> Req.Test.json(%{error: "server_error"})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :slack,
+              reason: :http_error,
+              status: 500,
+              details: %{body: %{"error" => "server_error"}}
+            }} = Client.auth_test("token")
   end
 end

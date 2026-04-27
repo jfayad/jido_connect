@@ -106,12 +106,14 @@ defmodule Jido.Connect.Dsl.Transformers.BuildSpec do
       label: action.label || humanize(action.name),
       description: action.description,
       auth_profile: action.auth || default_auth_profile(),
+      auth_profiles: auth_profiles(action.auth, action.auth_profiles),
       handler: action.handler,
       input: input,
       output: output,
       input_schema: Connect.zoi_schema_from_fields(input),
       output_schema: Connect.zoi_schema_from_fields(output),
       scopes: action.scopes,
+      scope_resolver: action.scope_resolver,
       mutation?: action.mutation?,
       risk: action.risk,
       confirmation: action.confirmation,
@@ -130,12 +132,14 @@ defmodule Jido.Connect.Dsl.Transformers.BuildSpec do
       label: trigger.label || humanize(trigger.name),
       description: trigger.description,
       auth_profile: trigger.auth || default_auth_profile(),
+      auth_profiles: auth_profiles(trigger.auth, trigger.auth_profiles),
       handler: trigger.handler,
       config: config,
       signal: signal,
       config_schema: Connect.zoi_schema_from_fields(config),
       signal_schema: Connect.zoi_schema_from_fields(signal),
       scopes: trigger.scopes,
+      scope_resolver: trigger.scope_resolver,
       verification: trigger.verification || %{kind: :none},
       dedupe: trigger.dedupe,
       checkpoint: trigger.checkpoint,
@@ -145,6 +149,15 @@ defmodule Jido.Connect.Dsl.Transformers.BuildSpec do
   end
 
   defp default_auth_profile, do: :user
+
+  defp auth_profiles(primary, profiles) do
+    profiles = profiles || []
+    primary = primary || default_auth_profile()
+
+    [primary | profiles]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
 
   defp fields(%Dsl.FieldGroup{fields: fields}), do: fields || []
   defp fields(nil), do: []
@@ -161,7 +174,7 @@ defmodule Jido.Connect.Dsl.Transformers.BuildSpec do
   defp jido_projection(integration_module, %Connect.Spec{} = spec) do
     action_projections =
       Enum.map(spec.actions, fn action ->
-        %ActionProjection{
+        ActionProjection.new!(%{
           module: Module.concat([integration_module, Actions, Macro.camelize("#{action.name}")]),
           integration_module: integration_module,
           integration_id: spec.id,
@@ -174,15 +187,17 @@ defmodule Jido.Connect.Dsl.Transformers.BuildSpec do
           input_schema: action.input_schema,
           output_schema: action.output_schema,
           auth_profile: action.auth_profile,
+          auth_profiles: action.auth_profiles,
           scopes: action.scopes,
+          scope_resolver: action.scope_resolver,
           risk: action.risk,
           confirmation: action.confirmation
-        }
+        })
       end)
 
     sensor_projections =
       Enum.map(spec.triggers, fn trigger ->
-        %SensorProjection{
+        SensorProjection.new!(%{
           module: Module.concat([integration_module, Sensors, Macro.camelize("#{trigger.name}")]),
           integration_module: integration_module,
           integration_id: spec.id,
@@ -198,12 +213,14 @@ defmodule Jido.Connect.Dsl.Transformers.BuildSpec do
           signal_type: trigger.id,
           signal_source: "/jido/connect/#{spec.id}",
           auth_profile: trigger.auth_profile,
+          auth_profiles: trigger.auth_profiles,
           scopes: trigger.scopes,
+          scope_resolver: trigger.scope_resolver,
           interval_ms: trigger.interval_ms
-        }
+        })
       end)
 
-    %PluginProjection{
+    PluginProjection.new!(%{
       module: Module.concat([integration_module, Plugin]),
       integration_module: integration_module,
       integration_id: spec.id,
@@ -211,7 +228,7 @@ defmodule Jido.Connect.Dsl.Transformers.BuildSpec do
       description: "#{spec.name} integration tools.",
       actions: action_projections,
       sensors: sensor_projections
-    }
+    })
   end
 
   defp generated_modules_ast(%PluginProjection{} = projection) do

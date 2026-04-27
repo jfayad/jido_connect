@@ -1,6 +1,8 @@
 defmodule Jido.Connect.Slack.Handlers.Actions.ListChannels do
   @moduledoc false
 
+  alias Jido.Connect.Error
+
   def run(input, %{credentials: credentials}) do
     with {:ok, client} <- fetch_client(credentials),
          {:ok, result} <-
@@ -17,7 +19,10 @@ defmodule Jido.Connect.Slack.Handlers.Actions.ListChannels do
   end
 
   defp fetch_client(%{slack_client: client}) when is_atom(client), do: {:ok, client}
-  defp fetch_client(_credentials), do: {:error, :slack_client_required}
+
+  defp fetch_client(_credentials) do
+    {:error, Error.config("Slack client module is required", key: :slack_client)}
+  end
 
   defp normalize_channel(channel) do
     %{

@@ -1,6 +1,7 @@
 defmodule Jido.Connect.GitHub.OAuthTest do
   use ExUnit.Case, async: false
 
+  alias Jido.Connect.Error
   alias Jido.Connect.GitHub.OAuth
 
   setup {Req.Test, :verify_on_exit!}
@@ -67,12 +68,69 @@ defmodule Jido.Connect.GitHub.OAuthTest do
     end)
 
     assert {:error,
-            {:github_oauth_error, "bad_verification_code",
-             "The code passed is incorrect or expired."}} =
+            %Error.ProviderError{
+              provider: :github,
+              reason: "bad_verification_code",
+              details: %{description: "The code passed is incorrect or expired."}
+            }} =
              OAuth.exchange_code("bad",
                client_id: "client",
                client_secret: "secret",
                base_url: "https://github.test"
+             )
+  end
+
+  test "normalizes HTTP errors and revokes tokens" do
+    Req.Test.stub(__MODULE__, fn
+      %{method: "POST"} = conn ->
+        conn
+        |> Plug.Conn.put_status(502)
+        |> Req.Test.json(%{message: "upstream unavailable"})
+
+      %{method: "DELETE", request_path: "/applications/client/token"} = conn ->
+        assert ["Basic " <> _] = Plug.Conn.get_req_header(conn, "authorization")
+        Plug.Conn.resp(conn, 204, "")
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :http_error,
+              status: 502,
+              details: %{message: "upstream unavailable"}
+            }} =
+             OAuth.exchange_code("bad",
+               client_id: "client",
+               client_secret: "secret",
+               base_url: "https://github.test"
+             )
+
+    assert :ok =
+             OAuth.revoke_token("token",
+               client_id: "client",
+               client_secret: "secret",
+               api_base_url: "https://github.test"
+             )
+  end
+
+  test "normalizes token revocation HTTP errors" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      conn
+      |> Plug.Conn.put_status(403)
+      |> Req.Test.json(%{message: "Forbidden"})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :http_error,
+              status: 403,
+              details: %{message: "Forbidden"}
+            }} =
+             OAuth.revoke_token("token",
+               client_id: "client",
+               client_secret: "secret",
+               api_base_url: "https://github.test"
              )
   end
 end

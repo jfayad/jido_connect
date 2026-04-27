@@ -2,6 +2,7 @@ defmodule Jido.Connect.Slack.OAuthTest do
   use ExUnit.Case, async: false
 
   alias Jido.Connect
+  alias Jido.Connect.Error
   alias Jido.Connect.Slack.OAuth
 
   setup {Req.Test, :verify_on_exit!}
@@ -64,6 +65,43 @@ defmodule Jido.Connect.Slack.OAuthTest do
     assert token.access_token == "xoxb-token"
     assert token.scope == ["channels:read", "chat:write"]
     assert token.team == %{"id" => "T123", "name" => "Demo"}
+  end
+
+  test "normalizes Slack OAuth API and HTTP errors" do
+    Req.Test.stub(__MODULE__, fn
+      %{request_path: "/api-error"} = conn ->
+        Req.Test.json(conn, %{ok: false, error: "bad_redirect_uri"})
+
+      conn ->
+        conn
+        |> Plug.Conn.put_status(503)
+        |> Req.Test.json(%{error: "unavailable"})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :slack,
+              reason: "bad_redirect_uri",
+              status: 200
+            }} =
+             OAuth.exchange_code("bad",
+               client_id: "client",
+               client_secret: "secret",
+               base_url: "https://slack.test/api-error"
+             )
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :slack,
+              reason: :http_error,
+              status: 503,
+              details: %{body: %{"error" => "unavailable"}}
+            }} =
+             OAuth.exchange_code("bad",
+               client_id: "client",
+               client_secret: "secret",
+               base_url: "https://slack.test/http-error"
+             )
   end
 
   test "builds a redacted credential lease from a bot token response" do

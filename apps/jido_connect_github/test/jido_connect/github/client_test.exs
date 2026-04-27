@@ -1,6 +1,7 @@
 defmodule Jido.Connect.GitHub.ClientTest do
   use ExUnit.Case, async: false
 
+  alias Jido.Connect.Error
   alias Jido.Connect.GitHub.Client
 
   setup {Req.Test, :verify_on_exit!}
@@ -73,6 +74,36 @@ defmodule Jido.Connect.GitHub.ClientTest do
     assert {:ok, %{number: 2, state: "closed"}} = Client.close_issue("org/repo", 2, "token")
   end
 
+  test "list new issues and fetch helpers use expected REST paths" do
+    Req.Test.stub(__MODULE__, fn
+      %{method: "GET", request_path: "/repos/org/repo/issues"} = conn ->
+        assert %{"since" => "2026-04-24T20:00:00Z", "sort" => "updated"} =
+                 URI.decode_query(conn.query_string)
+
+        Req.Test.json(conn, [
+          %{
+            number: 3,
+            html_url: "https://github.test/3",
+            title: "Third",
+            state: "open",
+            updated_at: "2026-04-24T21:00:00Z"
+          }
+        ])
+
+      %{method: "GET", request_path: "/user"} = conn ->
+        Req.Test.json(conn, %{login: "octocat"})
+
+      %{method: "GET", request_path: "/app/installations/42"} = conn ->
+        Req.Test.json(conn, %{id: 42})
+    end)
+
+    assert {:ok, [%{number: 3, updated_at: "2026-04-24T21:00:00Z"}]} =
+             Client.list_new_issues("org/repo", "2026-04-24T20:00:00Z", "token")
+
+    assert {:ok, %{"login" => "octocat"}} = Client.fetch_authenticated_user("token")
+    assert {:ok, %{"id" => 42}} = Client.fetch_installation(42, "token")
+  end
+
   test "normalizes error responses" do
     Req.Test.stub(__MODULE__, fn conn ->
       conn
@@ -80,7 +111,33 @@ defmodule Jido.Connect.GitHub.ClientTest do
       |> Req.Test.json(%{message: "Resource not accessible"})
     end)
 
-    assert {:error, {:github_http_error, 403, "Resource not accessible"}} =
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :http_error,
+              status: 403,
+              details: %{message: "Resource not accessible"}
+            }} =
              Client.fetch_authenticated_user("token")
+  end
+
+  test "normalizes list and issue mutation error responses" do
+    Req.Test.stub(__MODULE__, fn
+      %{method: "GET"} = conn ->
+        conn
+        |> Plug.Conn.put_status(404)
+        |> Req.Test.json(%{message: "Not Found"})
+
+      %{method: "POST"} = conn ->
+        conn
+        |> Plug.Conn.put_status(422)
+        |> Req.Test.json(%{message: "Validation Failed"})
+    end)
+
+    assert {:error, %Error.ProviderError{status: 404, details: %{message: "Not Found"}}} =
+             Client.list_issues("org/missing", "open", "token")
+
+    assert {:error, %Error.ProviderError{status: 422, details: %{message: "Validation Failed"}}} =
+             Client.create_issue("org/repo", %{title: ""}, "token")
   end
 end

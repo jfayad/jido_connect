@@ -28,14 +28,29 @@ defmodule Jido.Connect.GitHubTest do
     spec = Jido.Connect.GitHub.integration()
 
     assert spec.id == :github
+    assert {:user, :oauth2} in Enum.map(spec.auth_profiles, &{&1.id, &1.kind})
+    assert {:installation, :app_installation} in Enum.map(spec.auth_profiles, &{&1.id, &1.kind})
 
-    assert {:ok, %{id: "github.issue.list", mutation?: false}} =
+    assert {:ok,
+            %{
+              id: "github.issue.list",
+              mutation?: false,
+              auth_profiles: [:user, :installation],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
              Connect.action(spec, "github.issue.list")
 
     assert {:ok, %{id: "github.issue.create", mutation?: true, confirmation: :required_for_ai}} =
              Connect.action(spec, "github.issue.create")
 
-    assert {:ok, %{id: "github.issue.new", kind: :poll, checkpoint: :updated_at}} =
+    assert {:ok,
+            %{
+              id: "github.issue.new",
+              kind: :poll,
+              checkpoint: :updated_at,
+              auth_profiles: [:user, :installation],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
              Connect.trigger(spec, "github.issue.new")
   end
 
@@ -74,6 +89,8 @@ defmodule Jido.Connect.GitHubTest do
     assert Enum.map(projection.output, & &1.name) == [:number, :url, :title, :state]
     assert projection.risk == :write
     assert projection.confirmation == :required_for_ai
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.CreateIssue.name() == "github_issue_create"
 
     assert Jido.Connect.GitHub.Actions.CreateIssue.description() ==
@@ -93,6 +110,45 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "GitHub App installation connections use installation-specific scopes" do
+    {context, lease} =
+      context_and_lease(profile: :installation, scopes: ["metadata:read", "issues:read"])
+
+    assert {:ok, %{issues: [%{number: 1, title: "First"}]}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.issue.list",
+               %{repo: "org/repo"},
+               context: context,
+               credential_lease: lease
+             )
+
+    missing_write = %{context | connection: %{context.connection | scopes: ["metadata:read"]}}
+
+    assert {:error,
+            %Connect.Error.AuthError{reason: :missing_scopes, missing_scopes: ["issues:write"]}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.issue.create",
+               %{repo: "org/repo", title: "Bug"},
+               context: missing_write,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes GitHub create issue action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{number: 2, title: "Bug", state: "open"}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.issue.create",
+               %{repo: "org/repo", title: "Bug"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   test "generated action delegates to integration invoke runtime" do
     {context, lease} = context_and_lease()
 
@@ -104,7 +160,7 @@ defmodule Jido.Connect.GitHubTest do
   end
 
   test "generated action rejects missing runtime context before provider execution" do
-    assert {:error, :context_required} =
+    assert {:error, %Connect.Error.AuthError{reason: :context_required}} =
              Jido.Connect.GitHub.Actions.ListIssues.run(%{repo: "org/repo"}, %{})
   end
 
@@ -158,6 +214,18 @@ defmodule Jido.Connect.GitHubTest do
     assert missing_scopes.state == :missing_scopes
     assert missing_scopes.missing_scopes == ["repo"]
 
+    [installation_missing_scopes | _] =
+      Jido.Connect.GitHub.Plugin.tool_availability(%{
+        connection:
+          elem(
+            context_and_lease(profile: :installation, scopes: ["metadata:read"]),
+            0
+          ).connection
+      })
+
+    assert installation_missing_scopes.state == :missing_scopes
+    assert installation_missing_scopes.missing_scopes == ["issues:read"]
+
     [disabled | _] =
       Jido.Connect.GitHub.Plugin.tool_availability(%{
         allowed_actions: []
@@ -170,7 +238,7 @@ defmodule Jido.Connect.GitHubTest do
   end
 
   test "validates required action input fields" do
-    assert {:error, [%Zoi.Error{code: :required, path: [:repo]}]} =
+    assert {:error, %Connect.Error.ValidationError{reason: :input, details: details}} =
              Connect.invoke(Jido.Connect.GitHub.integration(), "github.issue.list", %{},
                context: %{tenant_id: "tenant_1", actor: %{id: "user_1", type: :user}},
                credential_lease: %{
@@ -179,19 +247,24 @@ defmodule Jido.Connect.GitHubTest do
                  fields: %{github_client: FakeGitHubClient}
                }
              )
+
+    assert [%Zoi.Error{code: :required, path: [:repo]}] = details.errors
   end
 
-  defp context_and_lease do
+  defp context_and_lease(opts \\ []) do
+    profile = Keyword.get(opts, :profile, :user)
+    scopes = Keyword.get(opts, :scopes, default_scopes(profile))
+
     connection =
       Connect.Connection.new!(%{
         id: "conn_1",
         provider: :github,
-        profile: :user,
+        profile: profile,
         tenant_id: "tenant_1",
-        owner_type: :user,
+        owner_type: owner_type(profile),
         owner_id: "user_1",
         status: :connected,
-        scopes: ["repo"]
+        scopes: scopes
       })
 
     context =
@@ -210,4 +283,10 @@ defmodule Jido.Connect.GitHubTest do
 
     {context, lease}
   end
+
+  defp default_scopes(:installation), do: ["metadata:read", "issues:read", "issues:write"]
+  defp default_scopes(_profile), do: ["repo"]
+
+  defp owner_type(:installation), do: :installation
+  defp owner_type(_profile), do: :user
 end

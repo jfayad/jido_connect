@@ -1,6 +1,8 @@
 defmodule Jido.Connect.GitHub.Handlers.Triggers.NewIssuesPoller do
   @moduledoc false
 
+  alias Jido.Connect.{Error, Polling}
+
   def poll(config, %{credentials: credentials, checkpoint: checkpoint}) do
     with {:ok, client} <- fetch_client(credentials),
          {:ok, issues} <-
@@ -12,13 +14,16 @@ defmodule Jido.Connect.GitHub.Handlers.Triggers.NewIssuesPoller do
       {:ok,
        %{
          signals: Enum.map(issues, &normalize_signal(config.repo, &1)),
-         checkpoint: latest_checkpoint(issues, checkpoint)
+         checkpoint: Polling.latest_checkpoint(issues, :updated_at, checkpoint)
        }}
     end
   end
 
   defp fetch_client(%{github_client: client}) when is_atom(client), do: {:ok, client}
-  defp fetch_client(_credentials), do: {:error, :github_client_required}
+
+  defp fetch_client(_credentials) do
+    {:error, Error.config("GitHub client module is required", key: :github_client)}
+  end
 
   defp normalize_signal(repo, issue) do
     %{
@@ -27,15 +32,5 @@ defmodule Jido.Connect.GitHub.Handlers.Triggers.NewIssuesPoller do
       title: Map.fetch!(issue, :title),
       url: Map.fetch!(issue, :url)
     }
-  end
-
-  defp latest_checkpoint([], checkpoint), do: checkpoint
-
-  defp latest_checkpoint(issues, _checkpoint) do
-    issues
-    |> Enum.map(&Map.get(&1, :updated_at))
-    |> Enum.reject(&is_nil/1)
-    |> Enum.sort(:desc)
-    |> List.first()
   end
 end

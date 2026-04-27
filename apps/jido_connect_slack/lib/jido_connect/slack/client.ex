@@ -3,6 +3,8 @@ defmodule Jido.Connect.Slack.Client do
   Minimal Slack Web API client for provider handlers and host demos.
   """
 
+  alias Jido.Connect.{Data, Http}
+
   def list_channels(params, access_token) when is_map(params) and is_binary(access_token) do
     access_token
     |> request()
@@ -13,7 +15,7 @@ defmodule Jido.Connect.Slack.Client do
   def post_message(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
     access_token
     |> request()
-    |> Req.post(url: "/chat.postMessage", json: compact(attrs))
+    |> Req.post(url: "/chat.postMessage", json: Data.compact(attrs))
     |> handle_message_response()
   end
 
@@ -27,18 +29,15 @@ defmodule Jido.Connect.Slack.Client do
   defp list_channels_params(params) do
     params
     |> Map.take([:types, :exclude_archived, :limit, :cursor, :team_id])
-    |> compact()
+    |> Data.compact()
   end
 
   defp request(access_token) do
-    Req.new(
-      base_url: base_url(),
-      headers: [
-        {"authorization", "Bearer #{access_token}"},
-        {"user-agent", "jido-connect"}
-      ]
+    Http.bearer_request(
+      base_url(),
+      access_token,
+      req_options: Application.get_env(:jido_connect_slack, :slack_req_options, [])
     )
-    |> Req.merge(Application.get_env(:jido_connect_slack, :slack_req_options, []))
   end
 
   defp base_url do
@@ -60,9 +59,9 @@ defmodule Jido.Connect.Slack.Client do
        when status in 200..299 do
     {:ok,
      %{
-       channel: get(body, "channel"),
-       ts: get(body, "ts"),
-       message: get(body, "message") || %{}
+       channel: Data.get(body, "channel"),
+       ts: Data.get(body, "ts"),
+       message: Data.get(body, "message") || %{}
      }}
   end
 
@@ -76,30 +75,32 @@ defmodule Jido.Connect.Slack.Client do
   defp handle_map_response(response), do: handle_error_response(response)
 
   defp handle_error_response({:ok, %{status: status, body: %{"ok" => false} = body}}) do
-    {:error, {:slack_api_error, get(body, "error"), status, body}}
+    Jido.Connect.Error.provider("Slack API request failed",
+      provider: :slack,
+      status: status,
+      reason: Data.get(body, "error"),
+      details: %{body: body}
+    )
+    |> then(&{:error, &1})
   end
 
   defp handle_error_response({:ok, %{status: status, body: body}}) do
-    {:error, {:slack_http_error, status, body}}
+    Http.provider_error({:ok, %{status: status, body: body}},
+      provider: :slack,
+      message: "Slack HTTP request failed"
+    )
   end
 
-  defp handle_error_response({:error, reason}), do: {:error, reason}
+  defp handle_error_response({:error, _reason} = response),
+    do: Http.provider_error(response, provider: :slack, message: "Slack request failed")
 
   defp normalize_channel(channel) when is_map(channel) do
     %{
-      id: get(channel, "id"),
-      name: get(channel, "name"),
-      is_archived: get(channel, "is_archived"),
-      is_private: get(channel, "is_private"),
-      is_member: get(channel, "is_member")
+      id: Data.get(channel, "id"),
+      name: Data.get(channel, "name"),
+      is_archived: Data.get(channel, "is_archived"),
+      is_private: Data.get(channel, "is_private"),
+      is_member: Data.get(channel, "is_member")
     }
   end
-
-  defp compact(map) do
-    map
-    |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
-    |> Map.new()
-  end
-
-  defp get(map, key), do: Map.get(map, key) || Map.get(map, String.to_atom(key))
 end

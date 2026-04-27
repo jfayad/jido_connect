@@ -34,6 +34,15 @@ defmodule Jido.Connect.GitHub do
       refresh?(false)
       revoke?(true)
     end
+
+    app_installation :installation do
+      owner(:installation)
+      subject(:installation)
+      label("GitHub App installation")
+      fields([:access_token])
+      scopes(["metadata:read", "issues:read", "issues:write"])
+      default_scopes(["metadata:read", "issues:read"])
+    end
   end
 
   actions do
@@ -42,7 +51,9 @@ defmodule Jido.Connect.GitHub do
       label("List issues")
       description("List issues in a GitHub repository.")
       auth(:user)
+      auth_profiles([:user, :installation])
       scopes(["repo"])
+      scope_resolver(Jido.Connect.GitHub.ScopeResolver)
       mutation?(false)
       risk(:read)
       handler(Jido.Connect.GitHub.Handlers.Actions.ListIssues)
@@ -62,7 +73,9 @@ defmodule Jido.Connect.GitHub do
       label("Create issue")
       description("Create a GitHub issue.")
       auth(:user)
+      auth_profiles([:user, :installation])
       scopes(["repo"])
+      scope_resolver(Jido.Connect.GitHub.ScopeResolver)
       mutation?(true)
       risk(:write)
       confirmation(:required_for_ai)
@@ -90,7 +103,9 @@ defmodule Jido.Connect.GitHub do
       label("New issues")
       description("Poll for new GitHub issues.")
       auth(:user)
+      auth_profiles([:user, :installation])
       scopes(["repo"])
+      scope_resolver(Jido.Connect.GitHub.ScopeResolver)
       interval_ms(300_000)
       checkpoint(:updated_at)
       dedupe(%{key: [:repo, :issue_number]})

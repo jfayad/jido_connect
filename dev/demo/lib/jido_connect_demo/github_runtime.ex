@@ -2,6 +2,7 @@ defmodule Jido.Connect.Demo.GitHubRuntime do
   @moduledoc false
 
   alias Jido.Connect
+  alias Jido.Connect.Error
   alias Jido.Connect.Demo.Store
   alias Jido.Connect.GitHub.AppAuth
 
@@ -38,13 +39,13 @@ defmodule Jido.Connect.Demo.GitHubRuntime do
       Connect.Connection.new!(%{
         id: "github-installation-#{installation_id}",
         provider: :github,
-        profile: :user,
+        profile: :installation,
         tenant_id: tenant_id,
         owner_type: :installation,
         owner_id: owner_id,
         status: :connected,
         credential_ref: "github-app:#{installation_id}",
-        scopes: ["repo", "read:user"],
+        scopes: ["metadata:read", "issues:read", "issues:write"],
         metadata: %{mode: :github_app, installation_id: installation_id}
       })
 
@@ -111,7 +112,7 @@ defmodule Jido.Connect.Demo.GitHubRuntime do
         System.get_env("GITHUB_TOKEN")
 
     if blank?(token) do
-      {:error, :github_token_required}
+      {:error, Error.config("GitHub token is required", key: "GITHUB_TOKEN")}
     else
       Connect.CredentialLease.new(%{
         connection_id: connection.id,

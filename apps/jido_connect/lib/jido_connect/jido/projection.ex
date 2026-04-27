@@ -1,117 +1,135 @@
 defmodule Jido.Connect.Jido.ActionProjection do
   @moduledoc "Compile-time projection for one generated `Jido.Action` module."
 
-  @enforce_keys [
-    :module,
-    :integration_module,
-    :integration_id,
-    :action_id,
-    :name,
-    :label,
-    :description,
-    :input,
-    :output,
-    :input_schema,
-    :output_schema,
-    :auth_profile,
-    :scopes,
-    :risk,
-    :confirmation
-  ]
-  defstruct [
-    :module,
-    :integration_module,
-    :integration_id,
-    :action_id,
-    :name,
-    :label,
-    :description,
-    :input,
-    :output,
-    :input_schema,
-    :output_schema,
-    :auth_profile,
-    :scopes,
-    :risk,
-    :confirmation
-  ]
+  alias Jido.Connect.Field
+
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              module: Zoi.module(),
+              integration_module: Zoi.module(),
+              integration_id: Zoi.atom(),
+              action_id: Zoi.string(),
+              name: Zoi.string(),
+              label: Zoi.string(),
+              description: Zoi.string(),
+              input: Zoi.list(Field.schema()) |> Zoi.default([]),
+              output: Zoi.list(Field.schema()) |> Zoi.default([]),
+              input_schema: Zoi.any(),
+              output_schema: Zoi.any(),
+              auth_profile: Zoi.atom(),
+              auth_profiles: Zoi.list(Zoi.atom()) |> Zoi.default([]),
+              scopes: Zoi.list(Zoi.string()) |> Zoi.default([]),
+              scope_resolver: Zoi.module() |> Zoi.nullish() |> Zoi.optional(),
+              risk: Zoi.atom(),
+              confirmation: Zoi.atom()
+            },
+            coerce: true
+          )
+
+  @type t :: unquote(Zoi.type_spec(@schema))
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
+
+  def schema, do: @schema
+  def new!(attrs), do: Zoi.parse!(@schema, attrs)
+  def new(attrs), do: Zoi.parse(@schema, attrs)
 end
 
 defmodule Jido.Connect.Jido.SensorProjection do
   @moduledoc "Compile-time projection for one generated `Jido.Sensor` module."
 
-  @enforce_keys [
-    :module,
-    :integration_module,
-    :integration_id,
-    :trigger_id,
-    :name,
-    :label,
-    :description,
-    :kind,
-    :config,
-    :signal,
-    :config_schema,
-    :signal_schema,
-    :signal_type,
-    :signal_source,
-    :auth_profile,
-    :scopes,
-    :interval_ms
-  ]
-  defstruct [
-    :module,
-    :integration_module,
-    :integration_id,
-    :trigger_id,
-    :name,
-    :label,
-    :description,
-    :kind,
-    :config,
-    :signal,
-    :config_schema,
-    :signal_schema,
-    :signal_type,
-    :signal_source,
-    :auth_profile,
-    :scopes,
-    :interval_ms
-  ]
+  alias Jido.Connect.Field
+
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              module: Zoi.module(),
+              integration_module: Zoi.module(),
+              integration_id: Zoi.atom(),
+              trigger_id: Zoi.string(),
+              name: Zoi.string(),
+              label: Zoi.string(),
+              description: Zoi.string(),
+              kind: Zoi.enum([:webhook, :poll]),
+              config: Zoi.list(Field.schema()) |> Zoi.default([]),
+              signal: Zoi.list(Field.schema()) |> Zoi.default([]),
+              config_schema: Zoi.any(),
+              signal_schema: Zoi.any(),
+              signal_type: Zoi.string(),
+              signal_source: Zoi.string(),
+              auth_profile: Zoi.atom(),
+              auth_profiles: Zoi.list(Zoi.atom()) |> Zoi.default([]),
+              scopes: Zoi.list(Zoi.string()) |> Zoi.default([]),
+              scope_resolver: Zoi.module() |> Zoi.nullish() |> Zoi.optional(),
+              interval_ms: Zoi.integer() |> Zoi.nullish()
+            },
+            coerce: true
+          )
+
+  @type t :: unquote(Zoi.type_spec(@schema))
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
+
+  def schema, do: @schema
+  def new!(attrs), do: Zoi.parse!(@schema, attrs)
+  def new(attrs), do: Zoi.parse(@schema, attrs)
 end
 
 defmodule Jido.Connect.Jido.PluginProjection do
   @moduledoc "Compile-time projection for one generated `Jido.Plugin` module."
 
-  @enforce_keys [
-    :module,
-    :integration_module,
-    :integration_id,
-    :name,
-    :description,
-    :actions,
-    :sensors
-  ]
-  defstruct [
-    :module,
-    :integration_module,
-    :integration_id,
-    :name,
-    :description,
-    :actions,
-    :sensors
-  ]
+  alias Jido.Connect.Jido.{ActionProjection, SensorProjection}
+
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              module: Zoi.module(),
+              integration_module: Zoi.module(),
+              integration_id: Zoi.atom(),
+              name: Zoi.string(),
+              description: Zoi.string(),
+              actions: Zoi.list(ActionProjection.schema()) |> Zoi.default([]),
+              sensors: Zoi.list(SensorProjection.schema()) |> Zoi.default([])
+            },
+            coerce: true
+          )
+
+  @type t :: unquote(Zoi.type_spec(@schema))
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
+
+  def schema, do: @schema
+  def new!(attrs), do: Zoi.parse!(@schema, attrs)
+  def new(attrs), do: Zoi.parse(@schema, attrs)
 end
 
 defmodule Jido.Connect.Jido.ToolAvailability do
   @moduledoc "Host-facing generated tool availability."
 
-  @enforce_keys [:tool, :state]
-  defstruct [
-    :tool,
-    :state,
-    :connection_id,
-    :connection_selector,
-    missing_scopes: []
-  ]
+  @schema Zoi.struct(
+            __MODULE__,
+            %{
+              tool: Zoi.string(),
+              state:
+                Zoi.enum([
+                  :available,
+                  :connection_required,
+                  :missing_scopes,
+                  :disabled_by_policy
+                ]),
+              connection_id: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
+              connection_selector: Zoi.any() |> Zoi.optional(),
+              missing_scopes: Zoi.list(Zoi.string()) |> Zoi.default([])
+            },
+            coerce: true
+          )
+
+  @type t :: unquote(Zoi.type_spec(@schema))
+  @enforce_keys Zoi.Struct.enforce_keys(@schema)
+  defstruct Zoi.Struct.struct_fields(@schema)
+
+  def schema, do: @schema
+  def new!(attrs), do: Zoi.parse!(@schema, attrs)
+  def new(attrs), do: Zoi.parse(@schema, attrs)
 end

@@ -48,7 +48,7 @@ defmodule Jido.Connect.InvokeTest do
         fields: %{access_token: "token"}
       })
 
-    assert {:error, :connection_required} =
+    assert {:error, %Connect.Error.AuthError{reason: :connection_required}} =
              Connect.invoke(spec, "demo.action", %{},
                context: context,
                credential_lease: lease

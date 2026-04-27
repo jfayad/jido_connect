@@ -10,35 +10,33 @@ defmodule Jido.Connect.GitHub.OAuth do
   @token_url "https://github.com/login/oauth/access_token"
   @api_url "https://api.github.com"
 
+  alias Jido.Connect.{Data, Error, Scope}
+  alias Jido.Connect.OAuth, as: CoreOAuth
+
   def authorize_url(opts) when is_list(opts) do
-    client_id = fetch!(opts, :client_id, "GITHUB_CLIENT_ID")
+    client_id = CoreOAuth.fetch_required!(opts, :client_id, "GITHUB_CLIENT_ID")
     redirect_uri = Keyword.fetch!(opts, :redirect_uri)
     state = Keyword.fetch!(opts, :state)
-    scope = opts |> Keyword.get(:scope, "read:user") |> normalize_scope()
+    scope = opts |> Keyword.get(:scope, "read:user") |> Scope.encode(separator: " ")
     allow_signup = Keyword.get(opts, :allow_signup, true)
 
-    query =
-      %{
-        client_id: client_id,
-        redirect_uri: redirect_uri,
-        scope: scope,
-        state: state,
-        allow_signup: to_string(allow_signup)
-      }
-      |> URI.encode_query()
-
-    @authorize_url <> "?" <> query
+    CoreOAuth.authorize_url(@authorize_url, %{
+      client_id: client_id,
+      redirect_uri: redirect_uri,
+      scope: scope,
+      state: state,
+      allow_signup: to_string(allow_signup)
+    })
   end
 
   def exchange_code(code, opts \\ []) when is_binary(code) and is_list(opts) do
-    client_id = fetch!(opts, :client_id, "GITHUB_CLIENT_ID")
-    client_secret = fetch!(opts, :client_secret, "GITHUB_CLIENT_SECRET")
+    client_id = CoreOAuth.fetch_required!(opts, :client_id, "GITHUB_CLIENT_ID")
+    client_secret = CoreOAuth.fetch_required!(opts, :client_secret, "GITHUB_CLIENT_SECRET")
 
-    Req.new(
+    CoreOAuth.req(
       base_url: Keyword.get(opts, :base_url, @token_url),
       headers: [
-        {"accept", "application/json"},
-        {"user-agent", "jido-connect"}
+        {"accept", "application/json"}
       ]
     )
     |> Req.merge(Application.get_env(:jido_connect_github, :github_oauth_req_options, []))
@@ -55,15 +53,14 @@ defmodule Jido.Connect.GitHub.OAuth do
   end
 
   def revoke_token(access_token, opts \\ []) when is_binary(access_token) and is_list(opts) do
-    client_id = fetch!(opts, :client_id, "GITHUB_CLIENT_ID")
-    client_secret = fetch!(opts, :client_secret, "GITHUB_CLIENT_SECRET")
+    client_id = CoreOAuth.fetch_required!(opts, :client_id, "GITHUB_CLIENT_ID")
+    client_secret = CoreOAuth.fetch_required!(opts, :client_secret, "GITHUB_CLIENT_SECRET")
 
-    Req.new(
+    CoreOAuth.req(
       base_url: Keyword.get(opts, :api_base_url, @api_url),
       auth: {:basic, "#{client_id}:#{client_secret}"},
       headers: [
-        {"accept", "application/vnd.github+json"},
-        {"user-agent", "jido-connect"}
+        {"accept", "application/vnd.github+json"}
       ]
     )
     |> Req.merge(Application.get_env(:jido_connect_github, :github_oauth_req_options, []))
@@ -73,46 +70,62 @@ defmodule Jido.Connect.GitHub.OAuth do
         :ok
 
       {:ok, %{status: status, body: body}} ->
-        {:error, {:github_http_error, status, error_message(body)}}
+        {:error,
+         Error.provider("GitHub OAuth token revocation failed",
+           provider: :github,
+           reason: :http_error,
+           status: status,
+           details: %{message: error_message(body), body: body}
+         )}
 
       {:error, reason} ->
-        {:error, reason}
+        {:error,
+         Error.provider("GitHub OAuth token revocation failed",
+           provider: :github,
+           reason: :request_error,
+           details: %{reason: reason}
+         )}
     end
   end
 
   defp handle_token_response({:ok, %{status: status, body: body}}) when status in 200..299 do
-    if error = get(body, "error") do
-      {:error, {:github_oauth_error, error, get(body, "error_description")}}
+    if error = Data.get(body, "error") do
+      {:error,
+       Error.provider("GitHub OAuth code exchange failed",
+         provider: :github,
+         reason: error,
+         status: status,
+         details: %{description: Data.get(body, "error_description"), body: body}
+       )}
     else
       {:ok,
        %{
-         access_token: get(body, "access_token"),
-         token_type: get(body, "token_type"),
-         scope: get(body, "scope") |> parse_scope()
+         access_token: Data.get(body, "access_token"),
+         token_type: Data.get(body, "token_type"),
+         scope: body |> Data.get("scope") |> Scope.parse()
        }}
     end
   end
 
   defp handle_token_response({:ok, %{status: status, body: body}}) do
-    {:error, {:github_http_error, status, error_message(body)}}
+    {:error,
+     Error.provider("GitHub OAuth code exchange failed",
+       provider: :github,
+       reason: :http_error,
+       status: status,
+       details: %{message: error_message(body), body: body}
+     )}
   end
 
-  defp handle_token_response({:error, reason}), do: {:error, reason}
-
-  defp normalize_scope(scopes) when is_list(scopes), do: Enum.join(scopes, " ")
-  defp normalize_scope(scope) when is_binary(scope), do: scope
-
-  defp parse_scope(nil), do: []
-  defp parse_scope(scope) when is_binary(scope), do: String.split(scope, ~r/[\s,]+/, trim: true)
-
-  defp fetch!(opts, key, env_key) do
-    Keyword.get(opts, key) || System.get_env(env_key) ||
-      raise ArgumentError, "#{key} or #{env_key} is required"
+  defp handle_token_response({:error, reason}) do
+    {:error,
+     Error.provider("GitHub OAuth code exchange failed",
+       provider: :github,
+       reason: :request_error,
+       details: %{reason: reason}
+     )}
   end
 
-  defp get(map, key), do: Map.get(map, key) || Map.get(map, String.to_atom(key))
-
-  defp error_message(%{"message" => message}), do: message
-  defp error_message(%{message: message}), do: message
+  defp error_message(body) when is_map(body), do: Data.get(body, "message", body)
   defp error_message(body), do: body
 end

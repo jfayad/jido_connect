@@ -30,6 +30,19 @@
     </div>
   </section>
 
+  <section class="pb-6">
+    <form action="/" method="get" class="flex flex-col gap-3 sm:flex-row">
+      <input
+        class="input input-bordered w-full"
+        name="q"
+        value={@query}
+        placeholder="Search providers, auth modes, actions, and triggers"
+      />
+      <button class="btn btn-primary" type="submit">Search</button>
+      <a :if={@query != ""} class="btn btn-outline" href="/">Clear</a>
+    </form>
+  </section>
+
   <section class="grid gap-4 lg:grid-cols-3">
     <article
       :for={integration <- @integrations}
@@ -64,6 +77,17 @@
           {mode}
         </span>
       </div>
+
+      <dl :if={integration.status == :available} class="mt-4 grid grid-cols-2 gap-2 text-sm">
+        <div class="rounded-md bg-base-200 p-2">
+          <dt class="text-xs text-base-content/55">Actions</dt>
+          <dd class="mt-1 font-semibold">{length(integration.actions)}</dd>
+        </div>
+        <div class="rounded-md bg-base-200 p-2">
+          <dt class="text-xs text-base-content/55">Triggers</dt>
+          <dd class="mt-1 font-semibold">{length(integration.triggers)}</dd>
+        </div>
+      </dl>
 
       <div class="mt-5 flex flex-wrap gap-2">
         <a

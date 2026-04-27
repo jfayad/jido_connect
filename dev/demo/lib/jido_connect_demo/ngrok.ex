@@ -1,8 +1,6 @@
 defmodule Jido.Connect.Demo.Ngrok do
   @moduledoc false
 
-  @api ~c"http://127.0.0.1:4040/api/tunnels"
-
   def public_base_url do
     case System.get_env("JIDO_CONNECT_PUBLIC_BASE_URL") do
       nil -> detect_ngrok_url()
@@ -39,23 +37,9 @@ defmodule Jido.Connect.Demo.Ngrok do
   end
 
   defp detect_ngrok_url do
-    Application.ensure_all_started(:inets)
-    Application.ensure_all_started(:ssl)
-
-    case :httpc.request(:get, {@api, []}, [], body_format: :binary) do
-      {:ok, {{_, 200, _}, _headers, body}} ->
-        body
-        |> Jason.decode!()
-        |> Map.get("tunnels", [])
-        |> Enum.find_value(fn tunnel ->
-          url = Map.get(tunnel, "public_url")
-          if is_binary(url) and String.starts_with?(url, "https://"), do: url
-        end)
-
-      _other ->
-        nil
+    case Jido.Connect.Dev.Ngrok.public_url() do
+      {:ok, url} -> url
+      {:error, _error} -> nil
     end
-  rescue
-    _error -> nil
   end
 end

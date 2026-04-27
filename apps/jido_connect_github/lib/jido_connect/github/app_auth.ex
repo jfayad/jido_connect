@@ -7,6 +7,7 @@ defmodule Jido.Connect.GitHub.AppAuth do
   """
 
   alias Jido.Connect
+  alias Jido.Connect.{Data, Error}
   alias Jido.Connect.GitHub.Client
 
   @api_version "2022-11-28"
@@ -82,8 +83,8 @@ defmodule Jido.Connect.GitHub.AppAuth do
 
   defp fetch_app_id(opts) do
     case Keyword.get(opts, :app_id) || System.get_env("GITHUB_APP_ID") do
-      nil -> {:error, :github_app_id_required}
-      "" -> {:error, :github_app_id_required}
+      nil -> {:error, Error.config("GITHUB_APP_ID is required", key: "GITHUB_APP_ID")}
+      "" -> {:error, Error.config("GITHUB_APP_ID is required", key: "GITHUB_APP_ID")}
       app_id -> {:ok, app_id}
     end
   end
@@ -100,12 +101,19 @@ defmodule Jido.Connect.GitHub.AppAuth do
         path
         |> File.read()
         |> then(fn
-          {:ok, pem} -> decode_private_key(pem)
-          {:error, reason} -> {:error, {:github_private_key_read_failed, reason}}
+          {:ok, pem} ->
+            decode_private_key(pem)
+
+          {:error, reason} ->
+            {:error,
+             Error.config("Unable to read GitHub private key",
+               key: "GITHUB_PRIVATE_KEY_PATH",
+               details: %{reason: reason}
+             )}
         end)
 
       true ->
-        {:error, :github_private_key_required}
+        {:error, Error.config("GitHub private key is required", key: "GITHUB_PRIVATE_KEY_PATH")}
     end
   end
 
@@ -113,7 +121,8 @@ defmodule Jido.Connect.GitHub.AppAuth do
     [entry] = :public_key.pem_decode(pem)
     {:ok, :public_key.pem_entry_decode(entry)}
   rescue
-    _error -> {:error, :github_private_key_invalid}
+    _error ->
+      {:error, Error.config("GitHub private key is invalid", key: "GITHUB_PRIVATE_KEY_PATH")}
   end
 
   defp sign_jwt(payload, private_key) do
@@ -152,10 +161,10 @@ defmodule Jido.Connect.GitHub.AppAuth do
   defp handle_token_response({:ok, %{status: status, body: body}}) when status in 200..299 do
     {:ok,
      %{
-       token: fetch!(body, "token"),
-       expires_at: parse_datetime!(fetch!(body, "expires_at")),
-       permissions: get(body, "permissions") || %{},
-       repositories: get(body, "repositories") || []
+       token: Data.fetch!(body, "token"),
+       expires_at: parse_datetime!(Data.fetch!(body, "expires_at")),
+       permissions: Data.get(body, "permissions", %{}),
+       repositories: Data.get(body, "repositories", [])
      }}
   end
 
@@ -175,21 +184,30 @@ defmodule Jido.Connect.GitHub.AppAuth do
   defp handle_installation_response(response), do: handle_error_response(response)
 
   defp handle_error_response({:ok, %{status: status, body: body}}) do
-    {:error, {:github_http_error, status, error_message(body)}}
+    {:error,
+     Error.provider("GitHub App API request failed",
+       provider: :github,
+       reason: :http_error,
+       status: status,
+       details: %{message: error_message(body), body: body}
+     )}
   end
 
-  defp handle_error_response({:error, reason}), do: {:error, reason}
+  defp handle_error_response({:error, reason}) do
+    {:error,
+     Error.provider("GitHub App API request failed",
+       provider: :github,
+       reason: :request_error,
+       details: %{reason: reason}
+     )}
+  end
 
   defp parse_datetime!(value) do
     {:ok, datetime, _offset} = DateTime.from_iso8601(value)
     datetime
   end
 
-  defp fetch!(map, key), do: get(map, key) || raise(KeyError, key: key, term: map)
-  defp get(map, key), do: Map.get(map, key) || Map.get(map, String.to_atom(key))
-
-  defp error_message(%{"message" => message}), do: message
-  defp error_message(%{message: message}), do: message
+  defp error_message(body) when is_map(body), do: Data.get(body, "message", body)
   defp error_message(body), do: body
 
   defp base64url(value) do

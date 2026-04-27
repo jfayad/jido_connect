@@ -15,6 +15,7 @@ defmodule JidoConnectSlack.MixProject do
       package: package(),
       docs: docs(),
       source_url: "https://github.com/mikehostetler/jido_connect",
+      test_coverage: test_coverage(),
       deps: deps()
     ]
   end
@@ -67,6 +68,16 @@ defmodule JidoConnectSlack.MixProject do
       main: "readme",
       extras: ["README.md", "CHANGELOG.md"],
       source_ref: "v0.1.0"
+    ]
+  end
+
+  defp test_coverage do
+    [
+      summary: [threshold: 80],
+      ignore_modules: [
+        Jido.Connect.Slack.Application,
+        ~r/^Mix\.Tasks\./
+      ]
     ]
   end
 end

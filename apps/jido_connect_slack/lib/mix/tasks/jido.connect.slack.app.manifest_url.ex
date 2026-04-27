@@ -13,10 +13,10 @@ defmodule Mix.Tasks.Jido.Connect.Slack.App.ManifestUrl do
 
   use Mix.Task
 
+  alias Jido.Connect.Dev.PublicUrl
   alias Jido.Connect.Slack.AppManifest
 
   @shortdoc "Generates a Slack app manifest creation URL"
-  @ngrok_api ~c"http://127.0.0.1:4040/api/tunnels"
 
   @impl Mix.Task
   def run(args) do
@@ -38,10 +38,7 @@ defmodule Mix.Tasks.Jido.Connect.Slack.App.ManifestUrl do
       Mix.raise("invalid options: #{inspect(invalid)}")
     end
 
-    Application.ensure_all_started(:inets)
-    Application.ensure_all_started(:ssl)
-
-    base_url = base_url!(opts)
+    base_url = PublicUrl.resolve!(opts, ["JIDO_SLACK_PUBLIC_URL", "JIDO_PUBLIC_URL"])
 
     manifest =
       AppManifest.build(base_url,
@@ -58,32 +55,6 @@ defmodule Mix.Tasks.Jido.Connect.Slack.App.ManifestUrl do
     write_outputs!(output, manifest, creation_url)
     print_summary(base_url, manifest, creation_url, output)
     maybe_open(creation_url, opts)
-  end
-
-  defp base_url!(opts) do
-    opts[:url] || System.get_env("JIDO_SLACK_PUBLIC_URL") || System.get_env("JIDO_PUBLIC_URL") ||
-      ngrok_url!()
-  end
-
-  defp ngrok_url! do
-    case :httpc.request(:get, {@ngrok_api, []}, [], body_format: :binary) do
-      {:ok, {{_, 200, _}, _headers, body}} ->
-        body
-        |> Jason.decode!()
-        |> Map.get("tunnels", [])
-        |> Enum.find_value(fn tunnel ->
-          public_url = Map.get(tunnel, "public_url")
-
-          if is_binary(public_url) and String.starts_with?(public_url, "https://") do
-            public_url
-          end
-        end) || Mix.raise("no HTTPS ngrok tunnel found")
-
-      _other ->
-        Mix.raise("pass --url or start ngrok before generating the Slack manifest URL")
-    end
-  rescue
-    _error -> Mix.raise("pass --url or start ngrok before generating the Slack manifest URL")
   end
 
   defp write_outputs!(output, manifest, creation_url) do

@@ -56,7 +56,9 @@ defmodule Jido.Connect.Dsl.Extension do
     label: [type: :string],
     description: [type: :string],
     auth: [type: :atom],
+    auth_profiles: [type: {:list, :atom}, default: []],
     scopes: [type: {:list, :string}, default: []],
+    scope_resolver: [type: :module],
     mutation?: [type: :boolean, default: false],
     risk: [type: :atom, default: :read],
     confirmation: [type: :atom, default: :none],
@@ -122,13 +124,36 @@ defmodule Jido.Connect.Dsl.Extension do
     schema: @api_key_schema
   }
 
+  @app_installation_schema [
+    id: [type: :atom, required: true],
+    label: [type: :string],
+    owner: [type: :atom, required: true],
+    subject: [type: :atom, required: true],
+    fields: [type: {:list, :atom}, default: []],
+    scopes: [type: {:list, :string}, default: []],
+    default_scopes: [type: {:list, :string}, default: []],
+    default?: [type: :boolean, default: false],
+    metadata: [type: :map, default: %{}]
+  ]
+
+  @app_installation %Spark.Dsl.Entity{
+    name: :app_installation,
+    target: Dsl.AuthProfile,
+    args: [:id],
+    identifier: :id,
+    auto_set_fields: [kind: :app_installation],
+    schema: @app_installation_schema
+  }
+
   @poll_schema [
     name: [type: :atom, required: true],
     id: [type: :string],
     label: [type: :string],
     description: [type: :string],
     auth: [type: :atom],
+    auth_profiles: [type: {:list, :atom}, default: []],
     scopes: [type: {:list, :string}, default: []],
+    scope_resolver: [type: :module],
     interval_ms: [type: :pos_integer],
     checkpoint: [type: :atom],
     dedupe: [type: :map],
@@ -160,7 +185,7 @@ defmodule Jido.Connect.Dsl.Extension do
 
   @auth %Spark.Dsl.Section{
     name: :auth,
-    entities: [@oauth2, @api_key]
+    entities: [@oauth2, @api_key, @app_installation]
   }
 
   @actions %Spark.Dsl.Section{

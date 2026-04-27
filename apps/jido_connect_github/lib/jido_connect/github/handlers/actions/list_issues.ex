@@ -1,6 +1,8 @@
 defmodule Jido.Connect.GitHub.Handlers.Actions.ListIssues do
   @moduledoc false
 
+  alias Jido.Connect.Error
+
   def run(input, %{credentials: credentials}) do
     with {:ok, client} <- fetch_client(credentials),
          {:ok, issues} <-
@@ -14,7 +16,10 @@ defmodule Jido.Connect.GitHub.Handlers.Actions.ListIssues do
   end
 
   defp fetch_client(%{github_client: client}) when is_atom(client), do: {:ok, client}
-  defp fetch_client(_credentials), do: {:error, :github_client_required}
+
+  defp fetch_client(_credentials) do
+    {:error, Error.config("GitHub client module is required", key: :github_client)}
+  end
 
   defp normalize_issue(issue) do
     %{

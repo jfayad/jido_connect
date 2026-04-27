@@ -3,6 +3,9 @@ defmodule Jido.Connect.Slack.Webhook do
   Pure helpers for Slack signed request verification and Events API payloads.
   """
 
+  alias Jido.Connect.{Data, Error}
+  alias Jido.Connect.Webhook, as: CoreWebhook
+
   @max_skew_seconds 300
 
   def parse_headers(headers) when is_map(headers) do
@@ -14,8 +17,13 @@ defmodule Jido.Connect.Slack.Webhook do
 
   def verify_signature(body, headers, signing_secret, opts \\ [])
 
-  def verify_signature(_body, _headers, nil, _opts), do: {:error, :missing_signing_secret}
-  def verify_signature(_body, _headers, "", _opts), do: {:error, :missing_signing_secret}
+  def verify_signature(_body, _headers, nil, _opts) do
+    {:error, Error.auth("Slack signing secret is required", reason: :missing_signing_secret)}
+  end
+
+  def verify_signature(_body, _headers, "", _opts) do
+    {:error, Error.auth("Slack signing secret is required", reason: :missing_signing_secret)}
+  end
 
   def verify_signature(body, headers, signing_secret, opts)
       when is_binary(body) and is_map(headers) and is_binary(signing_secret) do
@@ -24,18 +32,20 @@ defmodule Jido.Connect.Slack.Webhook do
 
     with {:ok, timestamp} <- parse_timestamp(parsed.timestamp),
          :ok <- reject_replay(timestamp, now),
-         {:ok, expected} <- expected_signature(body, timestamp, signing_secret) do
-      if secure_compare(expected, parsed.signature || "") do
-        :ok
-      else
-        {:error, :invalid_signature}
-      end
+         {:ok, base} <- signature_base(body, timestamp) do
+      CoreWebhook.verify_hmac_sha256(base, parsed.signature, signing_secret,
+        prefix: "v0=",
+        missing_signature_message: "Slack request signature is invalid",
+        missing_signature_reason: :invalid_signature,
+        invalid_signature_message: "Slack request signature is invalid",
+        invalid_signature_reason: :invalid_signature
+      )
     end
   end
 
   def verify_request(body, headers, signing_secret, opts \\ []) do
     with :ok <- verify_signature(body, headers, signing_secret, opts),
-         {:ok, payload} <- Jason.decode(body) do
+         {:ok, payload} <- decode_body(body) do
       {:ok, payload}
     end
   end
@@ -45,32 +55,60 @@ defmodule Jido.Connect.Slack.Webhook do
     {:ok, challenge}
   end
 
-  def url_verification_challenge(_payload), do: {:error, :not_url_verification}
+  def url_verification_challenge(_payload) do
+    {:error,
+     Error.provider("Slack payload is not a URL verification challenge",
+       provider: :slack,
+       reason: :not_url_verification
+     )}
+  end
 
   def normalize_event(
         %{"type" => "event_callback", "event" => %{"type" => "app_mention"} = event} = payload
       ) do
     {:ok,
      %{
-       team_id: Map.get(payload, "team_id"),
-       event_id: Map.get(payload, "event_id"),
-       channel: Map.get(event, "channel"),
-       user: Map.get(event, "user"),
-       text: Map.get(event, "text"),
-       ts: Map.get(event, "ts")
+       team_id: Data.get(payload, "team_id"),
+       event_id: Data.get(payload, "event_id"),
+       channel: Data.get(event, "channel"),
+       user: Data.get(event, "user"),
+       text: Data.get(event, "text"),
+       ts: Data.get(event, "ts")
      }}
   end
 
-  def normalize_event(%{"type" => type}), do: {:error, {:unsupported_event, type}}
-  def normalize_event(_payload), do: {:error, :unsupported_event}
+  def normalize_event(%{"type" => type}) do
+    {:error,
+     Error.provider("Unsupported Slack event",
+       provider: :slack,
+       reason: :unsupported_event,
+       details: %{type: type}
+     )}
+  end
 
-  defp parse_timestamp(nil), do: {:error, :missing_timestamp}
-  defp parse_timestamp(""), do: {:error, :missing_timestamp}
+  def normalize_event(_payload) do
+    {:error,
+     Error.provider("Unsupported Slack event",
+       provider: :slack,
+       reason: :unsupported_event
+     )}
+  end
+
+  defp parse_timestamp(nil) do
+    {:error, Error.auth("Slack request timestamp is required", reason: :missing_timestamp)}
+  end
+
+  defp parse_timestamp("") do
+    {:error, Error.auth("Slack request timestamp is required", reason: :missing_timestamp)}
+  end
 
   defp parse_timestamp(timestamp) when is_binary(timestamp) do
     case Integer.parse(timestamp) do
-      {value, ""} -> {:ok, value}
-      _other -> {:error, :invalid_timestamp}
+      {value, ""} ->
+        {:ok, value}
+
+      _other ->
+        {:error, Error.auth("Slack request timestamp is invalid", reason: :invalid_timestamp)}
     end
   end
 
@@ -78,35 +116,21 @@ defmodule Jido.Connect.Slack.Webhook do
     if abs(now - timestamp) <= @max_skew_seconds do
       :ok
     else
-      {:error, :stale_timestamp}
+      {:error, Error.auth("Slack request timestamp is stale", reason: :stale_timestamp)}
     end
   end
 
-  defp expected_signature(body, timestamp, signing_secret) do
-    base = "v0:#{timestamp}:#{body}"
+  defp signature_base(body, timestamp), do: {:ok, "v0:#{timestamp}:#{body}"}
 
-    signature =
-      :hmac
-      |> :crypto.mac(:sha256, signing_secret, base)
-      |> Base.encode16(case: :lower)
-
-    {:ok, "v0=#{signature}"}
+  defp decode_body(body) do
+    CoreWebhook.decode_json(body,
+      provider: :slack,
+      message: "Slack request body is invalid JSON",
+      reason: :invalid_payload
+    )
   end
 
   defp header(headers, key) do
-    Map.get(headers, key) || Map.get(headers, String.downcase(key)) ||
-      Map.get(headers, String.to_atom(key))
+    CoreWebhook.header(headers, key)
   end
-
-  defp secure_compare(left, right) when byte_size(left) == byte_size(right) do
-    left
-    |> :binary.bin_to_list()
-    |> Enum.zip(:binary.bin_to_list(right))
-    |> Enum.reduce(0, fn {left_byte, right_byte}, acc ->
-      :erlang.bor(acc, :erlang.bxor(left_byte, right_byte))
-    end)
-    |> Kernel.==(0)
-  end
-
-  defp secure_compare(_left, _right), do: false
 end

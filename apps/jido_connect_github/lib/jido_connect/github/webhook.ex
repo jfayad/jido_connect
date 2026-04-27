@@ -3,6 +3,9 @@ defmodule Jido.Connect.GitHub.Webhook do
   Pure helpers for GitHub webhook verification and event normalization.
   """
 
+  alias Jido.Connect.{Data, Error}
+  alias Jido.Connect.Webhook, as: CoreWebhook
+
   def parse_headers(headers) when is_map(headers) do
     %{
       delivery_id: header(headers, "x-github-delivery"),
@@ -13,21 +16,26 @@ defmodule Jido.Connect.GitHub.Webhook do
 
   def verify_signature(body, signature, secret)
 
-  def verify_signature(_body, _signature, nil), do: {:error, :missing_secret}
-  def verify_signature(_body, _signature, ""), do: {:error, :missing_secret}
-  def verify_signature(_body, nil, _secret), do: {:error, :missing_signature}
+  def verify_signature(_body, _signature, nil),
+    do: {:error, Error.auth("GitHub webhook secret is required", reason: :missing_secret)}
+
+  def verify_signature(_body, _signature, ""),
+    do: {:error, Error.auth("GitHub webhook secret is required", reason: :missing_secret)}
+
+  def verify_signature(_body, nil, _secret),
+    do: {:error, Error.auth("GitHub webhook signature is required", reason: :missing_signature)}
 
   def verify_signature(body, "sha256=" <> expected, secret)
       when is_binary(body) and is_binary(secret) do
-    actual =
-      :hmac
-      |> :crypto.mac(:sha256, secret, body)
-      |> Base.encode16(case: :lower)
-
-    if secure_compare(actual, expected), do: :ok, else: {:error, :invalid_signature}
+    CoreWebhook.verify_hmac_sha256(body, "sha256=" <> expected, secret,
+      prefix: "sha256=",
+      invalid_signature_message: "GitHub webhook signature is invalid",
+      invalid_signature_reason: :invalid_signature
+    )
   end
 
-  def verify_signature(_body, _signature, _secret), do: {:error, :invalid_signature}
+  def verify_signature(_body, _signature, _secret),
+    do: {:error, Error.auth("GitHub webhook signature is invalid", reason: :invalid_signature)}
 
   def verify_request(body, headers, secret) do
     parsed = parse_headers(headers)
@@ -39,15 +47,15 @@ defmodule Jido.Connect.GitHub.Webhook do
   end
 
   def normalize_signal("issues", %{"action" => "opened"} = payload) do
-    issue = get(payload, "issue") || %{}
-    repo = get(payload, "repository") || %{}
+    issue = Data.get(payload, "issue") || %{}
+    repo = Data.get(payload, "repository") || %{}
 
     {:ok,
      %{
-       repo: get(repo, "full_name"),
-       issue_number: get(issue, "number"),
-       title: get(issue, "title"),
-       url: get(issue, "html_url") || get(issue, "url")
+       repo: Data.get(repo, "full_name"),
+       issue_number: Data.get(issue, "number"),
+       title: Data.get(issue, "title"),
+       url: Data.get(issue, "html_url") || Data.get(issue, "url")
      }}
   end
 
@@ -56,39 +64,40 @@ defmodule Jido.Connect.GitHub.Webhook do
   end
 
   def normalize_signal("issues", payload) when is_map(payload) do
-    {:error, {:unsupported_issue_action, get(payload, "action")}}
+    {:error,
+     Error.provider("Unsupported GitHub issue webhook action",
+       provider: :github,
+       reason: :unsupported_issue_action,
+       details: %{action: Data.get(payload, "action")}
+     )}
   end
 
-  def normalize_signal(_event, _payload), do: {:error, :unsupported_event}
+  def normalize_signal(event, _payload) do
+    {:error,
+     Error.provider("Unsupported GitHub webhook event",
+       provider: :github,
+       reason: :unsupported_event,
+       details: %{event: event}
+     )}
+  end
 
   def duplicate?(delivery_id, seen_delivery_ids) do
-    delivery_id in seen_delivery_ids
+    CoreWebhook.duplicate?(delivery_id, seen_delivery_ids)
   end
 
   defp decode_body(body) when is_binary(body) do
-    Jason.decode(body)
+    CoreWebhook.decode_json(body,
+      provider: :github,
+      message: "GitHub webhook body is invalid JSON",
+      reason: :invalid_payload
+    )
   end
 
   defp header(headers, key) do
-    Map.get(headers, key) || Map.get(headers, String.downcase(key)) ||
-      Map.get(headers, String.to_atom(key))
+    CoreWebhook.header(headers, key)
   end
-
-  defp get(map, key), do: Map.get(map, key) || Map.get(map, String.to_atom(key))
 
   defp stringify_keys(map) when is_map(map) do
     Map.new(map, fn {key, value} -> {to_string(key), value} end)
   end
-
-  defp secure_compare(left, right) when byte_size(left) == byte_size(right) do
-    left
-    |> :binary.bin_to_list()
-    |> Enum.zip(:binary.bin_to_list(right))
-    |> Enum.reduce(0, fn {left_byte, right_byte}, acc ->
-      :erlang.bor(acc, :erlang.bxor(left_byte, right_byte))
-    end)
-    |> Kernel.==(0)
-  end
-
-  defp secure_compare(_left, _right), do: false
 end

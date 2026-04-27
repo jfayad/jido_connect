@@ -12,8 +12,9 @@ defmodule Mix.Tasks.Jido.Connect.Github.App.Manifest do
 
   use Mix.Task
 
+  alias Jido.Connect.Dev.PublicUrl
+
   @shortdoc "Generates a GitHub App manifest registration page"
-  @ngrok_api ~c"http://127.0.0.1:4040/api/tunnels"
 
   @impl Mix.Task
   def run(args) do
@@ -32,10 +33,7 @@ defmodule Mix.Tasks.Jido.Connect.Github.App.Manifest do
       Mix.raise("invalid options: #{inspect(invalid)}")
     end
 
-    Application.ensure_all_started(:inets)
-    Application.ensure_all_started(:ssl)
-
-    base_url = base_url!(opts)
+    base_url = PublicUrl.resolve!(opts, ["JIDO_GITHUB_PUBLIC_URL", "JIDO_PUBLIC_URL"])
     name = Keyword.get(opts, :name, default_app_name())
     output = Keyword.get(opts, :output, ".secrets/github-app-manifest.html")
     action = github_form_action(Keyword.get(opts, :owner))
@@ -63,31 +61,6 @@ defmodule Mix.Tasks.Jido.Connect.Github.App.Manifest do
     """)
 
     maybe_open(output, opts)
-  end
-
-  defp base_url!(opts) do
-    opts[:url] || System.get_env("JIDO_GITHUB_PUBLIC_URL") || ngrok_url!()
-  end
-
-  defp ngrok_url! do
-    case :httpc.request(:get, {@ngrok_api, []}, [], body_format: :binary) do
-      {:ok, {{_, 200, _}, _headers, body}} ->
-        body
-        |> Jason.decode!()
-        |> Map.get("tunnels", [])
-        |> Enum.find_value(fn tunnel ->
-          public_url = Map.get(tunnel, "public_url")
-
-          if is_binary(public_url) and String.starts_with?(public_url, "https://") do
-            public_url
-          end
-        end) || Mix.raise("no HTTPS ngrok tunnel found")
-
-      _other ->
-        Mix.raise("pass --url or start ngrok before generating the manifest")
-    end
-  rescue
-    _error -> Mix.raise("pass --url or start ngrok before generating the manifest")
   end
 
   defp default_app_name do

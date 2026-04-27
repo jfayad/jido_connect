@@ -2,6 +2,8 @@ defmodule Jido.Connect.JidoSensorRuntime do
   @moduledoc false
 
   alias Jido.Connect
+  alias Jido.Connect.ConnectionSelector
+  alias Jido.Connect.Error
   alias Jido.Connect.Jido.SensorProjection
 
   def init(%SensorProjection{} = projection, config, context) when is_map(config) do
@@ -18,6 +20,8 @@ defmodule Jido.Connect.JidoSensorRuntime do
     context = Map.get(state, :context, %{})
 
     with {:ok, integration_context} <- integration_context(context),
+         {:ok, integration_context} <-
+           resolve_context_connection(integration_context, context, projection),
          {:ok, lease} <- credential_lease(context),
          {:ok, result} <-
            Connect.poll(
@@ -59,15 +63,46 @@ defmodule Jido.Connect.JidoSensorRuntime do
       tenant_id: tenant_id,
       actor: actor,
       connection: Map.get(context, :connection),
+      connection_selector: Map.get(context, :connection_selector),
       claims: Map.get(context, :claims, %{}),
       metadata: Map.get(context, :metadata, %{})
     })
   end
 
-  defp integration_context(_context), do: {:error, :context_required}
+  defp integration_context(_context), do: {:error, Error.context_required()}
+
+  defp resolve_context_connection(
+         %Connect.Context{connection: %Connect.Connection{}} = context,
+         _runtime_context,
+         _projection
+       ),
+       do: {:ok, context}
+
+  defp resolve_context_connection(
+         %Connect.Context{connection_selector: %ConnectionSelector{} = selector} = context,
+         runtime_context,
+         projection
+       ) do
+    resolver = Map.get(runtime_context, :connection_resolver)
+
+    case ConnectionSelector.resolve(selector, resolver, projection, runtime_context) do
+      {:ok, %Connect.Connection{} = connection} ->
+        {:ok, %{context | connection: connection}}
+
+      :error ->
+        {:error,
+         Error.connection_required(%{
+           trigger_id: projection.trigger_id,
+           connection_selector: selector
+         })}
+    end
+  end
+
+  defp resolve_context_connection(%Connect.Context{} = context, _runtime_context, _projection),
+    do: {:ok, context}
 
   defp credential_lease(%{credential_lease: %Connect.CredentialLease{} = lease}),
     do: {:ok, lease}
 
-  defp credential_lease(_context), do: {:error, :credential_lease_required}
+  defp credential_lease(_context), do: {:error, Error.credential_lease_required()}
 end

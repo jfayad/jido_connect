@@ -1,14 +1,15 @@
 defmodule Jido.Connect.Context do
   @moduledoc "Host-provided tenant, actor, and connection selection context."
 
-  alias Jido.Connect.Connection
+  alias Jido.Connect.{Connection, ConnectionSelector}
 
   @schema Zoi.struct(
             __MODULE__,
             %{
               tenant_id: Zoi.string(),
               actor: Zoi.map(),
-              connection: Connection.schema() |> Zoi.optional(),
+              connection: Connection.schema() |> Zoi.nullish() |> Zoi.optional(),
+              connection_selector: ConnectionSelector.schema() |> Zoi.nullish() |> Zoi.optional(),
               claims: Zoi.map() |> Zoi.default(%{}),
               metadata: Zoi.map() |> Zoi.default(%{})
             },

@@ -51,6 +51,7 @@ defmodule Jido.Connect.DemoWeb.Router do
 
     get("/health", IntegrationController, :health)
     get("/integrations", IntegrationController, :index)
+    get("/integrations/catalog", IntegrationController, :catalog)
     post("/integrations/github/webhook", IntegrationController, :github_webhook)
     post("/integrations/slack/events", IntegrationController, :slack_events)
     post("/integrations/slack/interactivity", IntegrationController, :slack_interactivity)

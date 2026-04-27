@@ -1,12 +1,27 @@
 defmodule Jido.Connect.DemoWeb.IntegrationController do
   use Jido.Connect.DemoWeb, :controller
 
+  alias Jido.Connect.{Data, Error}
   alias Jido.Connect.Demo.{GitHubRuntime, Ngrok, SlackRuntime, Store}
   alias Jido.Connect.GitHub.{OAuth, Webhook}
   alias Jido.Connect.Slack.Webhook, as: SlackWebhook
 
   def index(conn, _params) do
     json(conn, %{integrations: Jido.Connect.Demo.Integrations.api_index()})
+  end
+
+  def catalog(conn, params) do
+    filters =
+      [
+        query: Map.get(params, "q") || Map.get(params, "query"),
+        status: Map.get(params, "status"),
+        category: Map.get(params, "category"),
+        auth_kind: Map.get(params, "auth_kind"),
+        tool: Map.get(params, "tool")
+      ]
+      |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+
+    json(conn, %{catalog: Jido.Connect.Demo.Integrations.catalog(filters)})
   end
 
   def health(conn, _params), do: json(conn, %{ok: true})
@@ -175,7 +190,7 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
         cursor: Map.get(params, "cursor"),
         team_id: Map.get(params, "team_id")
       }
-      |> compact()
+      |> Data.compact()
 
     result = SlackRuntime.run_list_channels(connection_id, action_params)
     Store.put_result(:slack_channel_list, result_status(result), result)
@@ -207,7 +222,7 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
         thread_ts: Map.get(params, "thread_ts"),
         reply_broadcast: truthy?(Map.get(params, "reply_broadcast"))
       }
-      |> compact()
+      |> Data.compact()
 
     result = SlackRuntime.run_post_message(connection_id, action_params)
     Store.put_result(:slack_message_post, result_status(result), result)
@@ -312,7 +327,7 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     }
 
     with {:ok, payload} <- SlackWebhook.verify_request(body, headers, slack_signing_secret()),
-         {:challenge, {:error, :not_url_verification}} <-
+         {:challenge, {:error, %Error.ProviderError{reason: :not_url_verification}}} <-
            {:challenge, SlackWebhook.url_verification_challenge(payload)} do
       delivery_id = Map.get(payload, "event_id") || "slack-#{System.unique_integer([:positive])}"
       event = get_in(payload, ["event", "type"]) || Map.get(payload, "type", "unknown")
@@ -492,12 +507,6 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
 
   defp parse_integer(value, _default) when is_integer(value), do: value
   defp parse_integer(_value, default), do: default
-
-  defp compact(map) do
-    map
-    |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
-    |> Map.new()
-  end
 
   defp present?(name), do: not blank?(System.get_env(name))
   defp result_status({:ok, _value}), do: :ok

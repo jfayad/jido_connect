@@ -2,6 +2,7 @@ defmodule Jido.Connect.GitHub.AppAuthTest do
   use ExUnit.Case, async: false
 
   alias Jido.Connect
+  alias Jido.Connect.Error
   alias Jido.Connect.GitHub.AppAuth
 
   setup {Req.Test, :verify_on_exit!}
@@ -34,6 +35,20 @@ defmodule Jido.Connect.GitHub.AppAuthTest do
              Base.url_decode64!(encoded_signature, padding: false),
              private_key
            )
+
+    assert {:ok, private_key_jwt} = AppAuth.app_jwt(app_id: 123, private_key: private_key)
+    assert [_header, _payload, _signature] = String.split(private_key_jwt, ".")
+  end
+
+  test "can read a private key from a path", %{private_key_pem: pem} do
+    path =
+      Path.join(System.tmp_dir!(), "jido-connect-test-#{System.unique_integer([:positive])}.pem")
+
+    File.write!(path, pem)
+    on_exit(fn -> File.rm(path) end)
+
+    assert {:ok, jwt} = AppAuth.app_jwt(app_id: 123, private_key_path: path)
+    assert [_header, _payload, _signature] = String.split(jwt, ".")
   end
 
   test "requests an installation access token", %{private_key_pem: pem} do
@@ -83,6 +98,56 @@ defmodule Jido.Connect.GitHub.AppAuthTest do
     assert lease.fields.access_token == "installation-token"
     assert lease.fields.github_client == Jido.Connect.GitHub.Client
     assert lease.metadata.installation_id == 42
+  end
+
+  test "lists installations and fetches repo installation", %{private_key_pem: pem} do
+    Req.Test.stub(__MODULE__, fn
+      %{method: "GET", request_path: "/app/installations"} = conn ->
+        Req.Test.json(conn, [%{id: 42, account: %{login: "org"}}])
+
+      %{method: "GET", request_path: "/repos/org/repo/installation"} = conn ->
+        Req.Test.json(conn, %{id: 42, repository_selection: "selected"})
+    end)
+
+    assert {:ok, [%{"id" => 42}]} = AppAuth.list_installations(app_id: 123, private_key_pem: pem)
+
+    assert {:ok, %{"id" => 42, "repository_selection" => "selected"}} =
+             AppAuth.repo_installation("org", "repo", app_id: 123, private_key_pem: pem)
+  end
+
+  test "normalizes config and provider failures", %{private_key_pem: pem} do
+    previous_app_id = System.get_env("GITHUB_APP_ID")
+    System.delete_env("GITHUB_APP_ID")
+
+    on_exit(fn ->
+      if previous_app_id,
+        do: System.put_env("GITHUB_APP_ID", previous_app_id),
+        else: System.delete_env("GITHUB_APP_ID")
+    end)
+
+    assert {:error, %Error.ConfigError{key: "GITHUB_APP_ID"}} =
+             AppAuth.app_jwt(private_key_pem: pem)
+
+    assert {:error, %Error.ConfigError{key: "GITHUB_APP_ID"}} =
+             AppAuth.app_jwt(app_id: "", private_key_pem: pem)
+
+    assert {:error, %Error.ConfigError{key: "GITHUB_PRIVATE_KEY_PATH"}} =
+             AppAuth.app_jwt(app_id: 123, private_key_pem: "not a pem")
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      conn
+      |> Plug.Conn.put_status(401)
+      |> Req.Test.json(%{message: "Bad credentials"})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :http_error,
+              status: 401,
+              details: %{message: "Bad credentials"}
+            }} =
+             AppAuth.installation_token(42, app_id: 123, private_key_pem: pem)
   end
 
   defp decode_json(value) do

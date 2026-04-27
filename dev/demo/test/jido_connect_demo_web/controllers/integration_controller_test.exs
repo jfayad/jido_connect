@@ -92,6 +92,19 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
     assert Enum.any?(integrations, &match?(%{"id" => "google", "status" => "planned"}, &1))
   end
 
+  test "GET /integrations/catalog searches discovered providers", %{conn: conn} do
+    conn = get(conn, ~p"/integrations/catalog?q=issue")
+
+    assert %{"catalog" => catalog} = json_response(conn, 200)
+    assert [%{"id" => "github", "actions" => actions}] = catalog
+    assert Enum.any?(actions, &match?(%{"id" => "github.issue.list"}, &1))
+
+    conn = get(conn, ~p"/integrations/catalog?auth_kind=oauth2")
+    assert %{"catalog" => catalog} = json_response(conn, 200)
+    assert Enum.any?(catalog, &match?(%{"id" => "github"}, &1))
+    assert Enum.any?(catalog, &match?(%{"id" => "slack"}, &1))
+  end
+
   test "setup complete stores manifest code", %{conn: conn} do
     secret_dir = tmp_dir()
     previous = System.get_env("JIDO_CONNECT_DEMO_SECRET_DIR")
@@ -118,7 +131,9 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
     conn = get(conn, ~p"/integrations/github/setup/complete?installation_id=42")
 
     assert redirected_to(conn) == ~p"/integrations/github"
-    assert [%{id: "github-installation-42"}] = Store.list_connections(:github)
+
+    assert [%{id: "github-installation-42", profile: :installation}] =
+             Store.list_connections(:github)
   end
 
   test "OAuth callback from GitHub App install stores installation connection", %{conn: conn} do
@@ -142,7 +157,10 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
       )
 
     assert redirected_to(conn) == ~p"/integrations/github"
-    assert [%{id: "github-installation-42"}] = Store.list_connections(:github)
+
+    assert [%{id: "github-installation-42", profile: :installation}] =
+             Store.list_connections(:github)
+
     assert File.exists?(Path.join(secret_dir, "github-oauth-callback.json"))
   end
 

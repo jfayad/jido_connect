@@ -1,0 +1,313 @@
+defmodule Jido.Connect.Error do
+  @moduledoc """
+  Centralized Jido Connect error taxonomy.
+
+  Provider packages should return these concrete Splode errors instead of raw
+  atoms or provider-specific tuples. Keep provider-specific protocol details in
+  `details`; keep stable matching data in `reason`, `provider`, and `status`.
+  """
+
+  defmodule Invalid do
+    @moduledoc false
+    use Splode.ErrorClass, class: :invalid
+  end
+
+  defmodule Auth do
+    @moduledoc false
+    use Splode.ErrorClass, class: :auth
+  end
+
+  defmodule Provider do
+    @moduledoc false
+    use Splode.ErrorClass, class: :provider
+  end
+
+  defmodule Config do
+    @moduledoc false
+    use Splode.ErrorClass, class: :config
+  end
+
+  defmodule Execution do
+    @moduledoc false
+    use Splode.ErrorClass, class: :execution
+  end
+
+  defmodule Internal do
+    @moduledoc false
+    use Splode.ErrorClass, class: :internal
+
+    defmodule UnknownError do
+      @moduledoc false
+      use Splode.Error, class: :internal, fields: [:message, :details, :error]
+
+      @impl true
+      def exception(opts) do
+        opts = opts |> Jido.Connect.Error.normalize_opts() |> Keyword.put_new(:details, %{})
+        message = Keyword.get(opts, :message) || unknown_message(Keyword.get(opts, :error))
+
+        opts
+        |> Keyword.put(:message, message)
+        |> super()
+      end
+
+      defp unknown_message(nil), do: "Unknown Jido Connect error"
+      defp unknown_message(error) when is_binary(error), do: error
+      defp unknown_message(error), do: inspect(error)
+    end
+  end
+
+  use Splode,
+    error_classes: [
+      invalid: Invalid,
+      auth: Auth,
+      provider: Provider,
+      config: Config,
+      execution: Execution,
+      internal: Internal
+    ],
+    unknown_error: Internal.UnknownError
+
+  defmodule ValidationError do
+    @moduledoc "Invalid input, DSL, schema, or lookup error."
+    use Splode.Error, class: :invalid, fields: [:message, :reason, :subject, :details]
+
+    @type t :: %__MODULE__{
+            message: String.t(),
+            reason: atom() | nil,
+            subject: any(),
+            details: map()
+          }
+
+    @impl true
+    def exception(opts) do
+      opts
+      |> Jido.Connect.Error.normalize_opts()
+      |> Keyword.put_new(:message, "Validation failed")
+      |> Keyword.put_new(:details, %{})
+      |> super()
+    end
+  end
+
+  defmodule AuthError do
+    @moduledoc "Missing, invalid, or insufficient connection/credential context."
+    use Splode.Error,
+      class: :auth,
+      fields: [:message, :reason, :connection_id, :missing_scopes, :details]
+
+    @type t :: %__MODULE__{
+            message: String.t(),
+            reason: atom() | nil,
+            connection_id: String.t() | nil,
+            missing_scopes: [String.t()],
+            details: map()
+          }
+
+    @impl true
+    def exception(opts) do
+      opts
+      |> Jido.Connect.Error.normalize_opts()
+      |> Keyword.put_new(:message, "Authorization failed")
+      |> Keyword.put_new(:missing_scopes, [])
+      |> Keyword.put_new(:details, %{})
+      |> super()
+    end
+  end
+
+  defmodule ProviderError do
+    @moduledoc "Provider API, OAuth, or webhook protocol error."
+    use Splode.Error,
+      class: :provider,
+      fields: [:message, :provider, :reason, :status, :details]
+
+    @type t :: %__MODULE__{
+            message: String.t(),
+            provider: atom() | nil,
+            reason: atom() | String.t() | nil,
+            status: non_neg_integer() | nil,
+            details: map()
+          }
+
+    @impl true
+    def exception(opts) do
+      opts
+      |> Jido.Connect.Error.normalize_opts()
+      |> Keyword.put_new(:message, "Provider request failed")
+      |> Keyword.put_new(:details, %{})
+      |> super()
+    end
+  end
+
+  defmodule ConfigError do
+    @moduledoc "Local configuration or setup error."
+    use Splode.Error, class: :config, fields: [:message, :key, :details]
+
+    @type t :: %__MODULE__{
+            message: String.t(),
+            key: atom() | String.t() | nil,
+            details: map()
+          }
+
+    @impl true
+    def exception(opts) do
+      opts
+      |> Jido.Connect.Error.normalize_opts()
+      |> Keyword.put_new(:message, "Configuration error")
+      |> Keyword.put_new(:details, %{})
+      |> super()
+    end
+  end
+
+  defmodule ExecutionError do
+    @moduledoc "Runtime handler, polling, or generated Jido adapter error."
+    use Splode.Error, class: :execution, fields: [:message, :phase, :details]
+
+    @type t :: %__MODULE__{
+            message: String.t(),
+            phase: atom() | nil,
+            details: map()
+          }
+
+    @impl true
+    def exception(opts) do
+      opts
+      |> Jido.Connect.Error.normalize_opts()
+      |> Keyword.put_new(:message, "Execution failed")
+      |> Keyword.put_new(:details, %{})
+      |> super()
+    end
+  end
+
+  defmodule InternalError do
+    @moduledoc "Unexpected internal package error."
+    use Splode.Error, class: :internal, fields: [:message, :details]
+
+    @type t :: %__MODULE__{
+            message: String.t(),
+            details: map()
+          }
+
+    @impl true
+    def exception(opts) do
+      opts
+      |> Jido.Connect.Error.normalize_opts()
+      |> Keyword.put_new(:message, "Internal error")
+      |> Keyword.put_new(:details, %{})
+      |> super()
+    end
+  end
+
+  @type error ::
+          ValidationError.t()
+          | AuthError.t()
+          | ProviderError.t()
+          | ConfigError.t()
+          | ExecutionError.t()
+          | InternalError.t()
+
+  @spec validation(String.t(), keyword() | map()) :: ValidationError.t()
+  def validation(message, opts \\ []) do
+    ValidationError.exception(Keyword.put(normalize_opts(opts), :message, message))
+  end
+
+  @spec auth(String.t(), keyword() | map()) :: AuthError.t()
+  def auth(message, opts \\ []) do
+    AuthError.exception(Keyword.put(normalize_opts(opts), :message, message))
+  end
+
+  @spec provider(String.t(), keyword() | map()) :: ProviderError.t()
+  def provider(message, opts \\ []) do
+    ProviderError.exception(Keyword.put(normalize_opts(opts), :message, message))
+  end
+
+  @spec config(String.t(), keyword() | map()) :: ConfigError.t()
+  def config(message, opts \\ []) do
+    ConfigError.exception(Keyword.put(normalize_opts(opts), :message, message))
+  end
+
+  @spec execution(String.t(), keyword() | map()) :: ExecutionError.t()
+  def execution(message, opts \\ []) do
+    ExecutionError.exception(Keyword.put(normalize_opts(opts), :message, message))
+  end
+
+  @spec internal(String.t(), keyword() | map()) :: InternalError.t()
+  def internal(message, opts \\ []) do
+    InternalError.exception(Keyword.put(normalize_opts(opts), :message, message))
+  end
+
+  def unknown_action(action_id) do
+    validation("Unknown action", reason: :unknown_action, subject: action_id)
+  end
+
+  def unknown_trigger(trigger_id) do
+    validation("Unknown trigger", reason: :unknown_trigger, subject: trigger_id)
+  end
+
+  def zoi(reason, errors, details \\ %{}) do
+    validation("Schema validation failed",
+      reason: reason,
+      details: Map.merge(%{errors: List.wrap(errors)}, details)
+    )
+  end
+
+  def context_required do
+    auth("Integration context is required", reason: :context_required)
+  end
+
+  def credential_lease_required do
+    auth("Credential lease is required", reason: :credential_lease_required)
+  end
+
+  def credential_lease_expired(expires_at) do
+    auth("Credential lease has expired",
+      reason: :credential_lease_expired,
+      details: %{expires_at: expires_at}
+    )
+  end
+
+  def connection_required(details \\ %{}) do
+    auth("Connected provider connection is required",
+      reason: :connection_required,
+      details: details
+    )
+  end
+
+  def credential_connection_mismatch(connection_id, lease_connection_id) do
+    auth("Credential lease does not match connection",
+      reason: :credential_connection_mismatch,
+      connection_id: connection_id,
+      details: %{lease_connection_id: lease_connection_id}
+    )
+  end
+
+  def unsupported_auth_profile(connection_id, profile, allowed_profiles) do
+    auth("Connection auth profile is not allowed for this operation",
+      reason: :unsupported_auth_profile,
+      connection_id: connection_id,
+      details: %{profile: profile, allowed_profiles: allowed_profiles}
+    )
+  end
+
+  def missing_scopes(connection_id, scopes) do
+    auth("Connection is missing required scopes",
+      reason: :missing_scopes,
+      connection_id: connection_id,
+      missing_scopes: scopes
+    )
+  end
+
+  def to_map(error) do
+    error = to_error(error)
+
+    %{
+      type: error.__struct__,
+      class: Map.get(error, :class),
+      message: Exception.message(error),
+      reason: Map.get(error, :reason),
+      details: Map.get(error, :details, %{})
+    }
+  end
+
+  @doc false
+  def normalize_opts(opts) when is_map(opts), do: Map.to_list(opts)
+  def normalize_opts(opts), do: opts || []
+end

@@ -7,6 +7,8 @@ defmodule Jido.Connect.GitHub.Client do
   module with a real token lease.
   """
 
+  alias Jido.Connect.{Data, Http, Polling}
+
   @api_version "2022-11-28"
 
   def list_issues(repo, state, access_token) when is_binary(access_token) do
@@ -45,7 +47,7 @@ defmodule Jido.Connect.GitHub.Client do
         direction: "asc",
         per_page: 100
       ]
-      |> maybe_since(checkpoint)
+      |> Polling.put_checkpoint_param(:since, checkpoint)
 
     access_token
     |> request()
@@ -68,25 +70,20 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp request(access_token) do
-    Req.new(
-      base_url: base_url(),
+    Http.bearer_request(
+      base_url(),
+      access_token,
       headers: [
         {"accept", "application/vnd.github+json"},
-        {"authorization", "Bearer #{access_token}"},
-        {"x-github-api-version", @api_version},
-        {"user-agent", "jido-connect"}
-      ]
+        {"x-github-api-version", @api_version}
+      ],
+      req_options: Application.get_env(:jido_connect_github, :github_req_options, [])
     )
-    |> Req.merge(Application.get_env(:jido_connect_github, :github_req_options, []))
   end
 
   defp base_url do
     Application.get_env(:jido_connect_github, :github_api_base_url, "https://api.github.com")
   end
-
-  defp maybe_since(params, nil), do: params
-  defp maybe_since(params, ""), do: params
-  defp maybe_since(params, checkpoint), do: Keyword.put(params, :since, checkpoint)
 
   defp handle_list_response({:ok, %{status: status, body: body}}) when status in 200..299 do
     {:ok, Enum.map(body, &normalize_issue/1)}
@@ -106,25 +103,16 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_map_response(response), do: handle_error_response(response)
 
-  defp handle_error_response({:ok, %{status: status, body: body}}) do
-    {:error, {:github_http_error, status, error_message(body)}}
-  end
-
-  defp handle_error_response({:error, reason}), do: {:error, reason}
+  defp handle_error_response(response),
+    do: Http.provider_error(response, provider: :github, message: "GitHub API request failed")
 
   defp normalize_issue(issue) when is_map(issue) do
     %{
-      number: get(issue, "number"),
-      url: get(issue, "html_url") || get(issue, "url"),
-      title: get(issue, "title"),
-      state: get(issue, "state"),
-      updated_at: get(issue, "updated_at")
+      number: Data.get(issue, "number"),
+      url: Data.get(issue, "html_url") || Data.get(issue, "url"),
+      title: Data.get(issue, "title"),
+      state: Data.get(issue, "state"),
+      updated_at: Data.get(issue, "updated_at")
     }
   end
-
-  defp get(map, key), do: Map.get(map, key) || Map.get(map, String.to_atom(key))
-
-  defp error_message(%{"message" => message}), do: message
-  defp error_message(%{message: message}), do: message
-  defp error_message(body), do: body
 end

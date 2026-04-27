@@ -1,13 +1,13 @@
 defmodule Jido.Connect.Demo.Integrations do
   @moduledoc false
 
+  alias Jido.Connect.Catalog
+
   @integrations [
     %{
       id: "github",
-      name: "GitHub",
-      package: "jido_connect_github",
+      module: Jido.Connect.GitHub,
       status: :available,
-      auth_modes: ["GitHub App", "OAuth App", "Manual token"],
       description:
         "Issues actions, GitHub App setup, OAuth callback capture, and webhook intake.",
       paths: %{
@@ -35,10 +35,8 @@ defmodule Jido.Connect.Demo.Integrations do
     },
     %{
       id: "slack",
-      name: "Slack",
-      package: "jido_connect_slack",
+      module: Jido.Connect.Slack,
       status: :available,
-      auth_modes: ["OAuth 2.0 Bot Token"],
       description:
         "Generated channel listing and message posting actions, plus OAuth and signed request helpers.",
       paths: %{
@@ -71,10 +69,21 @@ defmodule Jido.Connect.Demo.Integrations do
     }
   ]
 
-  def all, do: @integrations
+  def all(opts \\ []) do
+    @integrations
+    |> Enum.map(&with_catalog/1)
+    |> search(Keyword.get(opts, :query))
+  end
+
+  def catalog(opts \\ []) do
+    opts
+    |> Keyword.put(:modules, available_modules())
+    |> Catalog.discover()
+    |> Enum.map(&Catalog.to_map/1)
+  end
 
   def api_index do
-    Enum.map(@integrations, fn integration ->
+    Enum.map(all(), fn integration ->
       %{
         id: integration.id,
         name: integration.name,
@@ -82,8 +91,74 @@ defmodule Jido.Connect.Demo.Integrations do
         status: integration.status,
         auth_modes: integration.auth_modes,
         description: integration.description,
-        paths: integration.paths
+        paths: integration.paths,
+        actions: Enum.map(integration.actions, & &1.id),
+        triggers: Enum.map(integration.triggers, & &1.id)
       }
     end)
+  end
+
+  defp with_catalog(%{module: module} = integration) do
+    catalog = Catalog.entry(module, status: integration.status)
+
+    integration
+    |> Map.put(:name, catalog.name)
+    |> Map.put(:package, to_string(catalog.package))
+    |> Map.put(:category, catalog.category)
+    |> Map.put(:auth_modes, Enum.map(catalog.auth_profiles, &auth_mode/1))
+    |> Map.put(:actions, catalog.actions)
+    |> Map.put(:triggers, catalog.triggers)
+  end
+
+  defp with_catalog(integration) do
+    integration
+    |> Map.put_new(:category, nil)
+    |> Map.put_new(:actions, [])
+    |> Map.put_new(:triggers, [])
+  end
+
+  defp available_modules do
+    @integrations
+    |> Enum.flat_map(fn
+      %{module: module, status: :available} -> [module]
+      _other -> []
+    end)
+  end
+
+  defp search(integrations, query) when query in [nil, ""], do: integrations
+
+  defp search(integrations, query) do
+    query = String.downcase(query)
+
+    Enum.filter(integrations, fn integration ->
+      integration
+      |> searchable_text()
+      |> String.contains?(query)
+    end)
+  end
+
+  defp searchable_text(integration) do
+    [
+      integration.id,
+      integration.name,
+      integration.package,
+      integration.status,
+      integration.description,
+      integration.auth_modes,
+      Enum.map(integration.actions, & &1.id),
+      Enum.map(integration.triggers, & &1.id)
+    ]
+    |> List.flatten()
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map_join(" ", &to_string/1)
+    |> String.downcase()
+  end
+
+  defp auth_mode(%Catalog.AuthProfileSummary{label: label}) when is_binary(label), do: label
+
+  defp auth_mode(%Catalog.AuthProfileSummary{} = profile) do
+    profile.kind
+    |> to_string()
+    |> String.replace("_", " ")
   end
 end

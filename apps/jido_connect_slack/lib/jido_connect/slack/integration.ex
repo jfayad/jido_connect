@@ -41,6 +41,7 @@ defmodule Jido.Connect.Slack do
       description("List Slack conversations visible to the installed app.")
       auth(:bot)
       scopes(["channels:read"])
+      scope_resolver(Jido.Connect.Slack.ScopeResolver)
       mutation?(false)
       risk(:read)
       handler(Jido.Connect.Slack.Handlers.Actions.ListChannels)

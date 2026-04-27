@@ -2,6 +2,7 @@ defmodule Jido.Connect.Demo.SlackRuntime do
   @moduledoc false
 
   alias Jido.Connect
+  alias Jido.Connect.Error
   alias Jido.Connect.Demo.Store
 
   @scopes ["channels:read", "chat:write"]
@@ -42,7 +43,7 @@ defmodule Jido.Connect.Demo.SlackRuntime do
       Store.put_credential(credential_ref, %{access_token: token})
       {:ok, Store.put_connection(connection)}
     else
-      {:token, true} -> {:error, :slack_bot_token_required}
+      {:token, true} -> {:error, slack_bot_token_required()}
       {:error, reason} -> {:error, reason}
     end
   end
@@ -114,7 +115,7 @@ defmodule Jido.Connect.Demo.SlackRuntime do
         local_env("SLACK_BOT_TOKEN")
 
     if blank?(token) do
-      {:error, :slack_bot_token_required}
+      {:error, slack_bot_token_required()}
     else
       Connect.CredentialLease.new(%{
         connection_id: connection.id,
@@ -137,8 +138,16 @@ defmodule Jido.Connect.Demo.SlackRuntime do
     if Code.ensure_loaded?(client) and function_exported?(client, function, arity) do
       :ok
     else
-      {:error, {:slack_client_unavailable, client}}
+      {:error,
+       Error.config("Slack client module is unavailable",
+         key: :slack_client,
+         details: %{module: client, function: function, arity: arity}
+       )}
     end
+  end
+
+  defp slack_bot_token_required do
+    Error.config("Slack bot token is required", key: "SLACK_BOT_TOKEN")
   end
 
   defp present?(name), do: not blank?(local_env(name))
