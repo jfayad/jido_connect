@@ -48,7 +48,7 @@ defmodule JidoConnectMCP.MixProject do
     if hex_package_task?() do
       {:jido_mcp, "~> 0.1"}
     else
-      {:jido_mcp, github: "agentjido/jido_mcp", branch: "harden-stdio-mcp-client", override: true}
+      {:jido_mcp, github: "agentjido/jido_mcp", branch: "main", override: true}
     end
   end
 
