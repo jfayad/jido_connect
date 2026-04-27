@@ -57,6 +57,15 @@ defmodule Jido.Connect.Demo.Integrations do
       ]
     },
     %{
+      id: "mcp",
+      module: Jido.Connect.MCP,
+      status: :available,
+      description:
+        "Bridge for configured MCP servers with endpoint and tool policy enforced through Jido Connect scopes.",
+      paths: %{},
+      checks: []
+    },
+    %{
       id: "google",
       name: "Google Workspace",
       package: "jido_connect_google",

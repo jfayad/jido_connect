@@ -65,6 +65,7 @@ defmodule Jido.Connect.Demo.MixProject do
       {:bandit, "~> 1.5"},
       {:jido_connect, path: "../../apps/jido_connect"},
       {:jido_connect_github, path: "../../apps/jido_connect_github"},
+      {:jido_connect_mcp, path: "../../apps/jido_connect_mcp"},
       {:jido_connect_slack, path: "../../apps/jido_connect_slack"}
     ]
   end
