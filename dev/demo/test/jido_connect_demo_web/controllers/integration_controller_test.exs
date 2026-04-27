@@ -128,11 +128,23 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
   end
 
   test "setup complete stores GitHub App installation connection", %{conn: conn} do
-    conn = get(conn, ~p"/integrations/github/setup/complete?installation_id=42")
+    conn =
+      get(
+        conn,
+        ~p"/integrations/github/setup/complete?installation_id=42&account_type=Organization&account_login=acme"
+      )
 
     assert redirected_to(conn) == ~p"/integrations/github"
 
-    assert [%{id: "github-installation-42", profile: :installation}] =
+    assert [
+             %{
+               id: "github-installation-42",
+               profile: :installation,
+               owner_type: :tenant,
+               owner_id: "local",
+               subject: %{account_login: "acme", account_type: "Organization"}
+             }
+           ] =
              Store.list_connections(:github)
   end
 
@@ -158,7 +170,7 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
 
     assert redirected_to(conn) == ~p"/integrations/github"
 
-    assert [%{id: "github-installation-42", profile: :installation}] =
+    assert [%{id: "github-installation-42", profile: :installation, owner_type: :installation}] =
              Store.list_connections(:github)
 
     assert File.exists?(Path.join(secret_dir, "github-oauth-callback.json"))

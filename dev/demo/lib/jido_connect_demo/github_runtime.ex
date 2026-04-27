@@ -5,6 +5,7 @@ defmodule Jido.Connect.Demo.GitHubRuntime do
   alias Jido.Connect.Error
   alias Jido.Connect.Demo.Store
   alias Jido.Connect.GitHub.AppAuth
+  alias Jido.Connect.GitHub.Connections
 
   def create_manual_connection(attrs) do
     token = Map.get(attrs, "token") || System.get_env("GITHUB_TOKEN")
@@ -12,19 +13,16 @@ defmodule Jido.Connect.Demo.GitHubRuntime do
     tenant_id = Map.get(attrs, "tenant_id", "local")
     credential_ref = "demo:github-manual-#{owner_id}"
 
-    connection =
-      Connect.Connection.new!(%{
+    {:ok, connection} =
+      Connections.user_connection(%{scope: ["repo", "read:user"]},
         id: "github-manual-#{owner_id}",
-        provider: :github,
-        profile: :user,
         tenant_id: tenant_id,
         owner_type: :user,
         owner_id: owner_id,
         status: if(blank?(token), do: :needs_credentials, else: :connected),
         credential_ref: credential_ref,
-        scopes: ["repo", "read:user"],
         metadata: %{mode: :manual_token}
-      })
+      )
 
     if not blank?(token), do: Store.put_credential(credential_ref, %{access_token: token})
 
@@ -33,21 +31,27 @@ defmodule Jido.Connect.Demo.GitHubRuntime do
 
   def create_installation_connection(installation_id, attrs \\ %{}) do
     tenant_id = Map.get(attrs, "tenant_id", "local")
-    owner_id = Map.get(attrs, "owner_id", "installation-#{installation_id}")
 
-    connection =
-      Connect.Connection.new!(%{
-        id: "github-installation-#{installation_id}",
-        provider: :github,
-        profile: :installation,
+    installation =
+      %{
+        id: installation_id,
+        account: %{
+          login: Map.get(attrs, "account_login"),
+          id: Map.get(attrs, "account_id"),
+          type: Map.get(attrs, "account_type")
+        },
+        repository_selection: Map.get(attrs, "repository_selection")
+      }
+
+    connection_opts =
+      [
         tenant_id: tenant_id,
-        owner_type: :installation,
-        owner_id: owner_id,
-        status: :connected,
-        credential_ref: "github-app:#{installation_id}",
-        scopes: ["metadata:read", "issues:read", "issues:write"],
-        metadata: %{mode: :github_app, installation_id: installation_id}
-      })
+        owner_id: Map.get(attrs, "owner_id")
+      ]
+      |> maybe_put(:owner_type, owner_type(attrs))
+      |> Enum.reject(fn {_key, value} -> blank?(value) end)
+
+    {:ok, connection} = Connections.installation_connection(installation, connection_opts)
 
     Store.put_connection(connection)
   end
@@ -127,4 +131,13 @@ defmodule Jido.Connect.Demo.GitHubRuntime do
   end
 
   defp blank?(value), do: is_nil(value) or value == ""
+
+  defp owner_type(%{"owner_type" => owner_type})
+       when owner_type in ["tenant", "app_user", "user"],
+       do: String.to_existing_atom(owner_type)
+
+  defp owner_type(_attrs), do: nil
+
+  defp maybe_put(opts, _key, nil), do: opts
+  defp maybe_put(opts, key, value), do: Keyword.put(opts, key, value)
 end
