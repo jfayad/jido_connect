@@ -23,19 +23,28 @@ defmodule Jido.Connect.TelemetryTest do
              )
 
     assert_receive {:telemetry, [:jido, :connect, :invoke, :start], %{system_time: system_time},
-                    %{integration_id: :demo, operation_id: "demo.action"}}
+                    start_metadata}
 
     assert is_integer(system_time)
+    assert start_metadata.integration_id == :demo
+    assert start_metadata.operation_id == "demo.action"
+    assert start_metadata.tenant_id == "tenant_1"
+    assert start_metadata.actor_type == :user
+    assert start_metadata.connection_id == "conn_1"
+    assert start_metadata.auth_profile == :user
+    assert start_metadata.credential_lease_connection_id == "conn_1"
+    refute inspect(start_metadata) =~ "secret-token"
 
     assert_receive {:telemetry, [:jido, :connect, :invoke, :stop], %{duration: duration},
-                    %{
-                      integration_id: :demo,
-                      operation_id: "demo.action",
-                      status: :ok
-                    }}
+                    stop_metadata}
 
     assert is_integer(duration)
     assert duration >= 0
+    assert stop_metadata.integration_id == :demo
+    assert stop_metadata.operation_id == "demo.action"
+    assert stop_metadata.status == :ok
+    assert stop_metadata.connection_id == "conn_1"
+    refute inspect(stop_metadata) =~ "secret-token"
   end
 
   test "invoke stop telemetry includes normalized error metadata" do
@@ -122,6 +131,9 @@ defmodule Jido.Connect.TelemetryTest do
           id: "demo.action",
           name: :demo_action,
           label: "Demo action",
+          resource: :item,
+          verb: :read,
+          data_classification: :workspace_metadata,
           auth_profile: :user,
           handler: Handler,
           input_schema: Zoi.object(%{}),

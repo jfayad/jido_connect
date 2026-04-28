@@ -3,7 +3,7 @@ defmodule Jido.Connect.ScopeRequirements do
   Resolves static or provider-specific scope requirements for operations.
   """
 
-  alias Jido.Connect.{Connection, Error}
+  alias Jido.Connect.{Callback, Connection, Error}
 
   @type operation :: map()
 
@@ -36,12 +36,22 @@ defmodule Jido.Connect.ScopeRequirements do
   defp call_loaded_resolver(resolver, operation, input, connection) do
     cond do
       function_exported?(resolver, :required_scopes, 3) ->
-        resolver.required_scopes(operation, input, connection)
-        |> normalize_result(resolver)
+        with {:ok, result} <-
+               Callback.call(resolver, :required_scopes, [operation, input, connection],
+                 phase: :scope_resolver,
+                 details: %{module: resolver, operation_id: operation_id(operation)}
+               ) do
+          normalize_result(result, resolver)
+        end
 
       function_exported?(resolver, :required_scopes, 2) ->
-        resolver.required_scopes(operation, input)
-        |> normalize_result(resolver)
+        with {:ok, result} <-
+               Callback.call(resolver, :required_scopes, [operation, input],
+                 phase: :scope_resolver,
+                 details: %{module: resolver, operation_id: operation_id(operation)}
+               ) do
+          normalize_result(result, resolver)
+        end
 
       true ->
         {:error,
@@ -75,4 +85,9 @@ defmodule Jido.Connect.ScopeRequirements do
     |> Enum.map(&to_string/1)
     |> Enum.uniq()
   end
+
+  defp operation_id(%{action_id: action_id}), do: action_id
+  defp operation_id(%{trigger_id: trigger_id}), do: trigger_id
+  defp operation_id(%{id: id}), do: id
+  defp operation_id(_operation), do: nil
 end

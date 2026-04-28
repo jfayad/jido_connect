@@ -16,6 +16,14 @@ defmodule Jido.Connect.RuntimeTest do
     def run(_input, _context), do: :ok
   end
 
+  defmodule ExplodingHandler do
+    def run(_input, _context), do: raise("handler exploded")
+  end
+
+  defmodule ExplodingScopeResolver do
+    def required_scopes(_operation, _input, _connection), do: raise("scope resolver exploded")
+  end
+
   defmodule PollHandler do
     def poll(%{repo: repo}, %{checkpoint: checkpoint}) do
       {:ok, %{signals: [%{repo: repo}], checkpoint: checkpoint || "next"}}
@@ -161,6 +169,28 @@ defmodule Jido.Connect.RuntimeTest do
                credential_lease: lease
              )
 
+    assert {:error,
+            %Connect.Error.ExecutionError{
+              phase: :handler,
+              details: %{operation_id: "demo.repo.show", message: "handler exploded"}
+            }} =
+             spec(%{action: %{handler: ExplodingHandler}})
+             |> Connect.invoke("demo.repo.show", %{repo: "org/repo"},
+               context: context,
+               credential_lease: lease
+             )
+
+    assert {:error,
+            %Connect.Error.ExecutionError{
+              phase: :scope_resolver,
+              details: %{operation_id: "demo.repo.show", message: "scope resolver exploded"}
+            }} =
+             spec(%{action: %{scope_resolver: ExplodingScopeResolver}})
+             |> Connect.invoke("demo.repo.show", %{repo: "org/repo"},
+               context: context,
+               credential_lease: lease
+             )
+
     missing_scopes = %{context | connection: %{context.connection | scopes: []}}
 
     assert {:error, %Connect.Error.AuthError{reason: :missing_scopes, missing_scopes: ["repo"]}} =
@@ -278,6 +308,19 @@ defmodule Jido.Connect.RuntimeTest do
                credential_lease: lease
              })
 
+    assert {:error,
+            %Connect.Error.ExecutionError{
+              phase: :connection_resolver,
+              details: %{message: "resolver exploded"}
+            }} =
+             Connect.JidoActionRuntime.run(projection, %{repo: "org/repo"}, %{
+               integration_context: tenant_context,
+               connection_resolver: fn ^selector, ^projection, _agent_context ->
+                 raise "resolver exploded"
+               end,
+               credential_lease: lease
+             })
+
     assert {:error, %Connect.Error.AuthError{reason: :context_required}} =
              Connect.JidoActionRuntime.run(projection, %{repo: "org/repo"}, %{
                credential_lease: lease
@@ -345,6 +388,18 @@ defmodule Jido.Connect.RuntimeTest do
            ] =
              Connect.JidoPluginRuntime.tool_availability(projection, %{
                connection: context.connection
+             })
+
+    deny_policy = fn _operation, _input, _context, _connection -> {:deny, :hidden_by_host} end
+
+    assert [
+             %ToolAvailability{state: :disabled_by_policy, connection_id: "conn_1"},
+             %ToolAvailability{state: :disabled_by_policy, connection_id: "conn_1"}
+           ] =
+             Connect.JidoPluginRuntime.tool_availability(projection, %{
+               connection: context.connection,
+               context: context,
+               policy: deny_policy
              })
 
     assert [
@@ -480,6 +535,14 @@ defmodule Jido.Connect.RuntimeTest do
       build_spec(actions: [base, Map.put(base, :name, :duplicate)])
     end
 
+    assert_raise Connect.Error.ValidationError, ~r/Unknown verb/, fn ->
+      spec(%{action: %{verb: :teleport}})
+    end
+
+    assert_raise Connect.Error.ValidationError, ~r/Unknown data_classification/, fn ->
+      spec(%{action: %{data_classification: :secret_thoughts}})
+    end
+
     assert_raise Connect.Error.ValidationError, ~r/Unsupported integration field type/, fn ->
       Connect.zoi_schema_from_fields([Connect.Field.new!(%{name: :bad, type: :unknown})])
     end
@@ -560,6 +623,9 @@ defmodule Jido.Connect.RuntimeTest do
       name: :show_repo,
       label: "Show repo",
       description: "Show repo",
+      resource: :repo,
+      verb: :get,
+      data_classification: :workspace_metadata,
       auth_profile: :user,
       handler: ActionHandler,
       input: [field(:repo)],
@@ -577,6 +643,9 @@ defmodule Jido.Connect.RuntimeTest do
       kind: :poll,
       label: "Repo changed",
       description: "Repo changed",
+      resource: :repo,
+      verb: :watch,
+      data_classification: :workspace_metadata,
       auth_profile: :user,
       handler: PollHandler,
       config: [field(:repo)],
@@ -633,6 +702,9 @@ defmodule Jido.Connect.RuntimeTest do
       name: "demo_repo_show",
       label: "Show repo",
       description: "Show repo",
+      resource: :repo,
+      verb: :get,
+      data_classification: :workspace_metadata,
       input: [field(:repo)],
       output: [field(:repo)],
       input_schema: Zoi.object(%{repo: Zoi.string()}),
@@ -653,6 +725,9 @@ defmodule Jido.Connect.RuntimeTest do
       name: "demo_repo_changed",
       label: "Repo changed",
       description: "Repo changed",
+      resource: :repo,
+      verb: :watch,
+      data_classification: :workspace_metadata,
       kind: :poll,
       config: [field(:repo)],
       signal: [field(:repo)],

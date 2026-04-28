@@ -8,7 +8,7 @@ defmodule Jido.Connect.Connection do
               provider: Zoi.atom(),
               profile: Zoi.atom(),
               tenant_id: Zoi.string(),
-              owner_type: Zoi.enum([:user, :tenant, :system, :installation, :app_user]),
+              owner_type: Zoi.enum([:user, :tenant, :org, :system, :installation, :app_user]),
               owner_id: Zoi.string(),
               subject: Zoi.map() |> Zoi.nullish() |> Zoi.optional(),
               status: Zoi.atom(),

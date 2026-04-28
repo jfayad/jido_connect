@@ -22,7 +22,7 @@ defmodule Jido.Connect do
   @typedoc "Field type supported by the Spark DSL and generated Zoi schemas."
   @type field_type :: :string | :integer | :boolean | :map | {:array, field_type()}
   @typedoc "Owner type for durable host-owned connections and credential leases."
-  @type owner_type :: :user | :tenant | :system | :installation | :app_user
+  @type owner_type :: :user | :tenant | :org | :system | :installation | :app_user
   @typedoc "Auth profile kind supported by the core contract."
   @type auth_kind :: :oauth2 | :api_key | :app_installation | :none
   @typedoc "Trigger transport supported by generated sensors."
@@ -35,11 +35,13 @@ defmodule Jido.Connect do
   alias Jido.Connect.{
     ActionSpec,
     Authorization,
+    Callback,
     Context,
     CredentialLease,
     Error,
     Field,
     Spec,
+    Taxonomy,
     Telemetry,
     TriggerSpec
   }
@@ -163,7 +165,7 @@ defmodule Jido.Connect do
   def invoke(integration_ref, action_id, input, opts)
       when is_binary(action_id) and is_map(input) and (is_list(opts) or is_map(opts)) do
     with {:ok, integration} <- spec(integration_ref) do
-      Telemetry.span(:invoke, %{integration_id: integration.id, operation_id: action_id}, fn ->
+      Telemetry.span(:invoke, telemetry_metadata(integration, action_id, opts), fn ->
         do_invoke(integration, action_id, input, opts)
       end)
     end
@@ -191,7 +193,7 @@ defmodule Jido.Connect do
          {:ok, parsed_input} <- parse_schema(action.input_schema, input, :input),
          {:ok, context} <- fetch_context(opts),
          {:ok, lease} <- fetch_credential_lease(opts),
-         :ok <- Authorization.authorize(action, parsed_input, context, lease),
+         :ok <- Authorization.authorize(action, parsed_input, context, lease, auth_opts(opts)),
          {:ok, output} <-
            run_action_handler(action, parsed_input, %{
              integration: integration,
@@ -218,7 +220,7 @@ defmodule Jido.Connect do
   def poll(integration_ref, trigger_id, config, opts)
       when is_binary(trigger_id) and is_map(config) and (is_list(opts) or is_map(opts)) do
     with {:ok, integration} <- spec(integration_ref) do
-      Telemetry.span(:poll, %{integration_id: integration.id, operation_id: trigger_id}, fn ->
+      Telemetry.span(:poll, telemetry_metadata(integration, trigger_id, opts), fn ->
         do_poll(integration, trigger_id, config, opts)
       end)
     end
@@ -246,7 +248,7 @@ defmodule Jido.Connect do
          {:ok, parsed_config} <- parse_schema(trigger.config_schema, config, :config),
          {:ok, context} <- fetch_context(opts),
          {:ok, lease} <- fetch_credential_lease(opts),
-         :ok <- Authorization.authorize(trigger, parsed_config, context, lease),
+         :ok <- Authorization.authorize(trigger, parsed_config, context, lease, auth_opts(opts)),
          {:ok, result} <-
            run_poll_handler(trigger, parsed_config, %{
              integration: integration,
@@ -265,11 +267,18 @@ defmodule Jido.Connect do
   @spec validate_spec!(Spec.t()) :: Spec.t()
   def validate_spec!(%Spec{} = spec) do
     auth_ids = MapSet.new(spec.auth_profiles, & &1.id)
+    policy_ids = MapSet.new(spec.policies, & &1.id)
 
     duplicate_ids!(spec.actions, & &1.id, "action")
     duplicate_ids!(spec.triggers, & &1.id, "trigger")
+    duplicate_ids!(spec.policies, & &1.id, "policy")
+    duplicate_ids!(spec.schemas, & &1.id, "schema")
+
+    validate_taxonomy!(spec)
 
     Enum.each(spec.actions, fn action ->
+      validate_operation_taxonomy!(action)
+
       Enum.each(Authorization.operation_auth_profiles(action), fn auth_profile ->
         unless MapSet.member?(auth_ids, auth_profile) do
           raise Error.validation("Unknown auth profile",
@@ -294,9 +303,13 @@ defmodule Jido.Connect do
                 subject: action.id
               )
       end
+
+      validate_policy_refs!(action.policies, policy_ids, action.id)
     end)
 
     Enum.each(spec.triggers, fn trigger ->
+      validate_operation_taxonomy!(trigger)
+
       Enum.each(Authorization.operation_auth_profiles(trigger), fn auth_profile ->
         unless MapSet.member?(auth_ids, auth_profile) do
           raise Error.validation("Unknown auth profile",
@@ -321,9 +334,110 @@ defmodule Jido.Connect do
                 subject: trigger.id
               )
       end
+
+      if trigger.kind == :webhook and trigger.verification in [nil, %{kind: :none}] do
+        raise Error.validation("Webhook trigger must declare verification",
+                reason: :missing_webhook_verification,
+                subject: trigger.id
+              )
+      end
+
+      validate_policy_refs!(trigger.policies, policy_ids, trigger.id)
     end)
 
     spec
+  end
+
+  defp validate_taxonomy!(%Spec{} = spec) do
+    validate_known!(
+      :category,
+      spec.category,
+      Taxonomy.categories(),
+      spec.id,
+      &Taxonomy.known_category?/1
+    )
+
+    validate_known!(:status, spec.status, Taxonomy.statuses(), spec.id, &Taxonomy.known_status?/1)
+
+    validate_known!(
+      :visibility,
+      spec.visibility,
+      Taxonomy.visibilities(),
+      spec.id,
+      &Taxonomy.known_visibility?/1
+    )
+  end
+
+  defp validate_operation_taxonomy!(operation) do
+    validate_required!(:resource, operation.resource, operation.id)
+    validate_required!(:verb, operation.verb, operation.id)
+    validate_required!(:data_classification, operation.data_classification, operation.id)
+
+    validate_known!(
+      :verb,
+      operation.verb,
+      Taxonomy.verbs(),
+      operation.id,
+      &Taxonomy.known_verb?/1
+    )
+
+    validate_known!(
+      :data_classification,
+      operation.data_classification,
+      Taxonomy.data_classifications(),
+      operation.id,
+      &Taxonomy.known_data_classification?/1
+    )
+
+    if Map.has_key?(operation, :risk) do
+      validate_known!(
+        :risk,
+        operation.risk,
+        Taxonomy.risks(),
+        operation.id,
+        &Taxonomy.known_risk?/1
+      )
+
+      validate_known!(
+        :confirmation,
+        operation.confirmation,
+        Taxonomy.confirmations(),
+        operation.id,
+        &Taxonomy.known_confirmation?/1
+      )
+    end
+  end
+
+  defp validate_required!(field, value, operation_id) when value in [nil, ""] do
+    raise Error.validation("Operation must declare #{field}",
+            reason: :missing_operation_metadata,
+            subject: operation_id,
+            details: %{field: field}
+          )
+  end
+
+  defp validate_required!(_field, _value, _operation_id), do: :ok
+
+  defp validate_known!(field, value, allowed, subject, known?) do
+    unless known?.(value) do
+      raise Error.validation("Unknown #{field}",
+              reason: :unknown_taxonomy_value,
+              subject: subject,
+              details: %{field: field, value: value, allowed: allowed}
+            )
+    end
+  end
+
+  defp validate_policy_refs!(policies, policy_ids, operation_id) do
+    Enum.each(policies || [], fn policy ->
+      unless MapSet.member?(policy_ids, policy) do
+        raise Error.validation("Unknown policy",
+                reason: :unknown_policy,
+                subject: policy,
+                details: %{operation_id: operation_id}
+              )
+      end
+    end)
   end
 
   @doc false
@@ -393,21 +507,29 @@ defmodule Jido.Connect do
   end
 
   defp run_action_handler(%ActionSpec{} = action, input, context) do
-    action.handler
-    |> apply(:run, [input, context])
-    |> normalize_handler_result(:handler, action.id)
+    with {:ok, result} <-
+           Callback.call(action.handler, :run, [input, context],
+             phase: :handler,
+             details: %{operation_id: action.id}
+           ) do
+      normalize_handler_result(result, :handler, action.id)
+    end
   end
 
   defp run_poll_handler(%TriggerSpec{} = trigger, config, context) do
-    trigger.handler
-    |> apply(:poll, [config, context])
-    |> normalize_handler_result(:handler, trigger.id)
+    with {:ok, result} <-
+           Callback.call(trigger.handler, :poll, [config, context],
+             phase: :handler,
+             details: %{operation_id: trigger.id}
+           ) do
+      normalize_handler_result(result, :handler, trigger.id)
+    end
   end
 
   defp normalize_handler_result({:ok, value}, _phase, _operation_id), do: {:ok, value}
 
   defp normalize_handler_result({:error, %_module{} = error}, phase, operation_id) do
-    if connect_error?(error) do
+    if Error.error?(error) do
       {:error, error}
     else
       normalize_handler_result({:error, Map.from_struct(error)}, phase, operation_id)
@@ -436,12 +558,6 @@ defmodule Jido.Connect do
      )}
   end
 
-  defp connect_error?(%{class: class})
-       when class in [:invalid, :auth, :provider, :config, :execution, :internal],
-       do: true
-
-  defp connect_error?(_error), do: false
-
   defp validate_signals(%TriggerSpec{} = trigger, signals) when is_list(signals) do
     Enum.reduce_while(signals, {:ok, []}, fn signal, {:ok, acc} ->
       case Zoi.parse(trigger.signal_schema, signal) do
@@ -466,6 +582,57 @@ defmodule Jido.Connect do
 
   defp get_option(opts, key) when is_list(opts), do: Keyword.get(opts, key)
   defp get_option(opts, key) when is_map(opts), do: Map.get(opts, key)
+
+  defp auth_opts(opts) do
+    %{
+      policy: get_option(opts, :policy),
+      policy_context: get_option(opts, :policy_context)
+    }
+  end
+
+  defp telemetry_metadata(%Spec{} = integration, operation_id, opts) do
+    context = get_option(opts, :context)
+    lease = get_option(opts, :credential_lease)
+    connection = context_connection(context)
+
+    %{
+      integration_id: integration.id,
+      operation_id: operation_id,
+      tenant_id: context_field(context, :tenant_id),
+      actor_type: actor_type(context),
+      connection_id: connection_field(connection, :id),
+      auth_profile: connection_field(connection, :profile),
+      credential_lease_connection_id: credential_lease_connection_id(lease)
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp context_connection(%Context{connection: connection}), do: connection
+  defp context_connection(%{connection: connection}), do: connection
+  defp context_connection(_context), do: nil
+
+  defp context_field(%Context{} = context, field), do: Map.get(context, field)
+  defp context_field(context, field) when is_map(context), do: Map.get(context, field)
+  defp context_field(_context, _field), do: nil
+
+  defp actor_type(%Context{actor: actor}), do: actor_type(actor)
+  defp actor_type(%{actor: actor}), do: actor_type(actor)
+  defp actor_type(%{type: type}), do: type
+  defp actor_type(%{"type" => type}), do: type
+  defp actor_type(_context), do: nil
+
+  defp connection_field(%Jido.Connect.Connection{} = connection, field),
+    do: Map.get(connection, field)
+
+  defp connection_field(connection, field) when is_map(connection), do: Map.get(connection, field)
+  defp connection_field(_connection, _field), do: nil
+
+  defp credential_lease_connection_id(%CredentialLease{connection_id: connection_id}),
+    do: connection_id
+
+  defp credential_lease_connection_id(%{connection_id: connection_id}), do: connection_id
+  defp credential_lease_connection_id(_lease), do: nil
 
   defp type_name(value) when is_map(value), do: :map
   defp type_name(value) when is_list(value), do: :list

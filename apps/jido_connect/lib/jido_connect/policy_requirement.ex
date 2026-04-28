@@ -1,17 +1,15 @@
-defmodule Jido.Connect.Field do
-  @moduledoc "Input, output, config, and signal field contract."
+defmodule Jido.Connect.PolicyRequirement do
+  @moduledoc "Declarative host policy requirement referenced by actions and triggers."
 
   @schema Zoi.struct(
             __MODULE__,
             %{
-              __spark_metadata__: Zoi.any() |> Zoi.optional(),
-              name: Zoi.atom(),
-              type: Zoi.any(),
+              id: Zoi.atom(),
+              label: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
               description: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
-              example: Zoi.any() |> Zoi.optional(),
-              default: Zoi.any() |> Zoi.optional(),
-              enum: Zoi.list(Zoi.any()) |> Zoi.nullish() |> Zoi.optional(),
-              required?: Zoi.boolean() |> Zoi.default(false),
+              subject: Zoi.any() |> Zoi.optional(),
+              owner: Zoi.any() |> Zoi.optional(),
+              decision: Zoi.atom() |> Zoi.default(:allow_operation),
               metadata: Zoi.map() |> Zoi.default(%{})
             },
             coerce: true

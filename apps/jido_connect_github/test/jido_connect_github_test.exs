@@ -28,14 +28,24 @@ defmodule Jido.Connect.GitHubTest do
     spec = Jido.Connect.GitHub.integration()
 
     assert spec.id == :github
+    assert spec.package == :jido_connect_github
+    assert spec.status == :available
+    assert :issues in spec.tags
+    assert [%{id: :repo_access, decision: :allow_operation}] = spec.policies
     assert {:user, :oauth2} in Enum.map(spec.auth_profiles, &{&1.id, &1.kind})
     assert {:installation, :app_installation} in Enum.map(spec.auth_profiles, &{&1.id, &1.kind})
+
+    assert Enum.find(spec.auth_profiles, &(&1.id == :installation)).setup ==
+             :github_app_installation
 
     assert {:ok,
             %{
               id: "github.issue.list",
+              resource: :issue,
+              verb: :list,
               mutation?: false,
               auth_profiles: [:user, :installation],
+              policies: [:repo_access],
               scope_resolver: Jido.Connect.GitHub.ScopeResolver
             }} =
              Connect.action(spec, "github.issue.list")
@@ -59,6 +69,8 @@ defmodule Jido.Connect.GitHubTest do
     features = entry.capabilities |> Enum.map(& &1.feature) |> MapSet.new()
 
     assert entry.package == :jido_connect_github
+    assert entry.tags == [:source_control, :issues, :developer_tools]
+    assert [%{id: :repo_access}] = entry.policies
     assert MapSet.subset?(MapSet.new([:oauth2, :app_installation]), features)
     assert MapSet.member?(features, :generated_jido_actions)
     assert MapSet.member?(features, :polling)
@@ -101,6 +113,9 @@ defmodule Jido.Connect.GitHubTest do
     assert Enum.map(projection.output, & &1.name) == [:number, :url, :title, :state]
     assert projection.risk == :write
     assert projection.confirmation == :required_for_ai
+    assert projection.resource == :issue
+    assert projection.verb == :create
+    assert projection.policies == [:repo_access]
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.CreateIssue.name() == "github_issue_create"

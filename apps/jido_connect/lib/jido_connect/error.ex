@@ -310,6 +310,14 @@ defmodule Jido.Connect.Error do
     )
   end
 
+  def policy_denied(connection_id, details \\ %{}) do
+    auth("Host policy denied connection use",
+      reason: :policy_denied,
+      connection_id: connection_id,
+      details: Map.new(details)
+    )
+  end
+
   @spec to_map(term()) :: map()
   def to_map(error) do
     error = to_error(error)
@@ -335,6 +343,13 @@ defmodule Jido.Connect.Error do
 
   def type(%_module{}), do: :unknown_error
   def type(_other), do: :unknown_error
+
+  @spec error?(term()) :: boolean()
+  def error?(%{class: class})
+      when class in [:invalid, :auth, :provider, :config, :execution, :internal],
+      do: true
+
+  def error?(_error), do: false
 
   @spec retryable?(term()) :: boolean()
   def retryable?(%ProviderError{status: status}) when status == 429 or status in 500..599,

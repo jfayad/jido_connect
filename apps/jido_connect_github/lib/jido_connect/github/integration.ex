@@ -7,139 +7,82 @@ defmodule Jido.Connect.GitHub do
   namespaces.
   """
 
-  use Jido.Connect
+  use Jido.Connect,
+    fragments: [
+      Jido.Connect.GitHub.Actions.Issues,
+      Jido.Connect.GitHub.Triggers.Issues
+    ]
 
   integration do
-    id(:github)
-    name("GitHub")
-    category(:developer_tools)
-    docs(["https://docs.github.com/rest"])
+    id :github
+    name "GitHub"
+    description "GitHub repository, issue, app installation, and webhook tools."
+    category :developer_tools
+    docs ["https://docs.github.com/rest"]
+  end
 
-    metadata(%{
-      package: :jido_connect_github,
-      capabilities: [
-        %{
-          id: "github.app_setup",
-          kind: :setup,
-          feature: :github_app_manifest,
-          label: "GitHub App setup",
-          description: "Manifest, installation callback, and installation-token helpers."
-        },
-        %{
-          id: "github.webhook_verification",
-          kind: :webhook,
-          feature: :webhook_verification,
-          label: "Webhook verification",
-          description: "Signature verification and issue webhook normalization."
-        }
-      ]
-    })
+  catalog do
+    package :jido_connect_github
+    status :available
+    tags [:source_control, :issues, :developer_tools]
+
+    capability :app_setup do
+      kind :setup
+      feature :github_app_manifest
+      label "GitHub App setup"
+      description "Manifest, installation callback, and installation-token helpers."
+    end
+
+    capability :webhook_verification do
+      kind :webhook
+      feature :webhook_verification
+      label "Webhook verification"
+      description "Signature verification and issue webhook normalization."
+    end
   end
 
   auth do
     oauth2 :user do
-      default?(true)
-      owner(:app_user)
-      subject(:user)
-      label("GitHub OAuth user")
-      authorize_url("https://github.com/login/oauth/authorize")
-      token_url("https://github.com/login/oauth/access_token")
-      callback_path("/integrations/github/oauth/callback")
-      token_field(:access_token)
-      refresh_token_field(:refresh_token)
-      scopes(["repo", "read:user"])
-      default_scopes(["read:user"])
-      pkce?(false)
-      refresh?(false)
-      revoke?(true)
+      default? true
+      owner :app_user
+      subject :user
+      label "GitHub OAuth user"
+      authorize_url "https://github.com/login/oauth/authorize"
+      token_url "https://github.com/login/oauth/access_token"
+      callback_path "/integrations/github/oauth/callback"
+      token_field :access_token
+      refresh_token_field :refresh_token
+      setup :oauth2_authorization_code
+      credential_fields [:access_token, :refresh_token]
+      lease_fields [:access_token]
+      scopes ["repo", "read:user"]
+      default_scopes ["read:user"]
+      pkce? false
+      refresh? false
+      revoke? true
     end
 
     app_installation :installation do
-      owner(:installation)
-      subject(:installation)
-      label("GitHub App installation")
-      fields([:access_token])
-      scopes(["metadata:read", "issues:read", "issues:write"])
-      default_scopes(["metadata:read", "issues:read"])
+      owner :installation
+      subject :installation
+      label "GitHub App installation"
+      setup :github_app_installation
+      credential_fields [:access_token]
+      lease_fields [:access_token]
+      scopes ["metadata:read", "issues:read", "issues:write"]
+      default_scopes ["metadata:read", "issues:read"]
     end
   end
 
-  actions do
-    action :list_issues do
-      id("github.issue.list")
-      label("List issues")
-      description("List issues in a GitHub repository.")
-      auth(:user)
-      auth_profiles([:user, :installation])
-      scopes(["repo"])
-      scope_resolver(Jido.Connect.GitHub.ScopeResolver)
-      mutation?(false)
-      risk(:read)
-      handler(Jido.Connect.GitHub.Handlers.Actions.ListIssues)
+  policies do
+    policy :repo_access do
+      label "Repository access"
 
-      input do
-        field(:repo, :string, required?: true, example: "org/repo")
-        field(:state, :string, enum: ["open", "closed", "all"], default: "open")
-      end
+      description "Host verifies the actor may use this GitHub connection for the requested repository."
 
-      output do
-        field(:issues, {:array, :map})
-      end
-    end
-
-    action :create_issue do
-      id("github.issue.create")
-      label("Create issue")
-      description("Create a GitHub issue.")
-      auth(:user)
-      auth_profiles([:user, :installation])
-      scopes(["repo"])
-      scope_resolver(Jido.Connect.GitHub.ScopeResolver)
-      mutation?(true)
-      risk(:write)
-      confirmation(:required_for_ai)
-      handler(Jido.Connect.GitHub.Handlers.Actions.CreateIssue)
-
-      input do
-        field(:repo, :string, required?: true, example: "org/repo")
-        field(:title, :string, required?: true)
-        field(:body, :string)
-        field(:labels, {:array, :string}, default: [])
-      end
-
-      output do
-        field(:number, :integer)
-        field(:url, :string)
-        field(:title, :string)
-        field(:state, :string)
-      end
-    end
-  end
-
-  triggers do
-    poll :new_issues do
-      id("github.issue.new")
-      label("New issues")
-      description("Poll for new GitHub issues.")
-      auth(:user)
-      auth_profiles([:user, :installation])
-      scopes(["repo"])
-      scope_resolver(Jido.Connect.GitHub.ScopeResolver)
-      interval_ms(300_000)
-      checkpoint(:updated_at)
-      dedupe(%{key: [:repo, :issue_number]})
-      handler(Jido.Connect.GitHub.Handlers.Triggers.NewIssuesPoller)
-
-      config do
-        field(:repo, :string, required?: true, example: "org/repo")
-      end
-
-      signal do
-        field(:repo, :string)
-        field(:issue_number, :integer)
-        field(:title, :string)
-        field(:url, :string)
-      end
+      subject {:input, :repo}
+      owner {:connection, :owner}
+      decision :allow_operation
     end
   end
 end

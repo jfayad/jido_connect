@@ -14,8 +14,7 @@ defmodule Jido.Connect.JidoActionRuntime do
         projection.integration_module.integration(),
         projection.action_id,
         params,
-        context: context,
-        credential_lease: lease
+        runtime_opts(agent_context, context, lease)
       )
     end
   end
@@ -65,6 +64,9 @@ defmodule Jido.Connect.JidoActionRuntime do
            })}
         end
 
+      {:error, %_{} = error} ->
+        {:error, error}
+
       :error ->
         {:error,
          Error.connection_required(%{
@@ -81,4 +83,13 @@ defmodule Jido.Connect.JidoActionRuntime do
     do: {:ok, lease}
 
   defp credential_lease(_context), do: {:error, Error.credential_lease_required()}
+
+  defp runtime_opts(agent_context, context, lease) do
+    %{
+      context: context,
+      credential_lease: lease,
+      policy: Map.get(agent_context, :policy),
+      policy_context: Map.get(agent_context, :policy_context, %{})
+    }
+  end
 end

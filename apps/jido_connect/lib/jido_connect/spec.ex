@@ -1,15 +1,30 @@
 defmodule Jido.Connect.Spec do
   @moduledoc "Complete integration provider contract."
 
-  alias Jido.Connect.{ActionSpec, AuthProfile, TriggerSpec}
+  alias Jido.Connect.{
+    ActionSpec,
+    AuthProfile,
+    ConnectorCapability,
+    NamedSchema,
+    PolicyRequirement,
+    TriggerSpec
+  }
 
   @schema Zoi.struct(
             __MODULE__,
             %{
               id: Zoi.atom(),
               name: Zoi.string(),
+              description: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
               category: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+              package: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+              status: Zoi.atom() |> Zoi.default(:available),
+              tags: Zoi.list(Zoi.atom()) |> Zoi.default([]),
+              visibility: Zoi.atom() |> Zoi.default(:public),
               docs: Zoi.list(Zoi.string()) |> Zoi.default([]),
+              capabilities: Zoi.list(ConnectorCapability.schema()) |> Zoi.default([]),
+              policies: Zoi.list(PolicyRequirement.schema()) |> Zoi.default([]),
+              schemas: Zoi.list(NamedSchema.schema()) |> Zoi.default([]),
               auth_profiles: Zoi.list(AuthProfile.schema()) |> Zoi.default([]),
               actions: Zoi.list(ActionSpec.schema()) |> Zoi.default([]),
               triggers: Zoi.list(TriggerSpec.schema()) |> Zoi.default([]),

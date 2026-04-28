@@ -28,9 +28,7 @@ defmodule Jido.Connect.JidoSensorRuntime do
              projection.integration_module.integration(),
              projection.trigger_id,
              Map.get(state, :config, %{}),
-             context: integration_context,
-             credential_lease: lease,
-             checkpoint: Map.get(context, :checkpoint)
+             runtime_opts(context, integration_context, lease)
            ) do
       signals = Enum.map(result.signals, &signal!(projection, &1))
 
@@ -98,6 +96,9 @@ defmodule Jido.Connect.JidoSensorRuntime do
            })}
         end
 
+      {:error, %_{} = error} ->
+        {:error, error}
+
       :error ->
         {:error,
          Error.connection_required(%{
@@ -114,4 +115,14 @@ defmodule Jido.Connect.JidoSensorRuntime do
     do: {:ok, lease}
 
   defp credential_lease(_context), do: {:error, Error.credential_lease_required()}
+
+  defp runtime_opts(runtime_context, integration_context, lease) do
+    %{
+      context: integration_context,
+      credential_lease: lease,
+      checkpoint: Map.get(runtime_context, :checkpoint),
+      policy: Map.get(runtime_context, :policy),
+      policy_context: Map.get(runtime_context, :policy_context, %{})
+    }
+  end
 end

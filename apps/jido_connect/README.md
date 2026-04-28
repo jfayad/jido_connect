@@ -10,7 +10,22 @@ and webhook HTTP ingress.
 Core Zoi-backed contract modules live in individual files under
 `lib/jido_connect/`, including `Jido.Connect.Spec`, `Jido.Connect.ActionSpec`,
 `Jido.Connect.TriggerSpec`, `Jido.Connect.Context`,
-`Jido.Connect.Connection`, and `Jido.Connect.CredentialLease`.
+`Jido.Connect.Connection`, `Jido.Connect.CredentialLease`,
+`Jido.Connect.PolicyRequirement`, and `Jido.Connect.NamedSchema`.
+
+Provider DSL modules use first-class sections for `integration`, `catalog`,
+`schemas`, `auth`, `policies`, `actions`, and `triggers`. Generated projections
+carry resource, verb, auth, policy, scope, risk, confirmation, and schema
+metadata for host discovery and policy callbacks.
+
+Large provider packages can split DSL declarations with `Spark.Dsl.Fragment`
+and include them through `use Jido.Connect, fragments: [...]`; generated modules
+still compile under the parent provider namespace.
+
+New providers should use the canonical `access` and `effect` DSL forms. Legacy
+operation fields are treated as compatibility inputs and should not be mixed
+with the canonical form. Every action and trigger must declare `resource`,
+`verb`, and `data_classification`.
 
 ## Installation
 
@@ -40,7 +55,10 @@ Jido.Connect.invoke(Jido.Connect.GitHub, "github.issue.list", %{repo: "org/repo"
 ```
 
 For host UI discovery, use `Jido.Connect.spec/1`, `actions/1`, `triggers/1`,
-`auth_profiles/1`, or the richer `Jido.Connect.Catalog` APIs.
+`auth_profiles/1`, or the richer `Jido.Connect.Catalog` APIs. `Catalog.discover/1`
+returns provider entries; `Catalog.tools/1` returns a flattened action/trigger
+catalog for search and tool pickers, including filters such as `:tag`,
+`:resource`, `:verb`, `:auth_kind`, `:auth_profile`, and `:scope`.
 
 Authenticated generated actions and sensors require both a connection and a
 matching credential lease. The connection is durable host-owned metadata; the
@@ -61,6 +79,10 @@ connection a host should resolve for per-user, tenant/org, installation, system,
 or explicit connection flows. `Jido.Connect.Authorization` then applies the
 shared runtime checks across generated actions, sensors, plugin availability,
 and future package bridges.
+
+Host-owned policy stays outside the package but can be passed at runtime with
+`policy:`. Core normalizes policy denial to `:policy_denied` and plugin
+availability to `:disabled_by_policy`.
 
 Provider packages should normalize reusable runtime shapes into the core
 Zoi-backed structs:

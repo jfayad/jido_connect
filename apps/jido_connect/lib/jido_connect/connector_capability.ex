@@ -7,7 +7,7 @@ defmodule Jido.Connect.ConnectorCapability do
   exists here?" for discovery, UI grouping, and package comparisons.
   """
 
-  alias Jido.Connect.{AuthProfile, Spec}
+  alias Jido.Connect.AuthProfile
 
   @kinds [:auth, :actions, :triggers, :webhook, :poll, :mcp, :runtime, :setup]
   @statuses [:available, :planned, :experimental, :deprecated]
@@ -37,11 +37,12 @@ defmodule Jido.Connect.ConnectorCapability do
   def new(attrs), do: Zoi.parse(@schema, attrs)
 
   @doc "Derives aggregate capabilities from a connector spec."
-  @spec from_spec(Spec.t(), module() | nil) :: [t()]
-  def from_spec(%Spec{} = spec, module \\ nil) do
+  @spec from_spec(map(), module() | nil) :: [t()]
+  def from_spec(spec, module \\ nil) when is_map(spec) do
     auth_capabilities(spec, module) ++
       action_capabilities(spec, module) ++
       trigger_capabilities(spec, module) ++
+      declared_capabilities(spec, module) ++
       metadata_capabilities(spec, module)
   end
 
@@ -61,7 +62,7 @@ defmodule Jido.Connect.ConnectorCapability do
     }
   end
 
-  defp auth_capabilities(%Spec{} = spec, module) do
+  defp auth_capabilities(spec, module) do
     Enum.map(spec.auth_profiles, fn %AuthProfile{} = profile ->
       new!(%{
         id: "#{spec.id}.auth.#{profile.id}",
@@ -83,9 +84,9 @@ defmodule Jido.Connect.ConnectorCapability do
     end)
   end
 
-  defp action_capabilities(%Spec{actions: []}, _module), do: []
+  defp action_capabilities(%{actions: []}, _module), do: []
 
-  defp action_capabilities(%Spec{} = spec, module) do
+  defp action_capabilities(spec, module) do
     [
       new!(%{
         id: "#{spec.id}.actions",
@@ -104,9 +105,9 @@ defmodule Jido.Connect.ConnectorCapability do
     ]
   end
 
-  defp trigger_capabilities(%Spec{triggers: []}, _module), do: []
+  defp trigger_capabilities(%{triggers: []}, _module), do: []
 
-  defp trigger_capabilities(%Spec{} = spec, module) do
+  defp trigger_capabilities(spec, module) do
     spec.triggers
     |> Enum.group_by(& &1.kind)
     |> Enum.map(fn {kind, triggers} ->
@@ -126,7 +127,18 @@ defmodule Jido.Connect.ConnectorCapability do
     end)
   end
 
-  defp metadata_capabilities(%Spec{} = spec, module) do
+  defp declared_capabilities(spec, module) do
+    Enum.map(spec.capabilities, fn %__MODULE__{} = capability ->
+      %{
+        capability
+        | provider: spec.id,
+          status: capability.status || status(spec),
+          module: capability.module || module
+      }
+    end)
+  end
+
+  defp metadata_capabilities(spec, module) do
     spec.metadata
     |> Map.get(:capabilities, [])
     |> Enum.map(fn attrs ->
@@ -139,7 +151,7 @@ defmodule Jido.Connect.ConnectorCapability do
     end)
   end
 
-  defp status(%Spec{} = spec), do: Map.get(spec.metadata, :status, :available)
+  defp status(spec), do: spec.status || Map.get(spec.metadata, :status, :available)
 
   defp trigger_feature(:webhook), do: :webhook
   defp trigger_feature(:poll), do: :polling

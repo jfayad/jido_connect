@@ -8,10 +8,10 @@ defmodule Jido.Connect.ConnectionSelector do
   mint short-lived `Jido.Connect.CredentialLease` values.
   """
 
-  alias Jido.Connect.Connection
+  alias Jido.Connect.{Callback, Connection, Error}
 
-  @strategies [:per_actor, :tenant_default, :installation, :system, :explicit]
-  @owner_types [:user, :tenant, :system, :installation, :app_user]
+  @strategies [:per_actor, :tenant_default, :org_default, :installation, :system, :explicit]
+  @owner_types [:user, :tenant, :org, :system, :installation, :app_user]
 
   @schema Zoi.struct(
             __MODULE__,
@@ -72,6 +72,19 @@ defmodule Jido.Connect.ConnectionSelector do
     |> new()
   end
 
+  def org_default(provider, tenant_id, org_id, attrs \\ []) do
+    attrs
+    |> attrs_map()
+    |> Map.merge(%{
+      provider: provider,
+      strategy: :org_default,
+      tenant_id: tenant_id,
+      owner_type: :org,
+      owner_id: org_id
+    })
+    |> new()
+  end
+
   def installation(provider, tenant_id, installation_id, attrs \\ []) do
     attrs
     |> attrs_map()
@@ -124,7 +137,8 @@ defmodule Jido.Connect.ConnectionSelector do
 
   def normalize(_other), do: :error
 
-  @spec resolve(t() | String.t(), term(), term(), map()) :: {:ok, Connection.t()} | :error
+  @spec resolve(t() | String.t(), term(), term(), map()) ::
+          {:ok, Connection.t()} | {:error, Error.error()} | :error
   def resolve(selector_or_id, resolver, operation \\ nil, config \\ %{})
 
   def resolve(selector_or_id, resolver, _operation, _config) when is_function(resolver, 1) do
@@ -205,7 +219,19 @@ defmodule Jido.Connect.ConnectionSelector do
   defp attrs_map(attrs) when is_list(attrs), do: Map.new(attrs)
   defp attrs_map(attrs) when is_map(attrs), do: attrs
 
-  defp apply_resolver(resolver, args), do: apply(resolver, args)
+  defp apply_resolver(resolver, args) do
+    case Callback.run(fn -> apply(resolver, args) end,
+           phase: :connection_resolver,
+           details: %{resolver: inspect(resolver)}
+         ) do
+      {:ok, result} -> result
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp normalize_connection_result({:error, %_{} = error}) do
+    if Error.error?(error), do: {:error, error}, else: :error
+  end
 
   defp normalize_connection_result({:ok, %Connection{} = connection}), do: {:ok, connection}
   defp normalize_connection_result(%Connection{} = connection), do: {:ok, connection}

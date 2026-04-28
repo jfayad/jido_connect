@@ -1,17 +1,16 @@
-defmodule Jido.Connect.Field do
-  @moduledoc "Input, output, config, and signal field contract."
+defmodule Jido.Connect.NamedSchema do
+  @moduledoc "Reusable named schema declared by an integration."
+
+  alias Jido.Connect.Field
 
   @schema Zoi.struct(
             __MODULE__,
             %{
-              __spark_metadata__: Zoi.any() |> Zoi.optional(),
-              name: Zoi.atom(),
-              type: Zoi.any(),
+              id: Zoi.atom(),
+              label: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
               description: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
-              example: Zoi.any() |> Zoi.optional(),
-              default: Zoi.any() |> Zoi.optional(),
-              enum: Zoi.list(Zoi.any()) |> Zoi.nullish() |> Zoi.optional(),
-              required?: Zoi.boolean() |> Zoi.default(false),
+              fields: Zoi.list(Field.schema()) |> Zoi.default([]),
+              zoi_schema: Zoi.any(),
               metadata: Zoi.map() |> Zoi.default(%{})
             },
             coerce: true

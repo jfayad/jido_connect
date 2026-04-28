@@ -19,7 +19,7 @@ defmodule Jido.Connect.CredentialLease do
               profile: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
               tenant_id: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
               owner_type:
-                Zoi.enum([:user, :tenant, :system, :installation, :app_user])
+                Zoi.enum([:user, :tenant, :org, :system, :installation, :app_user])
                 |> Zoi.nullish()
                 |> Zoi.optional(),
               owner_id: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),

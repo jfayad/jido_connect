@@ -66,11 +66,18 @@ defmodule Jido.Connect.MCPTest do
     spec = Jido.Connect.MCP.integration()
 
     assert spec.id == :mcp
+    assert spec.package == :jido_connect_mcp
+    assert spec.status == :experimental
+    assert spec.metadata.bridge?
+    assert [%{id: :endpoint_access}] = spec.policies
     assert {:endpoint, :api_key} in Enum.map(spec.auth_profiles, &{&1.id, &1.kind})
 
     assert {:ok,
             %{
               id: "mcp.tools.list",
+              resource: :mcp_tool,
+              verb: :list,
+              policies: [:endpoint_access],
               mutation?: false,
               scope_resolver: Jido.Connect.MCP.ScopeResolver
             }} = Connect.action(spec, "mcp.tools.list")
@@ -89,6 +96,7 @@ defmodule Jido.Connect.MCPTest do
     features = entry.capabilities |> Enum.map(& &1.feature) |> MapSet.new()
 
     assert entry.package == :jido_connect_mcp
+    assert entry.status == :experimental
     assert MapSet.member?(features, :api_key)
     assert MapSet.member?(features, :generated_jido_actions)
     assert MapSet.member?(features, :mcp_bridge)

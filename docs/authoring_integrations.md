@@ -1,8 +1,9 @@
 # Authoring Integrations
 
-Provider packages use `use Jido.Connect` and declare integration metadata,
-auth profiles, actions, and triggers. The Spark DSL compiles the declaration
-into a `Jido.Connect.Spec` and generated Jido modules.
+Provider packages use `use Jido.Connect` and declare integration identity,
+catalog metadata, auth profiles, host policy requirements, actions, and
+triggers. The Spark DSL compiles the declaration into a `Jido.Connect.Spec`,
+Zoi-backed contract structs, catalog records, and generated Jido modules.
 
 Generated modules are adapters. Provider business logic belongs in handler
 modules referenced by the DSL.
@@ -11,8 +12,10 @@ modules referenced by the DSL.
 
 A connector should stay narrow:
 
-- `integration.ex` declares provider metadata, auth profiles, actions, triggers,
-  scopes, and optional scope resolvers.
+- `integration.ex` declares provider identity, catalog capabilities, schemas,
+  auth profiles, shared policy requirements, and fragment imports.
+- `actions/*.ex` and `triggers/*.ex` group resource-specific Spark fragments
+  so large providers do not turn into one giant DSL file.
 - `oauth.ex` wraps provider-specific OAuth exchange and credential lease shaping.
 - `client.ex` owns provider HTTP paths and response normalization.
 - `webhook.ex` owns provider webhook verification and signal normalization.
@@ -42,9 +45,139 @@ mix jido.connect.gen.provider google_sheets
 - `Jido.Connect.Polling` for checkpoint params and latest checkpoint selection.
 - `Jido.Connect.Catalog` for host-facing connector metadata derived from specs
   and generated projections.
+- `Jido.Connect.Policy` for normalizing host-owned policy callbacks.
 
 Provider packages should normalize provider-specific maps into these structs
 before exposing data to hosts or generated Jido runtimes.
+
+## V2 DSL Shape
+
+Use first-class DSL sections instead of loose metadata maps:
+
+```elixir
+use Jido.Connect
+
+integration do
+  id :github
+  name "GitHub"
+  description "GitHub repository and issue tools."
+  category :developer_tools
+  docs ["https://docs.github.com/rest"]
+end
+
+catalog do
+  package :jido_connect_github
+  status :available
+  tags [:source_control, :issues]
+
+  capability :webhook_verification do
+    kind :webhook
+    feature :webhook_verification
+    label "Webhook verification"
+  end
+end
+
+auth do
+  oauth2 :user do
+    default? true
+    owner :app_user
+    subject :user
+    setup :oauth2_authorization_code
+    authorize_url "https://github.com/login/oauth/authorize"
+    token_url "https://github.com/login/oauth/access_token"
+    token_field :access_token
+    credential_fields [:access_token]
+    lease_fields [:access_token]
+    scopes ["repo", "read:user"]
+    default_scopes ["read:user"]
+  end
+end
+
+policies do
+  policy :repo_access do
+    subject {:input, :repo}
+    owner {:connection, :owner}
+    decision :allow_operation
+  end
+end
+
+actions do
+  action :list_issues do
+    id "github.issue.list"
+    resource :issue
+    verb :list
+    data_classification :workspace_content
+    handler MyProvider.Handlers.ListIssues
+    effect :read
+
+    access do
+      auth :user
+      policies [:repo_access]
+      scopes ["repo"], resolver: MyProvider.ScopeResolver
+    end
+
+    input do
+      field :repo, :string, required?: true
+    end
+  end
+end
+```
+
+Generated projections preserve the declared resource, verb, policy, auth,
+scope, risk, confirmation, and schema metadata for host UIs and policy
+callbacks.
+
+New providers should use `access` and `effect`. The older `auth_profiles`,
+`requirements`, direct action/trigger `policies`, `mutation?`, `risk`, and
+`confirmation` fields remain as compatibility inputs, but should not be mixed
+with the canonical form in the same operation. The DSL enforces resource, verb,
+and data classification on every action and trigger so catalog search, policy
+callbacks, audit trails, and host UIs have stable metadata across providers.
+
+## Splitting Large Providers
+
+Large connectors should split declarations by resource using Spark fragments.
+The top-level integration keeps provider identity, auth, and shared policies;
+resource files add actions or triggers.
+
+```elixir
+defmodule Jido.Connect.GitHub.Issues do
+  use Spark.Dsl.Fragment, of: Jido.Connect
+
+  actions do
+    action :list_issues do
+      id "github.issue.list"
+      resource :issue
+      verb :list
+      data_classification :workspace_content
+      label "List issues"
+      handler Jido.Connect.GitHub.Handlers.Actions.ListIssues
+      effect :read
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+    end
+  end
+end
+
+defmodule Jido.Connect.GitHub do
+  use Jido.Connect, fragments: [
+    Jido.Connect.GitHub.Issues
+  ]
+
+  integration do
+    id :github
+    name "GitHub"
+  end
+end
+```
+
+This keeps generated module names anchored to the parent provider namespace
+while allowing provider packages to organize DSL files as `issues.ex`,
+`pull_requests.ex`, `repositories.ex`, and so on.
 
 ## Discovering The Catalog
 
@@ -60,7 +193,12 @@ Then browse them from code:
 ```elixir
 Jido.Connect.Catalog.discover(query: "issue")
 Jido.Connect.Catalog.discover(auth_kind: :oauth2)
+Jido.Connect.Catalog.discover(tag: :issues)
 Jido.Connect.Catalog.discover(tool: "github.issue.list")
+Jido.Connect.Catalog.discover(capability: :webhook_verification)
+Jido.Connect.Catalog.tools(query: "message", type: :action)
+Jido.Connect.Catalog.tools(resource: :message, verb: :create)
+Jido.Connect.Catalog.tools(scope: "chat:write")
 ```
 
 For local inspection, use:

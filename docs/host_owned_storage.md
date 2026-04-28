@@ -26,13 +26,46 @@ host-configured bridge credentials; handlers read only from `lease.fields`.
 
 - `owner_type: :user` for per-user OAuth credentials.
 - `owner_type: :tenant` for tenant-wide shared installs, such as a Slack bot.
+- `owner_type: :org` for organization-wide grants.
 - `owner_type: :installation` for app installation grants, such as GitHub App
   installations.
 - `owner_type: :system` for app-controlled credentials.
 
 `jido_connect` validates resolved connections, profiles, scopes, and short-lived
-leases, but it does not decide whether an actor may use a shared credential.
-That policy belongs to the host app.
+leases. The connector DSL can declare policy requirements such as
+`:repo_access` or `:workspace_access`, and generated projections expose those
+requirements to host UIs, but the actual decision about whether an actor may use
+a shared credential belongs to the host app.
+
+## Host Policy
+
+Pass a policy callback when actor-level authorization matters:
+
+```elixir
+policy = fn operation, params, context, connection ->
+  if MyApp.Permissions.allowed?(context.actor, operation.id, connection) do
+    :ok
+  else
+    {:deny, :not_allowed_for_connection}
+  end
+end
+
+Jido.Connect.GitHub.Actions.ListIssues.run(params, %{
+  integration_context: context,
+  credential_lease: lease,
+  policy: policy
+})
+```
+
+Policies may be anonymous functions, modules exporting `authorize/4` or
+`authorize/5`, or `{module, function}` tuples. Denials return
+`Jido.Connect.Error.AuthError` with `reason: :policy_denied`. Policy exceptions
+are normalized into `Jido.Connect.Error.ExecutionError` instead of escaping as
+raw exceptions.
+
+Generated plugin availability accepts the same `policy` and `context` config.
+Policy denial is reported as `:disabled_by_policy` so UIs can hide or disable
+tools without exposing connection internals.
 
 ## Connection Selectors
 
@@ -74,6 +107,7 @@ Core then checks:
 - the connection is connected
 - the resolved connection matches the selector
 - the connection profile is allowed for the operation
+- the host policy allows this actor to use the connection
 - the connection and effective lease scopes satisfy required scopes
 
 If a lease carries its own scopes, the effective scopes are the intersection of

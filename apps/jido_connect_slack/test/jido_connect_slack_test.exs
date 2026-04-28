@@ -53,8 +53,18 @@ defmodule Jido.Connect.SlackTest do
     spec = Jido.Connect.Slack.integration()
 
     assert spec.id == :slack
+    assert spec.package == :jido_connect_slack
+    assert spec.tags == [:chat, :collaboration, :messaging]
+    assert [%{id: :workspace_access}] = spec.policies
 
-    assert {:ok, %{id: "slack.channel.list", mutation?: false}} =
+    assert {:ok,
+            %{
+              id: "slack.channel.list",
+              resource: :channel,
+              verb: :list,
+              policies: [:workspace_access],
+              mutation?: false
+            }} =
              Connect.action(spec, "slack.channel.list")
 
     assert {:ok, %{id: "slack.message.post", mutation?: true, confirmation: :required_for_ai}} =
@@ -96,6 +106,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert projection.action_id == "slack.message.post"
     assert projection.label == "Post message"
+    assert projection.resource == :message
+    assert projection.verb == :create
+    assert projection.policies == [:workspace_access]
 
     assert Enum.map(projection.input, & &1.name) == [
              :channel,

@@ -59,12 +59,15 @@ defmodule Jido.Connect.JidoPluginRuntime do
         ToolAvailability.new!(%{tool: tool, state: :disabled_by_policy})
 
       match?(%Connect.Connection{}, connection) ->
-        connection_availability(operation, connection)
+        connection_availability(operation, connection, config)
 
       is_binary(connection_id) and not is_nil(connection_resolver) ->
         case ConnectionSelector.resolve(connection_id, connection_resolver, operation, config) do
           {:ok, %Connect.Connection{} = resolved_connection} ->
-            connection_availability(operation, resolved_connection)
+            connection_availability(operation, resolved_connection, config)
+
+          {:error, %_{} = error} ->
+            execution_unavailable(tool, connection_id, error)
 
           _other ->
             connection_required(tool, connection_id)
@@ -76,10 +79,13 @@ defmodule Jido.Connect.JidoPluginRuntime do
         case ConnectionSelector.resolve(selector, connection_resolver, operation, config) do
           {:ok, %Connect.Connection{} = resolved_connection} ->
             if connection_selector_matches?(selector, resolved_connection) do
-              connection_availability(operation, resolved_connection)
+              connection_availability(operation, resolved_connection, config)
             else
               connection_required(tool, selector)
             end
+
+          {:error, %_{} = error} ->
+            execution_unavailable(tool, selector, error)
 
           _other ->
             connection_required(tool, selector)
@@ -142,10 +148,14 @@ defmodule Jido.Connect.JidoPluginRuntime do
     end
   end
 
-  defp connection_availability(operation, %Connect.Connection{} = connection) do
+  defp connection_availability(operation, %Connect.Connection{} = connection, config) do
     tool = operation_id(operation)
 
-    case Authorization.connection_availability(operation, connection) do
+    case Authorization.connection_availability(operation, connection, %{},
+           context: policy_context(config),
+           policy: Map.get(config, :policy),
+           policy_context: Map.get(config, :policy_context, %{})
+         ) do
       {:available, _required_scopes} ->
         ToolAvailability.new!(%{tool: tool, state: :available, connection_id: connection.id})
 
@@ -155,6 +165,13 @@ defmodule Jido.Connect.JidoPluginRuntime do
           state: :missing_scopes,
           connection_id: connection.id,
           missing_scopes: missing_scopes
+        })
+
+      :disabled_by_policy ->
+        ToolAvailability.new!(%{
+          tool: tool,
+          state: :disabled_by_policy,
+          connection_id: connection.id
         })
 
       :connection_required ->
@@ -168,4 +185,36 @@ defmodule Jido.Connect.JidoPluginRuntime do
 
   defp operation_id(%{action_id: action_id}), do: action_id
   defp operation_id(%{trigger_id: trigger_id}), do: trigger_id
+
+  defp policy_context(config) do
+    Map.get(config, :integration_context) || Map.get(config, :context)
+  end
+
+  defp execution_unavailable(tool, connection_id, error) when is_binary(connection_id) do
+    ToolAvailability.new!(%{
+      tool: tool,
+      state: :connection_required,
+      connection_id: connection_id,
+      metadata: %{error: Connect.Error.to_map(error)}
+    })
+  end
+
+  defp execution_unavailable(tool, %ConnectionSelector{} = selector, error) do
+    ToolAvailability.new!(%{
+      tool: tool,
+      state: :connection_required,
+      connection_id: selector.connection_id,
+      connection_selector: selector,
+      metadata: %{error: Connect.Error.to_map(error)}
+    })
+  end
+
+  defp execution_unavailable(tool, selector, error) do
+    ToolAvailability.new!(%{
+      tool: tool,
+      state: :connection_required,
+      connection_selector: selector,
+      metadata: %{error: Connect.Error.to_map(error)}
+    })
+  end
 end

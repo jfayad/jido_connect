@@ -3,6 +3,15 @@ defmodule Jido.Connect.AuthorizationTest do
 
   alias Jido.Connect.{Authorization, Connection, Context, CredentialLease, Error}
 
+  defmodule AllowPolicy do
+    def authorize(_operation, _input, _context, _connection, %{allow?: true}), do: :ok
+    def authorize(_operation, _input, _context, _connection, _attrs), do: {:deny, :not_allowed}
+  end
+
+  defmodule RaisingPolicy do
+    def authorize(_operation, _input, _context, _connection), do: raise("policy failed")
+  end
+
   test "authorizes a connected operation with a matching active lease" do
     connection = connection()
     context = context(connection)
@@ -15,6 +24,42 @@ defmodule Jido.Connect.AuthorizationTest do
       )
 
     assert :ok = Authorization.authorize(operation(), %{repo: "org/repo"}, context, lease)
+  end
+
+  test "applies host policy after connection and lease validation" do
+    connection = connection()
+    context = context(connection)
+
+    lease =
+      CredentialLease.from_connection!(
+        connection,
+        %{access_token: "secret"},
+        expires_at: DateTime.add(DateTime.utc_now(), 60, :second)
+      )
+
+    assert :ok =
+             Authorization.authorize(operation(), %{}, context, lease,
+               policy: AllowPolicy,
+               policy_context: %{allow?: true}
+             )
+
+    assert {:error,
+            %Error.AuthError{
+              reason: :policy_denied,
+              connection_id: "conn_1",
+              details: %{operation_id: "github.issue.list", reason: "not_allowed"}
+            }} =
+             Authorization.authorize(operation(), %{}, context, lease,
+               policy: AllowPolicy,
+               policy_context: %{allow?: false}
+             )
+
+    assert {:error,
+            %Error.ExecutionError{
+              phase: :policy,
+              details: %{operation_id: "github.issue.list", message: "policy failed"}
+            }} =
+             Authorization.authorize(operation(), %{}, context, lease, policy: RaisingPolicy)
   end
 
   test "lease scopes narrow durable connection scopes" do
@@ -68,6 +113,13 @@ defmodule Jido.Connect.AuthorizationTest do
                operation(auth_profiles: [:installation]),
                connection(profile: :user),
                %{}
+             )
+
+    assert :disabled_by_policy =
+             Authorization.connection_availability(operation(), connection(), %{},
+               context: context(connection()),
+               policy: AllowPolicy,
+               policy_context: %{allow?: false}
              )
   end
 

@@ -6,7 +6,14 @@ defmodule Jido.Connect.Catalog do
   available providers, auth modes, generated tools, and maturity metadata.
   """
 
-  alias Jido.Connect.{ActionSpec, AuthProfile, ConnectorCapability, TriggerSpec}
+  alias Jido.Connect.{
+    ActionSpec,
+    AuthProfile,
+    ConnectorCapability,
+    NamedSchema,
+    PolicyRequirement,
+    TriggerSpec
+  }
 
   defmodule AuthProfileSummary do
     @moduledoc "Catalog-facing auth profile metadata."
@@ -19,9 +26,11 @@ defmodule Jido.Connect.Catalog do
                 label: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
                 owner: Zoi.atom(),
                 subject: Zoi.atom(),
+                setup: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
                 default?: Zoi.boolean() |> Zoi.default(false),
                 scopes: Zoi.list(Zoi.string()) |> Zoi.default([]),
-                default_scopes: Zoi.list(Zoi.string()) |> Zoi.default([])
+                default_scopes: Zoi.list(Zoi.string()) |> Zoi.default([]),
+                optional_scopes: Zoi.list(Zoi.string()) |> Zoi.default([])
               },
               coerce: true
             )
@@ -47,8 +56,12 @@ defmodule Jido.Connect.Catalog do
                 label: Zoi.string(),
                 description: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
                 module: Zoi.module() |> Zoi.nullish() |> Zoi.optional(),
+                resource: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+                verb: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+                data_classification: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
                 auth_profile: Zoi.atom(),
                 auth_profiles: Zoi.list(Zoi.atom()) |> Zoi.default([]),
+                policies: Zoi.list(Zoi.atom()) |> Zoi.default([]),
                 scopes: Zoi.list(Zoi.string()) |> Zoi.default([]),
                 risk: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
                 confirmation: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
@@ -74,16 +87,62 @@ defmodule Jido.Connect.Catalog do
               %{
                 id: Zoi.atom(),
                 name: Zoi.string(),
+                description: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
                 category: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
                 package: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
                 module: Zoi.module(),
                 status: Zoi.atom() |> Zoi.default(:available),
+                tags: Zoi.list(Zoi.atom()) |> Zoi.default([]),
+                visibility: Zoi.atom() |> Zoi.default(:public),
                 docs: Zoi.list(Zoi.string()) |> Zoi.default([]),
                 capabilities: Zoi.list(ConnectorCapability.schema()) |> Zoi.default([]),
+                policies: Zoi.list(PolicyRequirement.schema()) |> Zoi.default([]),
+                schemas: Zoi.list(NamedSchema.schema()) |> Zoi.default([]),
                 auth_profiles: Zoi.list(AuthProfileSummary.schema()) |> Zoi.default([]),
                 actions: Zoi.list(Tool.schema()) |> Zoi.default([]),
                 triggers: Zoi.list(Tool.schema()) |> Zoi.default([]),
                 metadata: Zoi.map() |> Zoi.default(%{})
+              },
+              coerce: true
+            )
+
+    @type t :: unquote(Zoi.type_spec(@schema))
+    @enforce_keys Zoi.Struct.enforce_keys(@schema)
+    defstruct Zoi.Struct.struct_fields(@schema)
+
+    def schema, do: @schema
+    def new!(attrs), do: Zoi.parse!(@schema, attrs)
+    def new(attrs), do: Zoi.parse(@schema, attrs)
+  end
+
+  defmodule ToolEntry do
+    @moduledoc "Flattened catalog-facing tool metadata with provider context."
+
+    @schema Zoi.struct(
+              __MODULE__,
+              %{
+                provider: Zoi.atom(),
+                provider_name: Zoi.string(),
+                category: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+                package: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+                integration_module: Zoi.module(),
+                type: Zoi.enum([:action, :trigger]),
+                id: Zoi.string(),
+                name: Zoi.atom(),
+                label: Zoi.string(),
+                description: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
+                module: Zoi.module() |> Zoi.nullish() |> Zoi.optional(),
+                resource: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+                verb: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+                data_classification: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+                auth_profile: Zoi.atom(),
+                auth_profiles: Zoi.list(Zoi.atom()) |> Zoi.default([]),
+                auth_kinds: Zoi.list(Zoi.atom()) |> Zoi.default([]),
+                policies: Zoi.list(Zoi.atom()) |> Zoi.default([]),
+                scopes: Zoi.list(Zoi.string()) |> Zoi.default([]),
+                risk: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+                confirmation: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+                trigger_kind: Zoi.atom() |> Zoi.nullish() |> Zoi.optional()
               },
               coerce: true
             )
@@ -105,12 +164,18 @@ defmodule Jido.Connect.Catalog do
     Entry.new!(%{
       id: spec.id,
       name: spec.name,
+      description: spec.description,
       category: spec.category,
-      package: Map.get(spec.metadata, :package),
+      package: spec.package || Map.get(spec.metadata, :package),
       module: integration_module,
-      status: Keyword.get(opts, :status, Map.get(spec.metadata, :status, :available)),
+      status:
+        Keyword.get(opts, :status, spec.status || Map.get(spec.metadata, :status, :available)),
+      tags: spec.tags,
+      visibility: spec.visibility,
       docs: spec.docs,
       capabilities: ConnectorCapability.from_spec(spec, integration_module),
+      policies: spec.policies,
+      schemas: spec.schemas,
       auth_profiles: Enum.map(spec.auth_profiles, &auth_summary/1),
       actions: Enum.map(spec.actions, &action_tool(&1, projection)),
       triggers: Enum.map(spec.triggers, &trigger_tool(&1, projection)),
@@ -161,8 +226,27 @@ defmodule Jido.Connect.Catalog do
     entries
     |> filter_equal(:status, Keyword.get(opts, :status))
     |> filter_equal(:category, Keyword.get(opts, :category))
+    |> filter_equal(:visibility, Keyword.get(opts, :visibility))
+    |> filter_equal(:package, Keyword.get(opts, :package))
+    |> filter_tag(Keyword.get(opts, :tag))
     |> filter_auth_kind(Keyword.get(opts, :auth_kind))
+    |> filter_auth_profile(Keyword.get(opts, :auth_profile))
+    |> filter_scope(Keyword.get(opts, :scope))
+    |> filter_capability_kind(Keyword.get(opts, :capability_kind))
+    |> filter_capability_feature(Keyword.get(opts, :capability, Keyword.get(opts, :feature)))
     |> filter_tool(Keyword.get(opts, :tool))
+  end
+
+  @doc "Returns a flattened catalog of actions and triggers across discovered providers."
+  @spec tools(keyword()) :: [ToolEntry.t()]
+  def tools(opts \\ []) do
+    provider_opts = Keyword.drop(opts, [:query, :q, :type, :risk, :confirmation])
+
+    provider_opts
+    |> discover()
+    |> Enum.flat_map(&tool_entries/1)
+    |> filter_tool_entries(opts)
+    |> search_tools(Keyword.get(opts, :query, Keyword.get(opts, :q)))
   end
 
   @spec to_map(Entry.t()) :: map()
@@ -170,16 +254,49 @@ defmodule Jido.Connect.Catalog do
     %{
       id: entry.id,
       name: entry.name,
+      description: entry.description,
       category: entry.category,
       package: entry.package,
       module: inspect(entry.module),
       status: entry.status,
+      tags: entry.tags,
+      visibility: entry.visibility,
       docs: entry.docs,
       capabilities: Enum.map(entry.capabilities, &ConnectorCapability.to_map/1),
+      policies: Enum.map(entry.policies, &policy_to_map/1),
+      schemas: Enum.map(entry.schemas, &schema_to_map/1),
       auth_profiles: Enum.map(entry.auth_profiles, &auth_profile_to_map/1),
       actions: Enum.map(entry.actions, &tool_to_map/1),
       triggers: Enum.map(entry.triggers, &tool_to_map/1),
       metadata: entry.metadata
+    }
+  end
+
+  @spec to_map(ToolEntry.t()) :: map()
+  def to_map(%ToolEntry{} = tool) do
+    %{
+      provider: tool.provider,
+      provider_name: tool.provider_name,
+      category: tool.category,
+      package: tool.package,
+      integration_module: inspect(tool.integration_module),
+      type: tool.type,
+      id: tool.id,
+      name: tool.name,
+      label: tool.label,
+      description: tool.description,
+      module: module_name(tool.module),
+      resource: tool.resource,
+      verb: tool.verb,
+      data_classification: tool.data_classification,
+      auth_profile: tool.auth_profile,
+      auth_profiles: tool.auth_profiles,
+      auth_kinds: tool.auth_kinds,
+      policies: tool.policies,
+      scopes: tool.scopes,
+      risk: tool.risk,
+      confirmation: tool.confirmation,
+      trigger_kind: tool.trigger_kind
     }
   end
 
@@ -190,9 +307,11 @@ defmodule Jido.Connect.Catalog do
       label: auth_profile.label,
       owner: auth_profile.owner,
       subject: auth_profile.subject,
+      setup: auth_profile.setup,
       default?: auth_profile.default?,
       scopes: auth_profile.scopes,
-      default_scopes: auth_profile.default_scopes
+      default_scopes: auth_profile.default_scopes,
+      optional_scopes: auth_profile.optional_scopes
     })
   end
 
@@ -204,8 +323,12 @@ defmodule Jido.Connect.Catalog do
       label: action.label,
       description: action.description,
       module: projection_module(projection, :actions, action.id),
+      resource: action.resource,
+      verb: action.verb,
+      data_classification: action.data_classification,
       auth_profile: action.auth_profile,
-      auth_profiles: action.auth_profiles,
+      auth_profiles: operation_auth_profiles(action),
+      policies: action.policies,
       scopes: action.scopes,
       risk: action.risk,
       confirmation: action.confirmation
@@ -220,12 +343,19 @@ defmodule Jido.Connect.Catalog do
       label: trigger.label,
       description: trigger.description,
       module: projection_module(projection, :sensors, trigger.id),
+      resource: trigger.resource,
+      verb: trigger.verb,
+      data_classification: trigger.data_classification,
       auth_profile: trigger.auth_profile,
-      auth_profiles: trigger.auth_profiles,
+      auth_profiles: operation_auth_profiles(trigger),
+      policies: trigger.policies,
       scopes: trigger.scopes,
       trigger_kind: trigger.kind
     })
   end
+
+  defp operation_auth_profiles(%{auth_profiles: []} = operation), do: [operation.auth_profile]
+  defp operation_auth_profiles(%{auth_profiles: profiles}), do: profiles
 
   defp projection(integration_module) do
     if function_exported?(integration_module, :jido_projection, 0) do
@@ -303,6 +433,55 @@ defmodule Jido.Connect.Catalog do
     end)
   end
 
+  defp filter_auth_profile(entries, profile) when profile in [nil, ""], do: entries
+
+  defp filter_auth_profile(entries, profile) do
+    profile = normalize_filter_value(profile)
+
+    Enum.filter(entries, fn entry ->
+      Enum.any?(entry.auth_profiles, &(&1.id == profile))
+    end)
+  end
+
+  defp filter_scope(entries, scope) when scope in [nil, ""], do: entries
+
+  defp filter_scope(entries, scope) do
+    scope = to_string(scope)
+
+    Enum.filter(entries, fn entry ->
+      Enum.any?(entry.auth_profiles, &(scope in &1.scopes)) or
+        Enum.any?(entry.actions, &(scope in &1.scopes)) or
+        Enum.any?(entry.triggers, &(scope in &1.scopes))
+    end)
+  end
+
+  defp filter_tag(entries, tag) when tag in [nil, ""], do: entries
+
+  defp filter_tag(entries, tag) do
+    tag = normalize_filter_value(tag)
+    Enum.filter(entries, &(tag in &1.tags))
+  end
+
+  defp filter_capability_kind(entries, kind) when kind in [nil, ""], do: entries
+
+  defp filter_capability_kind(entries, kind) do
+    kind = normalize_filter_value(kind)
+
+    Enum.filter(entries, fn entry ->
+      Enum.any?(entry.capabilities, &(&1.kind == kind))
+    end)
+  end
+
+  defp filter_capability_feature(entries, feature) when feature in [nil, ""], do: entries
+
+  defp filter_capability_feature(entries, feature) do
+    feature = normalize_filter_value(feature)
+
+    Enum.filter(entries, fn entry ->
+      Enum.any?(entry.capabilities, &(&1.feature == feature))
+    end)
+  end
+
   defp filter_tool(entries, tool) when tool in [nil, ""], do: entries
 
   defp filter_tool(entries, tool) do
@@ -325,12 +504,17 @@ defmodule Jido.Connect.Catalog do
     [
       entry.id,
       entry.name,
+      entry.description,
       entry.category,
       entry.package,
       entry.status,
+      entry.tags,
+      entry.visibility,
       inspect(entry.module),
       Enum.map(entry.docs, & &1),
       Enum.map(entry.capabilities, &[&1.kind, &1.feature, &1.label]),
+      Enum.map(entry.policies, &[&1.id, &1.label, &1.description, &1.decision]),
+      Enum.map(entry.schemas, &[&1.id, &1.label, &1.description]),
       Enum.map(entry.auth_profiles, &[&1.id, &1.kind, &1.label, &1.scopes, &1.default_scopes]),
       Enum.map(entry.actions, &tool_search_text/1),
       Enum.map(entry.triggers, &tool_search_text/1)
@@ -349,13 +533,146 @@ defmodule Jido.Connect.Catalog do
       tool.label,
       tool.description,
       inspect(tool.module),
+      tool.resource,
+      tool.verb,
+      tool.data_classification,
       tool.auth_profile,
       tool.auth_profiles,
+      tool.policies,
       tool.scopes,
       tool.risk,
       tool.confirmation,
       tool.trigger_kind
     ]
+  end
+
+  defp tool_entries(%Entry{} = entry) do
+    Enum.map(entry.actions ++ entry.triggers, &tool_entry(entry, &1))
+  end
+
+  defp tool_entry(%Entry{} = entry, %Tool{} = tool) do
+    ToolEntry.new!(%{
+      provider: entry.id,
+      provider_name: entry.name,
+      category: entry.category,
+      package: entry.package,
+      integration_module: entry.module,
+      type: tool.type,
+      id: tool.id,
+      name: tool.name,
+      label: tool.label,
+      description: tool.description,
+      module: tool.module,
+      resource: tool.resource,
+      verb: tool.verb,
+      data_classification: tool.data_classification,
+      auth_profile: tool.auth_profile,
+      auth_profiles: tool.auth_profiles,
+      auth_kinds: auth_kinds(entry, tool.auth_profiles),
+      policies: tool.policies,
+      scopes: tool.scopes,
+      risk: tool.risk,
+      confirmation: tool.confirmation,
+      trigger_kind: tool.trigger_kind
+    })
+  end
+
+  defp auth_kinds(%Entry{} = entry, auth_profiles) do
+    entry.auth_profiles
+    |> Enum.filter(&(&1.id in auth_profiles))
+    |> Enum.map(& &1.kind)
+    |> Enum.uniq()
+  end
+
+  defp filter_tool_entries(tools, opts) do
+    tools
+    |> filter_tool_equal(:type, Keyword.get(opts, :type))
+    |> filter_tool_equal(:resource, Keyword.get(opts, :resource))
+    |> filter_tool_equal(:verb, Keyword.get(opts, :verb))
+    |> filter_tool_equal(:data_classification, Keyword.get(opts, :data_classification))
+    |> filter_tool_equal(:risk, Keyword.get(opts, :risk))
+    |> filter_tool_equal(:confirmation, Keyword.get(opts, :confirmation))
+    |> filter_tool_auth_kind(Keyword.get(opts, :auth_kind))
+    |> filter_tool_auth_profile(Keyword.get(opts, :auth_profile))
+    |> filter_tool_scope(Keyword.get(opts, :scope))
+    |> filter_tool_id(Keyword.get(opts, :tool))
+  end
+
+  defp filter_tool_equal(tools, _field, value) when value in [nil, ""], do: tools
+
+  defp filter_tool_equal(tools, field, value) do
+    value = normalize_filter_value(value)
+    Enum.filter(tools, &(Map.fetch!(&1, field) == value))
+  end
+
+  defp filter_tool_auth_kind(tools, kind) when kind in [nil, ""], do: tools
+
+  defp filter_tool_auth_kind(tools, kind) do
+    kind = normalize_filter_value(kind)
+    Enum.filter(tools, &(kind in &1.auth_kinds))
+  end
+
+  defp filter_tool_auth_profile(tools, profile) when profile in [nil, ""], do: tools
+
+  defp filter_tool_auth_profile(tools, profile) do
+    profile = normalize_filter_value(profile)
+    Enum.filter(tools, &(profile in &1.auth_profiles))
+  end
+
+  defp filter_tool_scope(tools, scope) when scope in [nil, ""], do: tools
+
+  defp filter_tool_scope(tools, scope) do
+    scope = to_string(scope)
+    Enum.filter(tools, &(scope in &1.scopes))
+  end
+
+  defp filter_tool_id(tools, tool) when tool in [nil, ""], do: tools
+
+  defp filter_tool_id(tools, tool) do
+    tool = to_string(tool)
+    Enum.filter(tools, &(&1.id == tool))
+  end
+
+  defp search_tools(tools, query) when query in [nil, ""], do: tools
+
+  defp search_tools(tools, query) when is_binary(query) do
+    normalized_query = String.downcase(query)
+
+    Enum.filter(tools, fn tool ->
+      tool
+      |> tool_entry_search_text()
+      |> String.contains?(normalized_query)
+    end)
+  end
+
+  defp tool_entry_search_text(%ToolEntry{} = tool) do
+    [
+      tool.provider,
+      tool.provider_name,
+      tool.category,
+      tool.package,
+      tool.type,
+      tool.id,
+      tool.name,
+      tool.label,
+      tool.description,
+      inspect(tool.module),
+      tool.resource,
+      tool.verb,
+      tool.data_classification,
+      tool.auth_profile,
+      tool.auth_profiles,
+      tool.auth_kinds,
+      tool.policies,
+      tool.scopes,
+      tool.risk,
+      tool.confirmation,
+      tool.trigger_kind
+    ]
+    |> List.flatten()
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map_join(" ", &to_string/1)
+    |> String.downcase()
   end
 
   defp auth_profile_to_map(%AuthProfileSummary{} = auth_profile) do
@@ -365,9 +682,33 @@ defmodule Jido.Connect.Catalog do
       label: auth_profile.label,
       owner: auth_profile.owner,
       subject: auth_profile.subject,
+      setup: auth_profile.setup,
       default?: auth_profile.default?,
       scopes: auth_profile.scopes,
-      default_scopes: auth_profile.default_scopes
+      default_scopes: auth_profile.default_scopes,
+      optional_scopes: auth_profile.optional_scopes
+    }
+  end
+
+  defp policy_to_map(%PolicyRequirement{} = policy) do
+    %{
+      id: policy.id,
+      label: policy.label,
+      description: policy.description,
+      subject: json_safe(policy.subject),
+      owner: json_safe(policy.owner),
+      decision: policy.decision,
+      metadata: json_safe(policy.metadata)
+    }
+  end
+
+  defp schema_to_map(%NamedSchema{} = schema) do
+    %{
+      id: schema.id,
+      label: schema.label,
+      description: schema.description,
+      fields: Enum.map(schema.fields, &(Map.from_struct(&1) |> json_safe())),
+      metadata: json_safe(schema.metadata)
     }
   end
 
@@ -379,8 +720,12 @@ defmodule Jido.Connect.Catalog do
       label: tool.label,
       description: tool.description,
       module: module_name(tool.module),
+      resource: tool.resource,
+      verb: tool.verb,
+      data_classification: tool.data_classification,
       auth_profile: tool.auth_profile,
       auth_profiles: tool.auth_profiles,
+      policies: tool.policies,
       scopes: tool.scopes,
       risk: tool.risk,
       confirmation: tool.confirmation,
@@ -390,4 +735,17 @@ defmodule Jido.Connect.Catalog do
 
   defp module_name(nil), do: nil
   defp module_name(module), do: inspect(module)
+
+  defp json_safe(tuple) when is_tuple(tuple) do
+    tuple
+    |> Tuple.to_list()
+    |> Enum.map(&json_safe/1)
+  end
+
+  defp json_safe(map) when is_map(map) do
+    Map.new(map, fn {key, value} -> {key, json_safe(value)} end)
+  end
+
+  defp json_safe(list) when is_list(list), do: Enum.map(list, &json_safe/1)
+  defp json_safe(value), do: value
 end

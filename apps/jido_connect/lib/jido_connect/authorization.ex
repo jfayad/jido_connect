@@ -14,6 +14,7 @@ defmodule Jido.Connect.Authorization do
     Context,
     CredentialLease,
     Error,
+    Policy,
     ScopeRequirements,
     TriggerSpec
   }
@@ -33,7 +34,11 @@ defmodule Jido.Connect.Authorization do
   """
   @spec authorize(operation(), map(), Context.t(), CredentialLease.t()) ::
           :ok | {:error, Error.error()}
-  def authorize(operation, input, %Context{} = context, %CredentialLease{} = lease)
+  @spec authorize(operation(), map(), Context.t(), CredentialLease.t(), keyword() | map()) ::
+          :ok | {:error, Error.error()}
+  def authorize(operation, input, context, lease, opts \\ [])
+
+  def authorize(operation, input, %Context{} = context, %CredentialLease{} = lease, opts)
       when is_map(input) do
     with :ok <- CredentialLease.require_unexpired(lease),
          {:ok, connection} <- fetch_connection(context, operation),
@@ -41,6 +46,15 @@ defmodule Jido.Connect.Authorization do
          :ok <- require_lease_connection(connection, lease),
          :ok <- require_supported_profile(operation, connection),
          :ok <- CredentialLease.validate_connection_binding(lease, connection),
+         :ok <-
+           Policy.authorize(
+             policy(opts),
+             operation,
+             input,
+             context,
+             connection,
+             policy_context(opts)
+           ),
          {:ok, required_scopes} <- required_scopes(operation, input, connection),
          :ok <- require_effective_scopes(connection, lease, required_scopes) do
       :ok
@@ -54,12 +68,24 @@ defmodule Jido.Connect.Authorization do
   host UI or generated Jido plugin tool list. Lease expiration and lease scope
   reduction are intentionally not checked here.
   """
-  @spec connection_availability(operation(), Connection.t(), map()) ::
-          {:available, [String.t()]} | {:missing_scopes, [String.t()]} | :connection_required
-  def connection_availability(operation, %Connection{} = connection, input \\ %{})
+  @spec connection_availability(operation(), Connection.t(), map(), keyword() | map()) ::
+          {:available, [String.t()]}
+          | {:missing_scopes, [String.t()]}
+          | :connection_required
+          | :disabled_by_policy
+  def connection_availability(operation, %Connection{} = connection, input \\ %{}, opts \\ [])
       when is_map(input) do
     with :ok <- require_connected(connection, operation),
          :ok <- require_supported_profile(operation, connection),
+         :ok <-
+           Policy.authorize(
+             policy(opts),
+             operation,
+             input,
+             context(opts),
+             connection,
+             policy_context(opts)
+           ),
          {:ok, required_scopes} <- required_scopes(operation, input, connection) do
       missing_scopes = required_scopes -- connection.scopes
 
@@ -69,6 +95,7 @@ defmodule Jido.Connect.Authorization do
         {:missing_scopes, missing_scopes}
       end
     else
+      {:error, %Error.AuthError{reason: :policy_denied}} -> :disabled_by_policy
       _other -> :connection_required
     end
   end
@@ -143,4 +170,24 @@ defmodule Jido.Connect.Authorization do
       {:error, Error.missing_scopes(connection.id, missing_scopes)}
     end
   end
+
+  defp policy(opts), do: get_option(opts, :policy)
+
+  defp policy_context(opts) do
+    get_option(opts, :policy_context) || %{}
+  end
+
+  defp context(opts) do
+    case get_option(opts, :context) || get_option(opts, :integration_context) do
+      %Context{} = context -> context
+      attrs when is_map(attrs) -> attrs |> Context.new() |> elem_or_nil()
+      _other -> nil
+    end
+  end
+
+  defp get_option(opts, key) when is_list(opts), do: Keyword.get(opts, key)
+  defp get_option(opts, key) when is_map(opts), do: Map.get(opts, key)
+
+  defp elem_or_nil({:ok, value}), do: value
+  defp elem_or_nil(_other), do: nil
 end

@@ -26,7 +26,11 @@ defmodule Jido.Connect.PlatformHelpersTest do
           id: "catalog.item.get",
           name: :get_item,
           label: "Get item",
+          resource: :item,
+          verb: :get,
+          data_classification: :workspace_metadata,
           auth_profile: :user,
+          policies: [:item_access],
           handler: __MODULE__,
           input: [field],
           output: [field],
@@ -41,7 +45,11 @@ defmodule Jido.Connect.PlatformHelpersTest do
           name: :item_created,
           kind: :poll,
           label: "Item created",
+          resource: :item,
+          verb: :watch,
+          data_classification: :workspace_metadata,
           auth_profile: :user,
+          policies: [:item_access],
           handler: __MODULE__,
           config: [field],
           signal: [field],
@@ -57,8 +65,17 @@ defmodule Jido.Connect.PlatformHelpersTest do
         id: :catalog,
         name: "Catalog",
         category: :test,
+        package: :jido_connect_catalog,
+        tags: [:catalog_test],
         docs: ["https://example.test/docs"],
         metadata: %{package: :jido_connect_catalog},
+        policies: [
+          Connect.PolicyRequirement.new!(%{
+            id: :item_access,
+            label: "Item access",
+            decision: :allow_operation
+          })
+        ],
         auth_profiles: [auth],
         actions: [action],
         triggers: [trigger]
@@ -212,6 +229,16 @@ defmodule Jido.Connect.PlatformHelpersTest do
 
     assert {:ok,
             %Connect.ConnectionSelector{
+              strategy: :org_default,
+              owner_type: :org,
+              owner_id: "org_1"
+            }} =
+             Connect.ConnectionSelector.org_default(:github, "tenant_1", "org_1",
+               profile: :installation
+             )
+
+    assert {:ok,
+            %Connect.ConnectionSelector{
               strategy: :installation,
               owner_type: :installation,
               owner_id: "installation_1"
@@ -271,14 +298,30 @@ defmodule Jido.Connect.PlatformHelpersTest do
   test "catalog entries derive host-facing metadata from specs" do
     entry = Catalog.entry(CatalogIntegration)
 
-    assert %Catalog.Entry{id: :catalog, package: :jido_connect_catalog} = entry
+    assert %Catalog.Entry{
+             id: :catalog,
+             package: :jido_connect_catalog,
+             tags: [:catalog_test],
+             policies: [%{id: :item_access}]
+           } = entry
+
     assert Enum.any?(entry.capabilities, &(&1.feature == :oauth2))
     assert Enum.any?(entry.capabilities, &(&1.feature == :generated_jido_actions))
     assert Enum.any?(entry.capabilities, &(&1.feature == :polling))
     assert [%Catalog.AuthProfileSummary{id: :user, kind: :oauth2}] = entry.auth_profiles
-    assert [%Catalog.Tool{id: "catalog.item.get", type: :action}] = entry.actions
 
-    assert [%Catalog.Tool{id: "catalog.item.created", type: :trigger, trigger_kind: :poll}] =
+    assert [%Catalog.Tool{id: "catalog.item.get", type: :action, resource: :item, verb: :get}] =
+             entry.actions
+
+    assert [
+             %Catalog.Tool{
+               id: "catalog.item.created",
+               type: :trigger,
+               trigger_kind: :poll,
+               resource: :item,
+               verb: :watch
+             }
+           ] =
              entry.triggers
 
     assert [%Catalog.Entry{id: :catalog}] = Catalog.entries([CatalogIntegration])
@@ -300,6 +343,12 @@ defmodule Jido.Connect.PlatformHelpersTest do
     assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(query: "item")
     assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(status: :available)
     assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(auth_kind: "oauth2")
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(auth_profile: "user")
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(scope: "read")
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(package: "jido_connect_catalog")
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(tag: "catalog_test")
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(capability_kind: "auth")
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(capability: "polling")
     assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(tool: "catalog.item.get")
     assert [] = Catalog.discover(query: "missing")
     assert [] = Catalog.discover(status: "unknown_status")
@@ -308,8 +357,46 @@ defmodule Jido.Connect.PlatformHelpersTest do
              id: :catalog,
              module: "Jido.Connect.PlatformHelpersTest.CatalogIntegration",
              capabilities: [%{provider: :catalog} | _],
+             policies: [%{id: :item_access}],
              actions: [%{id: "catalog.item.get"}]
            } = Catalog.discover() |> hd() |> Catalog.to_map()
+
+    assert [
+             %Catalog.ToolEntry{
+               provider: :catalog,
+               type: :action,
+               id: "catalog.item.get",
+               auth_kinds: [:oauth2]
+             },
+             %Catalog.ToolEntry{
+               provider: :catalog,
+               type: :trigger,
+               id: "catalog.item.created"
+             }
+           ] = Catalog.tools()
+
+    assert [%Catalog.ToolEntry{id: "catalog.item.get"}] = Catalog.tools(type: :action)
+
+    assert [%Catalog.ToolEntry{id: "catalog.item.get"}] =
+             Catalog.tools(resource: :item, verb: :get)
+
+    assert [%Catalog.ToolEntry{id: "catalog.item.created"}] = Catalog.tools(query: "created")
+    assert [%Catalog.ToolEntry{id: "catalog.item.get"}] = Catalog.tools(tool: "catalog.item.get")
+
+    assert [
+             %Catalog.ToolEntry{id: "catalog.item.get"},
+             %Catalog.ToolEntry{id: "catalog.item.created"}
+           ] = Catalog.tools(auth_kind: :oauth2)
+
+    assert %{
+             provider: :catalog,
+             integration_module: "Jido.Connect.PlatformHelpersTest.CatalogIntegration",
+             id: "catalog.item.get",
+             auth_kinds: [:oauth2],
+             policies: [:item_access],
+             resource: :item,
+             verb: :get
+           } = Catalog.tools(type: :action) |> hd() |> Catalog.to_map()
   end
 
   test "provider scaffold returns conventional package files" do
@@ -319,11 +406,20 @@ defmodule Jido.Connect.PlatformHelpersTest do
     assert "jido_connect_google_sheets/mix.exs" in paths
 
     assert "jido_connect_google_sheets/lib/jido_connect/google_sheets/integration.ex" in paths
+    assert "jido_connect_google_sheets/lib/jido_connect/google_sheets/actions/example.ex" in paths
 
     integration_file =
       Enum.find(files, &(&1.path =~ "integration.ex"))
 
     assert integration_file.contents =~ "defmodule Jido.Connect.GoogleSheets"
-    assert integration_file.contents =~ "use Jido.Connect"
+    assert integration_file.contents =~ "use Jido.Connect,"
+    assert integration_file.contents =~ "catalog do"
+    assert integration_file.contents =~ "policies do"
+
+    action_file =
+      Enum.find(files, &(&1.path =~ "actions/example.ex"))
+
+    assert action_file.contents =~ "use Spark.Dsl.Fragment, of: Jido.Connect"
+    assert action_file.contents =~ "data_classification :workspace_metadata"
   end
 end

@@ -13,12 +13,16 @@ defmodule Jido.Connect.Jido.ActionProjection do
               name: Zoi.string(),
               label: Zoi.string(),
               description: Zoi.string(),
+              resource: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+              verb: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+              data_classification: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
               input: Zoi.list(Field.schema()) |> Zoi.default([]),
               output: Zoi.list(Field.schema()) |> Zoi.default([]),
               input_schema: Zoi.any(),
               output_schema: Zoi.any(),
               auth_profile: Zoi.atom(),
               auth_profiles: Zoi.list(Zoi.atom()) |> Zoi.default([]),
+              policies: Zoi.list(Zoi.atom()) |> Zoi.default([]),
               scopes: Zoi.list(Zoi.string()) |> Zoi.default([]),
               scope_resolver: Zoi.module() |> Zoi.nullish() |> Zoi.optional(),
               risk: Zoi.atom(),
@@ -51,6 +55,9 @@ defmodule Jido.Connect.Jido.SensorProjection do
               name: Zoi.string(),
               label: Zoi.string(),
               description: Zoi.string(),
+              resource: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+              verb: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+              data_classification: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
               kind: Zoi.enum([:webhook, :poll]),
               config: Zoi.list(Field.schema()) |> Zoi.default([]),
               signal: Zoi.list(Field.schema()) |> Zoi.default([]),
@@ -60,6 +67,7 @@ defmodule Jido.Connect.Jido.SensorProjection do
               signal_source: Zoi.string(),
               auth_profile: Zoi.atom(),
               auth_profiles: Zoi.list(Zoi.atom()) |> Zoi.default([]),
+              policies: Zoi.list(Zoi.atom()) |> Zoi.default([]),
               scopes: Zoi.list(Zoi.string()) |> Zoi.default([]),
               scope_resolver: Zoi.module() |> Zoi.nullish() |> Zoi.optional(),
               interval_ms: Zoi.integer() |> Zoi.nullish()
@@ -120,7 +128,8 @@ defmodule Jido.Connect.Jido.ToolAvailability do
                 ]),
               connection_id: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
               connection_selector: Zoi.any() |> Zoi.optional(),
-              missing_scopes: Zoi.list(Zoi.string()) |> Zoi.default([])
+              missing_scopes: Zoi.list(Zoi.string()) |> Zoi.default([]),
+              metadata: Zoi.map() |> Zoi.default(%{})
             },
             coerce: true
           )

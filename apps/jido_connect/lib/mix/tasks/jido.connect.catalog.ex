@@ -27,7 +27,15 @@ defmodule Mix.Tasks.Jido.Connect.Catalog do
           q: :string,
           status: :string,
           category: :string,
+          tag: :string,
+          visibility: :string,
           auth_kind: :string,
+          auth_profile: :string,
+          scope: :string,
+          capability: :string,
+          capability_kind: :string,
+          resource: :string,
+          verb: :string,
           tool: :string,
           format: :string
         ]
@@ -39,7 +47,13 @@ defmodule Mix.Tasks.Jido.Connect.Catalog do
         query: opts[:query] || opts[:q],
         status: opts[:status],
         category: opts[:category],
+        tag: opts[:tag],
+        visibility: opts[:visibility],
         auth_kind: opts[:auth_kind],
+        auth_profile: opts[:auth_profile],
+        scope: opts[:scope],
+        capability: opts[:capability],
+        capability_kind: opts[:capability_kind],
         tool: opts[:tool]
       )
 

@@ -34,6 +34,10 @@ defmodule Jido.Connect.Dev.ProviderScaffold do
     [
       file("#{app}/mix.exs", mix_exs(app, module)),
       file("#{app}/lib/jido_connect/#{provider}/integration.ex", integration(provider, module)),
+      file(
+        "#{app}/lib/jido_connect/#{provider}/actions/example.ex",
+        action_fragment(provider, module)
+      ),
       file("#{app}/lib/jido_connect/#{provider}/client.ex", client(module)),
       file("#{app}/lib/jido_connect/#{provider}/oauth.ex", oauth(module)),
       file("#{app}/lib/jido_connect/#{provider}/webhook.ex", webhook(module)),
@@ -82,32 +86,73 @@ defmodule Jido.Connect.Dev.ProviderScaffold do
   defp integration(provider, module) do
     """
     defmodule Jido.Connect.#{module} do
-      use Jido.Connect
+      use Jido.Connect,
+        fragments: [
+          Jido.Connect.#{module}.Actions.Example
+        ]
 
       integration do
-        id(:#{provider})
-        name("#{module}")
-        category(:productivity)
-        metadata(%{package: :jido_connect_#{provider}, status: :experimental})
+        id :#{provider}
+        name "#{module}"
+        description "#{module} connector."
+        category :productivity
+      end
+
+      catalog do
+        package :jido_connect_#{provider}
+        status :experimental
+        tags [:productivity]
       end
 
       auth do
         oauth2 :user do
-          default?(true)
-          owner(:app_user)
-          subject(:user)
-          authorize_url("https://example.test/oauth/authorize")
-          token_url("https://example.test/oauth/token")
-          token_field(:access_token)
-          scopes([])
-          default_scopes([])
+          default? true
+          owner :app_user
+          subject :user
+          setup :oauth2_authorization_code
+          authorize_url "https://example.test/oauth/authorize"
+          token_url "https://example.test/oauth/token"
+          token_field :access_token
+          credential_fields [:access_token]
+          lease_fields [:access_token]
+          scopes []
+          default_scopes []
         end
       end
 
-      actions do
+      policies do
+        policy :connection_access do
+          label "Connection access"
+          decision :allow_operation
+        end
       end
+    end
+    """
+  end
 
-      triggers do
+  defp action_fragment(_provider, module) do
+    """
+    defmodule Jido.Connect.#{module}.Actions.Example do
+      @moduledoc false
+
+      use Spark.Dsl.Fragment, of: Jido.Connect
+
+      actions do
+        # action :list_items do
+        #   id "example.item.list"
+        #   resource :item
+        #   verb :list
+        #   data_classification :workspace_metadata
+        #   label "List items"
+        #   handler Jido.Connect.#{module}.Handlers.Actions.ListItems
+        #   effect :read
+        #
+        #   access do
+        #     auth :user
+        #     policies [:connection_access]
+        #     scopes []
+        #   end
+        # end
       end
     end
     """

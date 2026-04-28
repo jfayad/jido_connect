@@ -6,102 +6,68 @@ defmodule Jido.Connect.Slack do
   provider-specific Actions and Plugin namespaces.
   """
 
-  use Jido.Connect
+  use Jido.Connect,
+    fragments: [
+      Jido.Connect.Slack.Actions.Conversations,
+      Jido.Connect.Slack.Actions.Messages
+    ]
 
   integration do
-    id(:slack)
-    name("Slack")
-    category(:collaboration)
-    docs(["https://docs.slack.dev/apis/web-api", "https://docs.slack.dev/events-api"])
+    id :slack
+    name "Slack"
+    description "Slack workspace, channel, message, OAuth, and event tooling."
+    category :collaboration
+    docs ["https://docs.slack.dev/apis/web-api", "https://docs.slack.dev/events-api"]
+  end
 
-    metadata(%{
-      package: :jido_connect_slack,
-      capabilities: [
-        %{
-          id: "slack.app_manifest",
-          kind: :setup,
-          feature: :slack_app_manifest,
-          label: "Slack app manifest",
-          description: "Manifest-driven app setup for local and hosted OAuth installs."
-        },
-        %{
-          id: "slack.signed_requests",
-          kind: :webhook,
-          feature: :signed_request_verification,
-          label: "Signed request verification",
-          description: "Slack request signature verification and event normalization."
-        }
-      ]
-    })
+  catalog do
+    package :jido_connect_slack
+    status :available
+    tags [:chat, :collaboration, :messaging]
+
+    capability :app_manifest do
+      kind :setup
+      feature :slack_app_manifest
+      label "Slack app manifest"
+      description "Manifest-driven app setup for local and hosted OAuth installs."
+    end
+
+    capability :signed_requests do
+      kind :webhook
+      feature :signed_request_verification
+      label "Signed request verification"
+      description "Slack request signature verification and event normalization."
+    end
   end
 
   auth do
     oauth2 :bot do
-      default?(true)
-      owner(:tenant)
-      subject(:bot)
-      label("Slack bot OAuth")
-      authorize_url("https://slack.com/oauth/v2/authorize")
-      token_url("https://slack.com/api/oauth.v2.access")
-      callback_path("/integrations/slack/oauth/callback")
-      token_field(:access_token)
-      scopes(["channels:read", "groups:read", "im:read", "mpim:read", "chat:write"])
-      default_scopes(["channels:read", "chat:write"])
-      pkce?(false)
-      refresh?(false)
-      revoke?(false)
+      default? true
+      owner :tenant
+      subject :bot
+      label "Slack bot OAuth"
+      authorize_url "https://slack.com/oauth/v2/authorize"
+      token_url "https://slack.com/api/oauth.v2.access"
+      callback_path "/integrations/slack/oauth/callback"
+      token_field :access_token
+      setup :oauth2_authorization_code
+      credential_fields [:access_token]
+      lease_fields [:access_token]
+      scopes ["channels:read", "groups:read", "im:read", "mpim:read", "chat:write"]
+      default_scopes ["channels:read", "chat:write"]
+      pkce? false
+      refresh? false
+      revoke? false
     end
   end
 
-  actions do
-    action :list_channels do
-      id("slack.channel.list")
-      label("List channels")
-      description("List Slack conversations visible to the installed app.")
-      auth(:bot)
-      scopes(["channels:read"])
-      scope_resolver(Jido.Connect.Slack.ScopeResolver)
-      mutation?(false)
-      risk(:read)
-      handler(Jido.Connect.Slack.Handlers.Actions.ListChannels)
-
-      input do
-        field(:types, :string, default: "public_channel")
-        field(:exclude_archived, :boolean, default: true)
-        field(:limit, :integer, default: 100)
-        field(:cursor, :string)
-        field(:team_id, :string)
-      end
-
-      output do
-        field(:channels, {:array, :map})
-        field(:next_cursor, :string)
-      end
-    end
-
-    action :post_message do
-      id("slack.message.post")
-      label("Post message")
-      description("Post a message to a Slack channel or conversation.")
-      auth(:bot)
-      scopes(["chat:write"])
-      mutation?(true)
-      risk(:write)
-      confirmation(:required_for_ai)
-      handler(Jido.Connect.Slack.Handlers.Actions.PostMessage)
-
-      input do
-        field(:channel, :string, required?: true, example: "C012AB3CD")
-        field(:text, :string, required?: true)
-        field(:thread_ts, :string)
-        field(:reply_broadcast, :boolean, default: false)
-      end
-
-      output do
-        field(:channel, :string)
-        field(:ts, :string)
-        field(:message, :map)
-      end
+  policies do
+    policy :workspace_access do
+      label "Workspace access"
+      description "Host verifies the actor may use this Slack workspace connection."
+      subject {:connection, :owner}
+      owner {:connection, :owner}
+      decision :allow_operation
     end
   end
 end

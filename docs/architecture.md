@@ -25,6 +25,9 @@ contracts are:
 
 - `Jido.Connect.Spec`, `AuthProfile`, `ActionSpec`, and `TriggerSpec` for the
   compiled integration declaration.
+- `Jido.Connect.NamedSchema`, `PolicyRequirement`, and `ConnectorCapability`
+  for reusable schemas, host policy intent, and catalog-facing feature
+  metadata.
 - `Jido.Connect.Connection` and `ConnectionSelector` for durable grant metadata
   and host-owned lookup intent.
 - `Jido.Connect.CredentialLease` for short-lived credential material passed to a
@@ -65,6 +68,22 @@ Action and sensor execution use one shared authorization path:
 Provider packages may supply scope resolvers for input-dependent access rules,
 such as Slack conversation types or GitHub App installation permissions.
 
+## DSL Shape
+
+Provider DSL declarations are split by concern:
+
+- `integration` names the provider.
+- `catalog` declares package, status, tags, visibility, and capabilities.
+- `schemas` declares reusable named field groups.
+- `auth` declares OAuth, API key, app installation, and bridge auth profiles.
+- `policies` describes host-owned authorization decisions required by tools.
+- `actions` and `triggers` declare resource/verb metadata, requirements, schemas,
+  handlers, risk, confirmation, and generated Jido module projections.
+
+Provider business logic still belongs in handlers; the DSL is the source of
+truth for metadata, runtime contracts, catalog discovery, and generated Jido
+adapters.
+
 ## Provider Package Shape
 
 A mature provider package should generally include:
@@ -77,7 +96,8 @@ A mature provider package should generally include:
 - handler modules under `handlers/` for action and trigger execution.
 
 The base package provides reusable helpers for OAuth, HTTP, webhooks, polling,
-catalog discovery, sanitization, errors, telemetry, and credential leases.
+catalog discovery, host policy callbacks, sanitization, errors, telemetry, and
+credential leases.
 
 ## Host Boundary
 
@@ -90,13 +110,18 @@ Hosts own persistence and policy:
 - actor authorization for shared user, tenant, installation, or system grants
 - audit storage
 
-`jido_connect` validates the execution boundary, but it intentionally does not
-ship storage behaviours, Ecto schemas, migrations, or permission policy.
+`jido_connect` validates the execution boundary and can call a host-supplied
+policy callback before provider handlers run, but it intentionally does not ship
+storage behaviours, Ecto schemas, migrations, or permission policy.
 
 ## Catalog
 
 `Jido.Connect.Catalog` turns provider modules into discoverable entries with
-auth profiles, tools, generated modules, and high-level capabilities. Provider
-metadata can add explicit capabilities such as setup flows, webhook support, or
-MCP bridge support while the base package derives auth, action, and trigger
-capabilities from the DSL.
+auth profiles, tools, generated modules, tags, resource metadata, policy
+requirements, and high-level capabilities. The `catalog` DSL section declares
+explicit setup, webhook, bridge, or runtime capabilities while the base package
+derives auth, action, and trigger capabilities from the DSL.
+
+Use `Jido.Connect.Catalog.discover/1` for provider-level discovery and
+`Jido.Connect.Catalog.tools/1` for a flattened action/trigger catalog across
+installed providers.

@@ -7,7 +7,9 @@ Each provider compiles to:
 - `<Provider>.Plugin`
 
 These modules expose metadata through `jido_connect_projection/0` and delegate
-execution to the core action, sensor, and plugin runtimes.
+execution to the core action, sensor, and plugin runtimes. Projections include
+operation ids, resource/verb metadata, auth profile alternatives, policy
+requirements, scopes, risk, confirmation, and generated module names.
 
 Generated actions and poll sensors expect the host to pass either a resolved
 `Jido.Connect.Connection` inside `Jido.Connect.Context`, or a
