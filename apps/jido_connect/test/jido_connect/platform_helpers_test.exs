@@ -2,7 +2,7 @@ defmodule Jido.Connect.PlatformHelpersTest do
   use ExUnit.Case, async: false
 
   alias Jido.Connect
-  alias Jido.Connect.{Catalog, Http, OAuth, Polling, Webhook}
+  alias Jido.Connect.{Catalog, Http, OAuth, Polling, ProviderResponse, Webhook, WebhookDelivery}
   alias Jido.Connect.Dev.ProviderScaffold
 
   defmodule CatalogIntegration do
@@ -107,7 +107,7 @@ defmodule Jido.Connect.PlatformHelpersTest do
               provider: :demo,
               reason: :http_error,
               status: 429,
-              details: %{message: "rate limited"}
+              details: %{message: "rate limited", response: %{status: 429, retryable?: true}}
             }} =
              Http.provider_error({:ok, %{status: 429, body: %{"message" => "rate limited"}}},
                provider: :demo,
@@ -116,6 +116,17 @@ defmodule Jido.Connect.PlatformHelpersTest do
 
     assert {:error, %Connect.Error.ProviderError{provider: :demo, reason: :request_error}} =
              Http.provider_error({:error, :timeout}, provider: :demo)
+
+    response =
+      ProviderResponse.from_result!(
+        :demo,
+        {:ok, %{status: 503, headers: [{"retry-after", "30"}], body: %{"api_key" => "secret"}}}
+      )
+
+    assert response.retry_after == 30
+    assert ProviderResponse.retryable?(response)
+    assert ProviderResponse.to_public_map(response).body["api_key"] == "[redacted]"
+    refute inspect(response) =~ "secret"
   end
 
   test "webhook helpers verify HMACs and decode JSON" do
@@ -144,6 +155,22 @@ defmodule Jido.Connect.PlatformHelpersTest do
 
     assert Webhook.header(%{"x-demo-header" => "value"}, "X-Demo-Header") == "value"
     assert Webhook.duplicate?("delivery_1", ["delivery_1"])
+
+    delivery =
+      WebhookDelivery.verified!(:demo,
+        delivery_id: "delivery_1",
+        event: "demo.created",
+        headers: %{"authorization" => "secret"},
+        payload: %{"ok" => true},
+        metadata: %{token: "secret"}
+      )
+      |> WebhookDelivery.mark_duplicate()
+      |> WebhookDelivery.put_signal(%{id: "signal_1"})
+
+    assert delivery.duplicate?
+    assert WebhookDelivery.to_public_map(delivery).headers["authorization"] == "[redacted]"
+    assert WebhookDelivery.to_public_map(delivery).metadata["token"] == "[redacted]"
+    refute inspect(delivery) =~ "secret"
   end
 
   test "polling helpers manage checkpoint params" do
@@ -214,6 +241,30 @@ defmodule Jido.Connect.PlatformHelpersTest do
     assert {:ok, ^connection} =
              Connect.ConnectionSelector.resolve(per_actor, fn ^per_actor -> connection end)
 
+    assert Connect.ConnectionSelector.matches_connection?(per_actor, connection)
+    assert Connect.ConnectionSelector.selector_mismatch(per_actor, connection) == nil
+    assert Connect.ConnectionSelector.missing_scopes(per_actor, connection) == []
+
+    assert {:ok, explicit_selector} = Connect.ConnectionSelector.from_connection(connection)
+    assert explicit_selector.strategy == :explicit
+    assert explicit_selector.connection_id == "conn_1"
+    assert Connect.ConnectionSelector.matches_connection?(explicit_selector, connection)
+
+    missing_scope_selector = %{per_actor | required_scopes: ["repo", "admin:org"]}
+
+    assert Connect.ConnectionSelector.missing_scopes(missing_scope_selector, connection) == [
+             "admin:org"
+           ]
+
+    assert Connect.ConnectionSelector.selector_mismatch(missing_scope_selector, connection) ==
+             {:required_scopes, ["admin:org"], ["repo"]}
+
+    assert Connect.ConnectionSelector.selector_mismatch(
+             %{per_actor | owner_id: "other"},
+             connection
+           ) ==
+             {:owner_id, "other", "user_1"}
+
     assert {:ok, ^per_actor} = Connect.ConnectionSelector.normalize(Map.from_struct(per_actor))
   end
 
@@ -221,6 +272,9 @@ defmodule Jido.Connect.PlatformHelpersTest do
     entry = Catalog.entry(CatalogIntegration)
 
     assert %Catalog.Entry{id: :catalog, package: :jido_connect_catalog} = entry
+    assert Enum.any?(entry.capabilities, &(&1.feature == :oauth2))
+    assert Enum.any?(entry.capabilities, &(&1.feature == :generated_jido_actions))
+    assert Enum.any?(entry.capabilities, &(&1.feature == :polling))
     assert [%Catalog.AuthProfileSummary{id: :user, kind: :oauth2}] = entry.auth_profiles
     assert [%Catalog.Tool{id: "catalog.item.get", type: :action}] = entry.actions
 
@@ -253,6 +307,7 @@ defmodule Jido.Connect.PlatformHelpersTest do
     assert %{
              id: :catalog,
              module: "Jido.Connect.PlatformHelpersTest.CatalogIntegration",
+             capabilities: [%{provider: :catalog} | _],
              actions: [%{id: "catalog.item.get"}]
            } = Catalog.discover() |> hd() |> Catalog.to_map()
   end

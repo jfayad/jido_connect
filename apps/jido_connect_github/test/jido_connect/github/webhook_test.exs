@@ -1,7 +1,7 @@
 defmodule Jido.Connect.GitHub.WebhookTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Connect.Error
+  alias Jido.Connect.{Error, WebhookDelivery}
   alias Jido.Connect.GitHub.Webhook
 
   test "verifies valid signature" do
@@ -35,6 +35,26 @@ defmodule Jido.Connect.GitHub.WebhookTest do
                  "x-hub-signature-256" => signature
                },
                "secret"
+             )
+
+    assert {:ok,
+            %WebhookDelivery{
+              provider: :github,
+              delivery_id: "delivery-1",
+              event: "issues",
+              signature_state: :verified,
+              duplicate?: true,
+              payload: %{"action" => "opened"}
+            }} =
+             Webhook.verify_delivery(
+               body,
+               %{
+                 "x-github-delivery" => "delivery-1",
+                 "x-github-event" => "issues",
+                 "x-hub-signature-256" => signature
+               },
+               "secret",
+               seen_delivery_ids: ["delivery-1"]
              )
   end
 

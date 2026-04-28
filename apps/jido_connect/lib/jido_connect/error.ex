@@ -242,6 +242,21 @@ defmodule Jido.Connect.Error do
     validation("Unknown trigger", reason: :unknown_trigger, subject: trigger_id)
   end
 
+  def unknown_integration(integration_ref) do
+    validation("Unknown integration",
+      reason: :unknown_integration,
+      subject: integration_ref
+    )
+  end
+
+  def invalid_integration(integration_ref, value) do
+    validation("Integration module did not return a Jido.Connect.Spec",
+      reason: :invalid_integration,
+      subject: integration_ref,
+      details: %{returned: inspect(value)}
+    )
+  end
+
   def zoi(reason, errors, details \\ %{}) do
     validation("Schema validation failed",
       reason: reason,
@@ -271,11 +286,11 @@ defmodule Jido.Connect.Error do
     )
   end
 
-  def credential_connection_mismatch(connection_id, lease_connection_id) do
+  def credential_connection_mismatch(connection_id, lease_connection_id, details \\ %{}) do
     auth("Credential lease does not match connection",
       reason: :credential_connection_mismatch,
       connection_id: connection_id,
-      details: %{lease_connection_id: lease_connection_id}
+      details: Map.put(details, :lease_connection_id, lease_connection_id)
     )
   end
 
@@ -295,17 +310,44 @@ defmodule Jido.Connect.Error do
     )
   end
 
+  @spec to_map(term()) :: map()
   def to_map(error) do
     error = to_error(error)
 
     %{
-      type: error.__struct__,
+      type: type(error),
       class: Map.get(error, :class),
       message: Exception.message(error),
       reason: Map.get(error, :reason),
-      details: Map.get(error, :details, %{})
+      details: Jido.Connect.Sanitizer.sanitize(Map.get(error, :details, %{}), :transport),
+      retryable?: retryable?(error)
     }
   end
+
+  @spec type(term()) :: atom()
+  def type(%ValidationError{}), do: :validation_error
+  def type(%AuthError{}), do: :auth_error
+  def type(%ProviderError{}), do: :provider_error
+  def type(%ConfigError{}), do: :config_error
+  def type(%ExecutionError{}), do: :execution_error
+  def type(%InternalError{}), do: :internal_error
+  def type(%Internal.UnknownError{}), do: :unknown_error
+
+  def type(%_module{}), do: :unknown_error
+  def type(_other), do: :unknown_error
+
+  @spec retryable?(term()) :: boolean()
+  def retryable?(%ProviderError{status: status}) when status == 429 or status in 500..599,
+    do: true
+
+  def retryable?(%ProviderError{reason: reason})
+      when reason in [:request_error, :timeout, :rate_limited, "rate_limited"],
+      do: true
+
+  def retryable?(%ExecutionError{phase: phase}) when phase in [:timeout, :transport],
+    do: true
+
+  def retryable?(_error), do: false
 
   @doc false
   def normalize_opts(opts) when is_map(opts), do: Map.to_list(opts)

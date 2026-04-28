@@ -11,11 +11,17 @@ Current slice:
 - Spark DSL extension under `apps/jido_connect/lib/jido_connect/dsl/`
 - GitHub integration app at `apps/jido_connect_github`
 - Slack integration app at `apps/jido_connect_slack`
+- MCP bridge app at `apps/jido_connect_mcp`
 - GitHub actions for `github.issue.list` and `github.issue.create`
 - GitHub poll trigger contract for `github.issue.new`
 - Slack actions for `slack.channel.list` and `slack.message.post`
+- MCP actions for `mcp.tools.list` and `mcp.tool.call`
+- Catalog discovery through `Jido.Connect.Catalog`
 - Generic ngrok tunnel helper: `mix jido.connect.ngrok`
 - Local Phoenix demo host under `dev/demo`
+
+See `docs/architecture.md` for the package boundaries and connector-factory
+shape.
 
 See `docs/github_end_to_end.md` for the local demo and live integration testing
 plan.
@@ -40,6 +46,12 @@ In another shell, from the repo root:
 
 ```sh
 mix jido.connect.ngrok --provider github --port 4000
+```
+
+Run the package quality gate:
+
+```sh
+mix quality
 ```
 
 Live GitHub App validation has covered app creation, app installation,

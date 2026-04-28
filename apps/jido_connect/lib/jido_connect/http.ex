@@ -8,7 +8,7 @@ defmodule Jido.Connect.Http do
   shaping.
   """
 
-  alias Jido.Connect.{Data, Error}
+  alias Jido.Connect.{Data, Error, ProviderResponse}
 
   @user_agent "jido-connect"
 
@@ -39,9 +39,10 @@ defmodule Jido.Connect.Http do
   def handle_map_response(response, opts), do: provider_error(response, opts)
 
   @spec provider_error(term(), keyword()) :: {:error, Error.ProviderError.t()}
-  def provider_error({:ok, %{status: status, body: body}}, opts) do
+  def provider_error({:ok, %{status: status, body: body} = raw_response}, opts) do
     provider = Keyword.fetch!(opts, :provider)
     message = Keyword.get(opts, :message, "#{provider} API request failed")
+    response = ProviderResponse.from_result!(provider, {:ok, raw_response}, opts)
 
     {:error,
      Error.provider(message,
@@ -51,7 +52,8 @@ defmodule Jido.Connect.Http do
        details: %{
          message: error_message(body),
          body: body,
-         retry_after: retry_after(opts)
+         retry_after: response.retry_after,
+         response: ProviderResponse.to_public_map(response)
        }
      )}
   end
@@ -59,29 +61,29 @@ defmodule Jido.Connect.Http do
   def provider_error({:error, reason}, opts) do
     provider = Keyword.fetch!(opts, :provider)
     message = Keyword.get(opts, :message, "#{provider} API request failed")
+    response = ProviderResponse.from_result!(provider, {:error, reason}, opts)
 
     {:error,
      Error.provider(message,
        provider: provider,
        reason: :request_error,
-       details: %{reason: reason}
+       details: %{reason: reason, response: ProviderResponse.to_public_map(response)}
      )}
   end
 
   def provider_error(reason, opts) do
     provider = Keyword.fetch!(opts, :provider)
     message = Keyword.get(opts, :message, "#{provider} API request failed")
+    response = ProviderResponse.from_result!(provider, reason, opts)
 
     {:error,
      Error.provider(message,
        provider: provider,
        reason: :unexpected_response,
-       details: %{response: reason}
+       details: %{response: ProviderResponse.to_public_map(response)}
      )}
   end
 
   defp error_message(body) when is_map(body), do: Data.get(body, "message", body)
   defp error_message(body), do: body
-
-  defp retry_after(opts), do: Keyword.get(opts, :retry_after)
 end

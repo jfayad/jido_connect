@@ -1,7 +1,7 @@
 defmodule Jido.Connect.Slack.WebhookTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Connect.Error
+  alias Jido.Connect.{Error, WebhookDelivery}
   alias Jido.Connect.Slack.Webhook
 
   test "verifies valid Slack signature" do
@@ -28,6 +28,23 @@ defmodule Jido.Connect.Slack.WebhookTest do
 
     assert {:ok, %{"type" => "event_callback"}} =
              Webhook.verify_request(
+               body,
+               %{
+                 "x-slack-signature" => signature,
+                 "x-slack-request-timestamp" => timestamp
+               },
+               "secret",
+               now: 1_700_000_000
+             )
+
+    assert {:ok,
+            %WebhookDelivery{
+              provider: :slack,
+              event: "app_mention",
+              signature_state: :verified,
+              payload: %{"type" => "event_callback"}
+            }} =
+             Webhook.verify_delivery(
                body,
                %{
                  "x-slack-signature" => signature,

@@ -16,7 +16,8 @@ defmodule JidoConnectCore.MixProject do
       docs: docs(),
       source_url: "https://github.com/mikehostetler/jido_connect",
       test_coverage: test_coverage(),
-      deps: deps()
+      deps: deps(),
+      aliases: aliases()
     ]
   end
 
@@ -25,6 +26,15 @@ defmodule JidoConnectCore.MixProject do
     [
       extra_applications: [:logger],
       mod: {Jido.Connect.Application, []}
+    ]
+  end
+
+  def cli do
+    [
+      preferred_envs: [
+        q: :test,
+        quality: :test
+      ]
     ]
   end
 
@@ -38,7 +48,19 @@ defmodule JidoConnectCore.MixProject do
       {:req, "~> 0.5"},
       {:splode, "~> 0.3.0"},
       {:spark, "~> 2.6"},
+      {:telemetry, "~> 1.3"},
       {:zoi, "~> 0.17.1"}
+    ]
+  end
+
+  defp aliases do
+    [
+      q: ["quality"],
+      quality: [
+        "format --check-formatted",
+        "compile --warnings-as-errors",
+        "test --cover"
+      ]
     ]
   end
 

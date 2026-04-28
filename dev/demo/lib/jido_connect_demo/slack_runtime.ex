@@ -117,15 +117,15 @@ defmodule Jido.Connect.Demo.SlackRuntime do
     if blank?(token) do
       {:error, slack_bot_token_required()}
     else
-      Connect.CredentialLease.new(%{
-        connection_id: connection.id,
-        expires_at: DateTime.add(DateTime.utc_now(), 3600, :second),
-        fields: %{
+      Connect.CredentialLease.from_connection(
+        connection,
+        %{
           access_token: token,
           slack_client: slack_client(opts)
         },
+        expires_at: DateTime.add(DateTime.utc_now(), 3600, :second),
         metadata: %{mode: :bot_token}
-      })
+      )
     end
   end
 

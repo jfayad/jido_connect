@@ -14,7 +14,20 @@ defmodule Jido.Connect.MCP do
     name("MCP")
     category(:tool_bridge)
     docs(["https://modelcontextprotocol.io"])
-    metadata(%{package: :jido_connect_mcp, bridge?: true})
+
+    metadata(%{
+      package: :jido_connect_mcp,
+      bridge?: true,
+      capabilities: [
+        %{
+          id: "mcp.bridge",
+          kind: :mcp,
+          feature: :mcp_bridge,
+          label: "MCP bridge",
+          description: "Expose configured MCP endpoints as Jido Connect actions."
+        }
+      ]
+    })
   end
 
   auth do

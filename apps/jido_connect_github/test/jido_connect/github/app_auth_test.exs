@@ -94,6 +94,10 @@ defmodule Jido.Connect.GitHub.AppAuthTest do
              )
 
     assert lease.connection_id == "conn_42"
+    assert lease.provider == :github
+    assert lease.profile == :installation
+    assert lease.tenant_id == "tenant_1"
+    assert lease.scopes == ["issues:read", "issues:write"]
     assert lease.expires_at == ~U[2026-04-24 22:00:00Z]
     assert lease.fields.access_token == "installation-token"
     assert lease.fields.github_client == Jido.Connect.GitHub.Client

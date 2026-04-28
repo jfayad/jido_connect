@@ -92,6 +92,24 @@ defmodule Jido.Connect.ConnectionSelector do
     |> new()
   end
 
+  @doc "Builds an explicit selector from a durable connection."
+  @spec from_connection(Connection.t(), keyword() | map()) :: {:ok, t()} | {:error, term()}
+  def from_connection(%Connection{} = connection, attrs \\ []) do
+    attrs
+    |> attrs_map()
+    |> Map.merge(%{
+      provider: connection.provider,
+      profile: connection.profile,
+      strategy: :explicit,
+      tenant_id: connection.tenant_id,
+      owner_type: connection.owner_type,
+      owner_id: connection.owner_id,
+      connection_id: connection.id,
+      required_scopes: connection.scopes
+    })
+    |> new()
+  end
+
   @spec normalize(t() | map() | nil) :: {:ok, t()} | :error
   def normalize(%__MODULE__{} = selector), do: {:ok, selector}
 
@@ -143,6 +161,47 @@ defmodule Jido.Connect.ConnectionSelector do
 
   def resolve(_selector_or_id, _resolver, _operation, _config), do: :error
 
+  @doc "Returns true when a connection satisfies this selector."
+  @spec matches_connection?(t(), Connection.t()) :: boolean()
+  def matches_connection?(%__MODULE__{} = selector, %Connection{} = connection) do
+    selector_mismatch(selector, connection) == nil
+  end
+
+  @doc "Returns missing selector scopes for a connection."
+  @spec missing_scopes(t(), Connection.t()) :: [String.t()]
+  def missing_scopes(%__MODULE__{} = selector, %Connection{} = connection) do
+    selector.required_scopes -- connection.scopes
+  end
+
+  @doc """
+  Returns the first selector field that does not match a connection.
+
+  Nil selector fields are treated as wildcards.
+  """
+  @spec selector_mismatch(t(), Connection.t()) ::
+          {atom(), term(), term()} | {:required_scopes, [String.t()], [String.t()]} | nil
+  def selector_mismatch(%__MODULE__{} = selector, %Connection{} = connection) do
+    [
+      {:connection_id, selector.connection_id, connection.id},
+      {:provider, selector.provider, connection.provider},
+      {:profile, selector.profile, connection.profile},
+      {:tenant_id, selector.tenant_id, connection.tenant_id},
+      {:owner_type, selector.owner_type, connection.owner_type},
+      {:owner_id, selector.owner_id, connection.owner_id}
+    ]
+    |> Enum.find(fn {_field, expected, actual} -> present?(expected) and expected != actual end)
+    |> case do
+      nil ->
+        case missing_scopes(selector, connection) do
+          [] -> nil
+          scopes -> {:required_scopes, scopes, connection.scopes}
+        end
+
+      mismatch ->
+        mismatch
+    end
+  end
+
   defp attrs_map(attrs) when is_list(attrs), do: Map.new(attrs)
   defp attrs_map(attrs) when is_map(attrs), do: attrs
 
@@ -151,4 +210,8 @@ defmodule Jido.Connect.ConnectionSelector do
   defp normalize_connection_result({:ok, %Connection{} = connection}), do: {:ok, connection}
   defp normalize_connection_result(%Connection{} = connection), do: {:ok, connection}
   defp normalize_connection_result(_other), do: :error
+
+  defp present?(nil), do: false
+  defp present?(""), do: false
+  defp present?(_value), do: true
 end

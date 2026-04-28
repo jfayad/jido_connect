@@ -289,17 +289,19 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     }
 
     with {:ok, verified} <-
-           Webhook.verify_request(body, headers, System.get_env("GITHUB_WEBHOOK_SECRET")) do
+           Webhook.verify_delivery(body, headers, System.get_env("GITHUB_WEBHOOK_SECRET"),
+             seen_delivery_ids: known_delivery_ids()
+           ) do
       path = write_secret!("github-webhook-#{delivery}.json", body)
       signal = normalize_webhook_signal(verified)
 
       Store.put_delivery(%{
-        delivery_id: delivery,
-        event: event,
-        duplicate?: Store.delivery_seen?(delivery),
+        delivery_id: verified.delivery_id,
+        event: verified.event,
+        duplicate?: verified.duplicate?,
         signal: signal,
         stored: path,
-        received_at: DateTime.utc_now()
+        received_at: verified.received_at
       })
 
       json(conn, %{
@@ -326,21 +328,25 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
         get_req_header(conn, "x-slack-request-timestamp") |> List.first()
     }
 
-    with {:ok, payload} <- SlackWebhook.verify_request(body, headers, slack_signing_secret()),
+    with {:ok, delivery} <-
+           SlackWebhook.verify_delivery(body, headers, slack_signing_secret(),
+             seen_delivery_ids: known_delivery_ids()
+           ),
+         payload = delivery.payload,
          {:challenge, {:error, %Error.ProviderError{reason: :not_url_verification}}} <-
            {:challenge, SlackWebhook.url_verification_challenge(payload)} do
-      delivery_id = Map.get(payload, "event_id") || "slack-#{System.unique_integer([:positive])}"
-      event = get_in(payload, ["event", "type"]) || Map.get(payload, "type", "unknown")
+      delivery_id = delivery.delivery_id || "slack-#{System.unique_integer([:positive])}"
+      event = delivery.event || "unknown"
       signal = normalize_slack_signal(payload)
       path = write_secret!("slack-event-#{delivery_id}.json", body)
 
       Store.put_delivery(%{
         delivery_id: delivery_id,
         event: event,
-        duplicate?: Store.delivery_seen?(delivery_id),
+        duplicate?: delivery.duplicate?,
         signal: signal,
         stored: path,
-        received_at: DateTime.utc_now()
+        received_at: delivery.received_at
       })
 
       json(conn, %{ok: true, event: event, delivery: delivery_id, signal: signal})
@@ -407,6 +413,11 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
       {:ok, signal} -> signal
       {:error, reason} -> %{error: reason}
     end
+  end
+
+  defp known_delivery_ids do
+    Jido.Connect.Demo.Store.recent_deliveries()
+    |> Enum.map(& &1.delivery_id)
   end
 
   defp maybe_create_slack_env_connection do

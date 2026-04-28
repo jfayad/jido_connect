@@ -134,6 +134,29 @@ defmodule Jido.Connect.ContractsTest do
         payload: %{ok: true}
       })
 
+    provider_response =
+      Connect.ProviderResponse.new!(%{
+        provider: :demo,
+        status: 200,
+        body: %{"ok" => true}
+      })
+
+    webhook_delivery =
+      Connect.WebhookDelivery.verified!(:demo,
+        delivery_id: "delivery_1",
+        event: "demo.created",
+        payload: %{"ok" => true}
+      )
+
+    capability =
+      Connect.ConnectorCapability.new!(%{
+        id: "demo.actions",
+        provider: :demo,
+        kind: :actions,
+        feature: :generated_jido_actions,
+        label: "Generated Jido actions"
+      })
+
     assert {:ok, %Connect.Connection{id: "conn_1"}} =
              Connect.Connection.new(Map.from_struct(connection))
 
@@ -148,11 +171,24 @@ defmodule Jido.Connect.ContractsTest do
 
     assert {:ok, %Connect.Run{id: "run_1"}} = Connect.Run.new(Map.from_struct(run))
     assert {:ok, %Connect.Event{id: "event_1"}} = Connect.Event.new(Map.from_struct(event))
+
+    assert {:ok, %Connect.ProviderResponse{provider: :demo}} =
+             Connect.ProviderResponse.new(Map.from_struct(provider_response))
+
+    assert {:ok, %Connect.WebhookDelivery{delivery_id: "delivery_1"}} =
+             Connect.WebhookDelivery.new(Map.from_struct(webhook_delivery))
+
+    assert {:ok, %Connect.ConnectorCapability{id: "demo.actions"}} =
+             Connect.ConnectorCapability.new(Map.from_struct(capability))
+
     assert Connect.Connection.schema()
     assert Connect.ConnectionSelector.schema()
     assert Connect.Context.schema()
     assert Connect.CredentialLease.schema()
     assert Connect.Run.schema()
     assert Connect.Event.schema()
+    assert Connect.ProviderResponse.schema()
+    assert Connect.WebhookDelivery.schema()
+    assert Connect.ConnectorCapability.schema()
   end
 end

@@ -104,6 +104,7 @@ defmodule Jido.Connect.Demo.GitHubRuntime do
          opts
        ) do
     AppAuth.installation_credential_lease(id, %{tenant_id: connection.tenant_id},
+      connection: connection,
       connection_id: connection.id,
       github_client: Keyword.get(opts, :github_client, Jido.Connect.GitHub.Client)
     )
@@ -118,15 +119,15 @@ defmodule Jido.Connect.Demo.GitHubRuntime do
     if blank?(token) do
       {:error, Error.config("GitHub token is required", key: "GITHUB_TOKEN")}
     else
-      Connect.CredentialLease.new(%{
-        connection_id: connection.id,
-        expires_at: DateTime.add(DateTime.utc_now(), 3600, :second),
-        fields: %{
+      Connect.CredentialLease.from_connection(
+        connection,
+        %{
           access_token: token,
           github_client: Keyword.get(opts, :github_client, Jido.Connect.GitHub.Client)
         },
+        expires_at: DateTime.add(DateTime.utc_now(), 3600, :second),
         metadata: %{mode: :manual_token}
-      })
+      )
     end
   end
 

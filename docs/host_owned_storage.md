@@ -15,6 +15,11 @@ The package contracts are `Jido.Connect.Connection`,
 `Jido.Connect.ConnectionSelector`, `Jido.Connect.CredentialLease`,
 `Jido.Connect.Run`, and `Jido.Connect.Event`.
 
+`CredentialLease` is the portable credential handoff between host-owned storage
+and any generated action, sensor, or bridge call. Provider packages mint leases
+from OAuth token exchanges, app installation token creation, API keys, or
+host-configured bridge credentials; handlers read only from `lease.fields`.
+
 ## Connection Ownership
 
 `Connection` records describe durable grants owned by a host principal:
@@ -58,13 +63,22 @@ Jido.Connect.Slack.Actions.PostMessage.run(params, %{
 ```
 
 The resolver returns a `Jido.Connect.Connection`. The host still mints the
-matching `CredentialLease` from its credential store. Core then checks:
+matching `CredentialLease` from its credential store. `CredentialLease.from_connection/3`
+is the preferred constructor because it copies provider, profile, tenant,
+owner, subject, and granted scopes from the durable connection.
+
+Core then checks:
 
 - the lease has not expired
 - the connection id matches the lease
 - the connection is connected
+- the resolved connection matches the selector
 - the connection profile is allowed for the operation
-- the connection has required scopes
+- the connection and effective lease scopes satisfy required scopes
+
+If a lease carries its own scopes, the effective scopes are the intersection of
+connection scopes and lease scopes. This lets hosts narrow a short-lived lease
+without weakening the durable connection grant.
 
 Plugin availability accepts the same selector/resolver pattern, so UIs can
 show whether shared tenant or installation tools are available without exposing

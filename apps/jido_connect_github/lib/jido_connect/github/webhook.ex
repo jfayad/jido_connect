@@ -3,7 +3,7 @@ defmodule Jido.Connect.GitHub.Webhook do
   Pure helpers for GitHub webhook verification and event normalization.
   """
 
-  alias Jido.Connect.{Data, Error}
+  alias Jido.Connect.{Data, Error, WebhookDelivery}
   alias Jido.Connect.Webhook, as: CoreWebhook
 
   def parse_headers(headers) when is_map(headers) do
@@ -38,11 +38,30 @@ defmodule Jido.Connect.GitHub.Webhook do
     do: {:error, Error.auth("GitHub webhook signature is invalid", reason: :invalid_signature)}
 
   def verify_request(body, headers, secret) do
+    with {:ok, delivery} <- verify_delivery(body, headers, secret) do
+      {:ok,
+       %{
+         delivery_id: delivery.delivery_id,
+         event: delivery.event,
+         signature: delivery.metadata.signature,
+         payload: delivery.payload
+       }}
+    end
+  end
+
+  def verify_delivery(body, headers, secret, opts \\ []) do
     parsed = parse_headers(headers)
 
     with :ok <- verify_signature(body, parsed.signature, secret),
          {:ok, payload} <- decode_body(body) do
-      {:ok, Map.put(parsed, :payload, payload)}
+      WebhookDelivery.verified(:github, %{
+        delivery_id: parsed.delivery_id,
+        event: parsed.event,
+        headers: headers,
+        payload: payload,
+        duplicate?: duplicate?(parsed.delivery_id, Keyword.get(opts, :seen_delivery_ids, [])),
+        metadata: %{signature: parsed.signature}
+      })
     end
   end
 

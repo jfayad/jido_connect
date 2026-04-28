@@ -84,6 +84,16 @@ defmodule Jido.Connect.MCPTest do
             }} = Connect.action(spec, "mcp.tool.call")
   end
 
+  test "MCP catalog entry exposes bridge and runtime capabilities" do
+    entry = Connect.Catalog.entry(Jido.Connect.MCP)
+    features = entry.capabilities |> Enum.map(& &1.feature) |> MapSet.new()
+
+    assert entry.package == :jido_connect_mcp
+    assert MapSet.member?(features, :api_key)
+    assert MapSet.member?(features, :generated_jido_actions)
+    assert MapSet.member?(features, :mcp_bridge)
+  end
+
   test "MCP integration compiles generated Jido modules" do
     assert Jido.Connect.MCP.jido_action_modules() == [
              Jido.Connect.MCP.Actions.ListTools,

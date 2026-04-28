@@ -29,10 +29,46 @@ A host app creates a durable `Jido.Connect.Connection`, mints a short-lived
 values in context. Raw credentials should never be placed in plugin config,
 agent state, or generated module metadata.
 
+The top-level runtime API accepts either a provider module or a compiled
+`Jido.Connect.Spec`, so host code can stay close to the provider it is using:
+
+```elixir
+Jido.Connect.invoke(Jido.Connect.GitHub, "github.issue.list", %{repo: "org/repo"},
+  context: context,
+  credential_lease: lease
+)
+```
+
+For host UI discovery, use `Jido.Connect.spec/1`, `actions/1`, `triggers/1`,
+`auth_profiles/1`, or the richer `Jido.Connect.Catalog` APIs.
+
 Authenticated generated actions and sensors require both a connection and a
 matching credential lease. The connection is durable host-owned metadata; the
 lease is short-lived credential material and has a redacted `Inspect`
 implementation so accidental logs do not print tokens.
+
+`CredentialLease` is the portable runtime auth envelope for provider packages.
+Use `Jido.Connect.CredentialLease.from_connection/3` when minting a lease so it
+copies non-secret binding metadata from the durable connection: provider,
+profile, tenant, owner, subject, and effective scopes. This works the same for
+user-level OAuth grants, tenant/org GitHub App installations, Slack workspace
+bots, system API keys, and future connector-specific auth shapes. Runtime
+authorization validates that the lease is active, belongs to the connection, and
+does not claim broader scopes than the durable connection.
+
+`ConnectionSelector` is the matching portable lookup intent: it describes which
+connection a host should resolve for per-user, tenant/org, installation, system,
+or explicit connection flows. `Jido.Connect.Authorization` then applies the
+shared runtime checks across generated actions, sensors, plugin availability,
+and future package bridges.
+
+Provider packages should normalize reusable runtime shapes into the core
+Zoi-backed structs:
+
+- `Jido.Connect.CredentialLease` for short-lived credential material.
+- `Jido.Connect.ProviderResponse` for provider HTTP/error envelopes.
+- `Jido.Connect.WebhookDelivery` for verified webhook deliveries.
+- `Jido.Connect.ConnectorCapability` for catalog-facing feature metadata.
 
 ```elixir
 Jido.Connect.GitHub.Actions.ListIssues.run(

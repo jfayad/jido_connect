@@ -27,6 +27,13 @@ mix jido.connect.gen.provider google_sheets
 
 ## Shared Core Helpers
 
+- `Jido.Connect.CredentialLease` for short-lived credential material normalized
+  from OAuth, app installation, API key, or bridge credentials.
+- `Jido.Connect.ProviderResponse` for reusable provider response and error
+  envelopes.
+- `Jido.Connect.WebhookDelivery` for verified webhook metadata and normalized
+  signals.
+- `Jido.Connect.ConnectorCapability` for catalog-facing feature metadata.
 - `Jido.Connect.OAuth` for authorization URLs, required secret lookup, and Req
   defaults.
 - `Jido.Connect.Http` for bearer Req setup and provider error shaping.
@@ -35,6 +42,9 @@ mix jido.connect.gen.provider google_sheets
 - `Jido.Connect.Polling` for checkpoint params and latest checkpoint selection.
 - `Jido.Connect.Catalog` for host-facing connector metadata derived from specs
   and generated projections.
+
+Provider packages should normalize provider-specific maps into these structs
+before exposing data to hosts or generated Jido runtimes.
 
 ## Discovering The Catalog
 

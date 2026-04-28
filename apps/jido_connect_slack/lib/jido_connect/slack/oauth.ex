@@ -59,22 +59,51 @@ defmodule Jido.Connect.Slack.OAuth do
       Keyword.get(opts, :connection_id) ||
         "slack-team-#{get_in(token, [:team, "id"]) || get_in(token, [:team, :id])}"
 
-    Connect.CredentialLease.new(%{
+    expires_at = Keyword.get(opts, :expires_at, DateTime.add(DateTime.utc_now(), 3600, :second))
+    scopes = Map.get(token, :scope, [])
+
+    fields = %{
+      access_token: Map.fetch!(token, :access_token),
+      slack_client: Keyword.get(opts, :slack_client, Client)
+    }
+
+    metadata = %{
+      context: context,
+      app_id: Map.get(token, :app_id),
+      bot_user_id: Map.get(token, :bot_user_id),
+      team: Map.get(token, :team),
+      enterprise: Map.get(token, :enterprise),
+      scopes: scopes
+    }
+
+    lease_opts = [
       connection_id: connection_id,
-      expires_at: Keyword.get(opts, :expires_at, DateTime.add(DateTime.utc_now(), 3600, :second)),
-      fields: %{
-        access_token: Map.fetch!(token, :access_token),
-        slack_client: Keyword.get(opts, :slack_client, Client)
-      },
-      metadata: %{
-        context: context,
-        app_id: Map.get(token, :app_id),
-        bot_user_id: Map.get(token, :bot_user_id),
-        team: Map.get(token, :team),
-        enterprise: Map.get(token, :enterprise),
-        scopes: Map.get(token, :scope, [])
-      }
-    })
+      expires_at: expires_at,
+      scopes: scopes,
+      metadata: metadata
+    ]
+
+    case Keyword.get(opts, :connection) do
+      %Connect.Connection{} = connection ->
+        Connect.CredentialLease.from_connection(connection, fields, lease_opts)
+
+      _other ->
+        Connect.CredentialLease.new(%{
+          connection_id: connection_id,
+          provider: :slack,
+          profile: Keyword.get(opts, :profile, :bot),
+          tenant_id: Data.get(context, :tenant_id),
+          owner_type: Keyword.get(opts, :owner_type, :tenant),
+          owner_id:
+            Keyword.get(opts, :owner_id) ||
+              get_in(token, [:team, "id"]) ||
+              get_in(token, [:team, :id]),
+          scopes: scopes,
+          expires_at: expires_at,
+          fields: fields,
+          metadata: metadata
+        })
+    end
   end
 
   defp handle_token_response({:ok, %{status: status, body: %{"ok" => true} = body}})

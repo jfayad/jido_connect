@@ -36,6 +36,41 @@ defmodule Jido.Connect.ErrorTest do
   end
 
   test "converts unknown values through Splode" do
-    assert %{class: :internal, message: "boom"} = Error.to_map("boom")
+    assert %{
+             type: :unknown_error,
+             class: :internal,
+             message: "boom",
+             details: %{},
+             retryable?: false
+           } = Error.to_map("boom")
+  end
+
+  test "serializes public errors with sanitized details and centralized retryability" do
+    error =
+      Error.provider("GitHub API request failed",
+        provider: :github,
+        status: 503,
+        details: %{
+          access_token: "secret-token",
+          body: %{"message" => "temporarily unavailable", "private_key" => "secret-key"}
+        }
+      )
+
+    assert %{
+             type: :provider_error,
+             class: :provider,
+             message: "GitHub API request failed",
+             details: %{
+               "access_token" => "[redacted]",
+               "body" => %{
+                 "message" => "temporarily unavailable",
+                 "private_key" => "[redacted]"
+               }
+             },
+             retryable?: true
+           } = Error.to_map(error)
+
+    refute inspect(Error.to_map(error)) =~ "secret-token"
+    refute inspect(Error.to_map(error)) =~ "secret-key"
   end
 end

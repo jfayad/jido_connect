@@ -9,7 +9,17 @@ defmodule JidoConnect.MixProject do
       name: "Jido Connect",
       source_url: "https://github.com/mikehostetler/jido_connect",
       docs: docs(),
-      deps: deps()
+      deps: deps(),
+      aliases: aliases()
+    ]
+  end
+
+  def cli do
+    [
+      preferred_envs: [
+        q: :test,
+        quality: :test
+      ]
     ]
   end
 
@@ -24,12 +34,26 @@ defmodule JidoConnect.MixProject do
     ]
   end
 
+  defp aliases do
+    [
+      q: ["quality"],
+      quality: [
+        "format --check-formatted",
+        "compile --warnings-as-errors",
+        "test --cover"
+      ]
+    ]
+  end
+
   defp docs do
     [
       main: "readme",
       extras: [
         "README.md",
         "CHANGELOG.md",
+        "CONTRIBUTING.md",
+        "usage-rules.md",
+        "docs/architecture.md",
         "docs/authoring_integrations.md",
         "docs/generated_jido_modules.md",
         "docs/host_owned_storage.md",

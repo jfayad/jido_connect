@@ -6,7 +6,7 @@ defmodule Jido.Connect.Catalog do
   available providers, auth modes, generated tools, and maturity metadata.
   """
 
-  alias Jido.Connect.{ActionSpec, AuthProfile, TriggerSpec}
+  alias Jido.Connect.{ActionSpec, AuthProfile, ConnectorCapability, TriggerSpec}
 
   defmodule AuthProfileSummary do
     @moduledoc "Catalog-facing auth profile metadata."
@@ -79,6 +79,7 @@ defmodule Jido.Connect.Catalog do
                 module: Zoi.module(),
                 status: Zoi.atom() |> Zoi.default(:available),
                 docs: Zoi.list(Zoi.string()) |> Zoi.default([]),
+                capabilities: Zoi.list(ConnectorCapability.schema()) |> Zoi.default([]),
                 auth_profiles: Zoi.list(AuthProfileSummary.schema()) |> Zoi.default([]),
                 actions: Zoi.list(Tool.schema()) |> Zoi.default([]),
                 triggers: Zoi.list(Tool.schema()) |> Zoi.default([]),
@@ -109,6 +110,7 @@ defmodule Jido.Connect.Catalog do
       module: integration_module,
       status: Keyword.get(opts, :status, Map.get(spec.metadata, :status, :available)),
       docs: spec.docs,
+      capabilities: ConnectorCapability.from_spec(spec, integration_module),
       auth_profiles: Enum.map(spec.auth_profiles, &auth_summary/1),
       actions: Enum.map(spec.actions, &action_tool(&1, projection)),
       triggers: Enum.map(spec.triggers, &trigger_tool(&1, projection)),
@@ -173,6 +175,7 @@ defmodule Jido.Connect.Catalog do
       module: inspect(entry.module),
       status: entry.status,
       docs: entry.docs,
+      capabilities: Enum.map(entry.capabilities, &ConnectorCapability.to_map/1),
       auth_profiles: Enum.map(entry.auth_profiles, &auth_profile_to_map/1),
       actions: Enum.map(entry.actions, &tool_to_map/1),
       triggers: Enum.map(entry.triggers, &tool_to_map/1),
@@ -327,6 +330,7 @@ defmodule Jido.Connect.Catalog do
       entry.status,
       inspect(entry.module),
       Enum.map(entry.docs, & &1),
+      Enum.map(entry.capabilities, &[&1.kind, &1.feature, &1.label]),
       Enum.map(entry.auth_profiles, &[&1.id, &1.kind, &1.label, &1.scopes, &1.default_scopes]),
       Enum.map(entry.actions, &tool_search_text/1),
       Enum.map(entry.triggers, &tool_search_text/1)

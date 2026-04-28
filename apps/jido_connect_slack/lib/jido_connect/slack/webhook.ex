@@ -3,7 +3,7 @@ defmodule Jido.Connect.Slack.Webhook do
   Pure helpers for Slack signed request verification and Events API payloads.
   """
 
-  alias Jido.Connect.{Data, Error}
+  alias Jido.Connect.{Data, Error, WebhookDelivery}
   alias Jido.Connect.Webhook, as: CoreWebhook
 
   @max_skew_seconds 300
@@ -44,9 +44,26 @@ defmodule Jido.Connect.Slack.Webhook do
   end
 
   def verify_request(body, headers, signing_secret, opts \\ []) do
+    with {:ok, delivery} <- verify_delivery(body, headers, signing_secret, opts) do
+      {:ok, delivery.payload}
+    end
+  end
+
+  def verify_delivery(body, headers, signing_secret, opts \\ []) do
     with :ok <- verify_signature(body, headers, signing_secret, opts),
          {:ok, payload} <- decode_body(body) do
-      {:ok, payload}
+      WebhookDelivery.verified(:slack, %{
+        delivery_id: Data.get(payload, "event_id"),
+        event: get_in(payload, ["event", "type"]) || Data.get(payload, "type"),
+        headers: headers,
+        payload: payload,
+        duplicate?:
+          CoreWebhook.duplicate?(
+            Data.get(payload, "event_id"),
+            Keyword.get(opts, :seen_delivery_ids, [])
+          ),
+        metadata: %{team_id: Data.get(payload, "team_id")}
+      })
     end
   end
 

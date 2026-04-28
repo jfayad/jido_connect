@@ -54,6 +54,18 @@ defmodule Jido.Connect.GitHubTest do
              Connect.trigger(spec, "github.issue.new")
   end
 
+  test "GitHub catalog entry exposes setup, auth, and runtime capabilities" do
+    entry = Connect.Catalog.entry(Jido.Connect.GitHub)
+    features = entry.capabilities |> Enum.map(& &1.feature) |> MapSet.new()
+
+    assert entry.package == :jido_connect_github
+    assert MapSet.subset?(MapSet.new([:oauth2, :app_installation]), features)
+    assert MapSet.member?(features, :generated_jido_actions)
+    assert MapSet.member?(features, :polling)
+    assert MapSet.member?(features, :github_app_manifest)
+    assert MapSet.member?(features, :webhook_verification)
+  end
+
   test "GitHub integration compiles Jido action, sensor, and plugin modules" do
     assert Jido.Connect.GitHub.jido_action_modules() == [
              Jido.Connect.GitHub.Actions.ListIssues,

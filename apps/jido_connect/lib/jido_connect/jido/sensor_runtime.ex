@@ -87,7 +87,16 @@ defmodule Jido.Connect.JidoSensorRuntime do
 
     case ConnectionSelector.resolve(selector, resolver, projection, runtime_context) do
       {:ok, %Connect.Connection{} = connection} ->
-        {:ok, %{context | connection: connection}}
+        if ConnectionSelector.matches_connection?(selector, connection) do
+          {:ok, %{context | connection: connection}}
+        else
+          {:error,
+           Error.connection_required(%{
+             trigger_id: projection.trigger_id,
+             connection_selector: selector,
+             mismatch: ConnectionSelector.selector_mismatch(selector, connection)
+           })}
+        end
 
       :error ->
         {:error,

@@ -14,7 +14,26 @@ defmodule Jido.Connect.GitHub do
     name("GitHub")
     category(:developer_tools)
     docs(["https://docs.github.com/rest"])
-    metadata(%{package: :jido_connect_github})
+
+    metadata(%{
+      package: :jido_connect_github,
+      capabilities: [
+        %{
+          id: "github.app_setup",
+          kind: :setup,
+          feature: :github_app_manifest,
+          label: "GitHub App setup",
+          description: "Manifest, installation callback, and installation-token helpers."
+        },
+        %{
+          id: "github.webhook_verification",
+          kind: :webhook,
+          feature: :webhook_verification,
+          label: "Webhook verification",
+          description: "Signature verification and issue webhook normalization."
+        }
+      ]
+    })
   end
 
   auth do

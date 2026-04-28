@@ -8,6 +8,14 @@ defmodule Jido.Connect.RuntimeTest do
     def run(%{repo: repo}, _context), do: {:ok, %{repo: repo}}
   end
 
+  defmodule RawErrorHandler do
+    def run(_input, _context), do: {:error, :provider_returned_atom}
+  end
+
+  defmodule InvalidResultHandler do
+    def run(_input, _context), do: :ok
+  end
+
   defmodule PollHandler do
     def poll(%{repo: repo}, %{checkpoint: checkpoint}) do
       {:ok, %{signals: [%{repo: repo}], checkpoint: checkpoint || "next"}}
@@ -20,6 +28,64 @@ defmodule Jido.Connect.RuntimeTest do
 
   defmodule Integration do
     def integration, do: Jido.Connect.RuntimeTest.spec()
+  end
+
+  defmodule InvalidIntegration do
+    def integration, do: :not_a_spec
+  end
+
+  test "top-level API accepts provider modules or compiled specs" do
+    spec = spec()
+    {context, lease} = context_and_lease()
+
+    assert {:ok, ^spec} = Connect.spec(spec)
+    assert {:ok, ^spec} = Connect.spec(Integration)
+    assert {:ok, [%{id: "demo.repo.show"}]} = Connect.actions(Integration)
+    assert {:ok, [%{id: "demo.repo.changed"}]} = Connect.triggers(Integration)
+    assert {:ok, [%{id: :user}]} = Connect.auth_profiles(Integration)
+
+    assert {:ok, %{id: "demo.repo.show"}} = Connect.action(Integration, "demo.repo.show")
+    assert {:ok, %{id: "demo.repo.changed"}} = Connect.trigger(Integration, "demo.repo.changed")
+
+    assert {:ok, %{repo: "org/repo"}} =
+             Connect.invoke(
+               Integration,
+               "demo.repo.show",
+               %{repo: "org/repo"},
+               %{context: context, credential_lease: lease}
+             )
+
+    assert {:ok, %{signals: [%{repo: "org/repo"}], checkpoint: "next"}} =
+             Connect.poll(
+               Integration,
+               "demo.repo.changed",
+               %{repo: "org/repo"},
+               %{context: context, credential_lease: lease}
+             )
+
+    assert {:error, %Connect.Error.ValidationError{reason: :unknown_integration}} =
+             Connect.spec(Module.concat(__MODULE__, MissingIntegration))
+
+    assert {:error, %Connect.Error.ValidationError{reason: :invalid_integration}} =
+             Connect.spec(InvalidIntegration)
+
+    assert {:error, %Connect.Error.ValidationError{reason: :invalid_action_id}} =
+             Connect.action(Integration, :not_a_string)
+
+    assert {:error, %Connect.Error.ValidationError{reason: :invalid_trigger_id}} =
+             Connect.trigger(Integration, :not_a_string)
+
+    assert {:error, %Connect.Error.ValidationError{reason: :invalid_action_id}} =
+             Connect.invoke(Integration, :not_a_string, %{})
+
+    assert {:error, %Connect.Error.ValidationError{reason: :invalid_invocation}} =
+             Connect.invoke(Integration, "demo.repo.show", [])
+
+    assert {:error, %Connect.Error.ValidationError{reason: :invalid_trigger_id}} =
+             Connect.poll(Integration, :not_a_string, %{})
+
+    assert {:error, %Connect.Error.ValidationError{reason: :invalid_poll}} =
+             Connect.poll(Integration, "demo.repo.changed", [])
   end
 
   test "lookup, invoke, poll, and auth failures return structured errors" do
@@ -73,12 +139,42 @@ defmodule Jido.Connect.RuntimeTest do
                credential_lease: mismatched_lease
              )
 
+    assert {:error,
+            %Connect.Error.ExecutionError{
+              phase: :handler,
+              details: %{operation_id: "demo.repo.show", error: "provider_returned_atom"}
+            }} =
+             spec(%{action: %{handler: RawErrorHandler}})
+             |> Connect.invoke("demo.repo.show", %{repo: "org/repo"},
+               context: context,
+               credential_lease: lease
+             )
+
+    assert {:error,
+            %Connect.Error.ExecutionError{
+              phase: :handler,
+              details: %{operation_id: "demo.repo.show", returned: "ok"}
+            }} =
+             spec(%{action: %{handler: InvalidResultHandler}})
+             |> Connect.invoke("demo.repo.show", %{repo: "org/repo"},
+               context: context,
+               credential_lease: lease
+             )
+
     missing_scopes = %{context | connection: %{context.connection | scopes: []}}
 
     assert {:error, %Connect.Error.AuthError{reason: :missing_scopes, missing_scopes: ["repo"]}} =
              Connect.invoke(spec, "demo.repo.show", %{repo: "org/repo"},
                context: missing_scopes,
                credential_lease: lease
+             )
+
+    reduced_lease = %{lease | scopes: []}
+
+    assert {:error, %Connect.Error.AuthError{reason: :missing_scopes, missing_scopes: ["repo"]}} =
+             Connect.invoke(spec, "demo.repo.show", %{repo: "org/repo"},
+               context: context,
+               credential_lease: reduced_lease
              )
 
     expired_lease = %{lease | expires_at: DateTime.add(DateTime.utc_now(), -60, :second)}
@@ -104,6 +200,18 @@ defmodule Jido.Connect.RuntimeTest do
              Connect.invoke(spec, "demo.repo.show", %{repo: "org/repo"},
                context: unsupported_profile,
                credential_lease: lease
+             )
+
+    mismatched_binding = %{lease | provider: :other}
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :credential_connection_mismatch,
+              details: %{field: :provider, expected: :demo, actual: :other}
+            }} =
+             Connect.invoke(spec, "demo.repo.show", %{repo: "org/repo"},
+               context: context,
+               credential_lease: mismatched_binding
              )
 
     assert {:error, %Connect.Error.ValidationError{reason: :signal}} =
@@ -138,7 +246,7 @@ defmodule Jido.Connect.RuntimeTest do
              })
 
     selector =
-      Connect.ConnectionSelector.tenant_default(:demo, "tenant_1",
+      Connect.ConnectionSelector.per_actor(:demo, "tenant_1", "user_1",
         profile: :user,
         required_scopes: ["repo"]
       )
@@ -150,6 +258,21 @@ defmodule Jido.Connect.RuntimeTest do
              Connect.JidoActionRuntime.run(projection, %{repo: "org/repo"}, %{
                integration_context: tenant_context,
                connection_resolver: fn ^selector, ^projection, _agent_context ->
+                 context.connection
+               end,
+               credential_lease: lease
+             })
+
+    mismatched_selector =
+      Connect.ConnectionSelector.tenant_default(:demo, "tenant_1", profile: :user)
+      |> elem(1)
+
+    mismatched_context = %{context | connection: nil, connection_selector: mismatched_selector}
+
+    assert {:error, %Connect.Error.AuthError{reason: :connection_required}} =
+             Connect.JidoActionRuntime.run(projection, %{repo: "org/repo"}, %{
+               integration_context: mismatched_context,
+               connection_resolver: fn ^mismatched_selector, ^projection, _agent_context ->
                  context.connection
                end,
                credential_lease: lease
@@ -253,7 +376,7 @@ defmodule Jido.Connect.RuntimeTest do
              })
 
     tenant_selector =
-      Connect.ConnectionSelector.tenant_default(:demo, "tenant_1", profile: :user)
+      Connect.ConnectionSelector.per_actor(:demo, "tenant_1", "user_1", profile: :user)
       |> elem(1)
 
     assert [
@@ -277,6 +400,27 @@ defmodule Jido.Connect.RuntimeTest do
              Connect.JidoPluginRuntime.tool_availability(projection, %{
                connection_selector: tenant_selector,
                connection_resolver: fn ^tenant_selector, _operation, _config ->
+                 context.connection
+               end
+             })
+
+    mismatched_selector =
+      Connect.ConnectionSelector.tenant_default(:demo, "tenant_1", profile: :user)
+      |> elem(1)
+
+    assert [
+             %ToolAvailability{
+               state: :connection_required,
+               connection_selector: ^mismatched_selector
+             },
+             %ToolAvailability{
+               state: :connection_required,
+               connection_selector: ^mismatched_selector
+             }
+           ] =
+             Connect.JidoPluginRuntime.tool_availability(projection, %{
+               connection_selector: mismatched_selector,
+               connection_resolver: fn ^mismatched_selector, _operation, _config ->
                  context.connection
                end
              })

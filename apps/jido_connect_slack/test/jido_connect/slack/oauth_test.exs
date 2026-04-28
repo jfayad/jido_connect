@@ -119,6 +119,12 @@ defmodule Jido.Connect.Slack.OAuthTest do
              )
 
     assert lease.connection_id == "slack-team-T123"
+    assert lease.provider == :slack
+    assert lease.profile == :bot
+    assert lease.tenant_id == "tenant_1"
+    assert lease.owner_type == :tenant
+    assert lease.owner_id == "T123"
+    assert lease.scopes == ["channels:read", "chat:write"]
     assert lease.fields.access_token == "xoxb-token"
     assert lease.fields.slack_client == Jido.Connect.Slack.Client
     refute inspect(lease) =~ "xoxb-token"

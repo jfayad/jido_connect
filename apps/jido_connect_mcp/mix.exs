@@ -16,7 +16,8 @@ defmodule JidoConnectMCP.MixProject do
       docs: docs(),
       source_url: "https://github.com/mikehostetler/jido_connect",
       test_coverage: test_coverage(),
-      deps: deps()
+      deps: deps(),
+      aliases: aliases()
     ]
   end
 
@@ -24,6 +25,15 @@ defmodule JidoConnectMCP.MixProject do
     [
       extra_applications: [:logger],
       mod: {Jido.Connect.MCP.Application, []}
+    ]
+  end
+
+  def cli do
+    [
+      preferred_envs: [
+        q: :test,
+        quality: :test
+      ]
     ]
   end
 
@@ -54,6 +64,17 @@ defmodule JidoConnectMCP.MixProject do
 
   defp hex_package_task? do
     Enum.any?(System.argv(), &(&1 in ["hex.build", "hex.publish"]))
+  end
+
+  defp aliases do
+    [
+      q: ["quality"],
+      quality: [
+        "format --check-formatted",
+        "compile --warnings-as-errors",
+        "test --cover"
+      ]
+    ]
   end
 
   defp description do

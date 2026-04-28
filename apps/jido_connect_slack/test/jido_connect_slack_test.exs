@@ -61,6 +61,17 @@ defmodule Jido.Connect.SlackTest do
              Connect.action(spec, "slack.message.post")
   end
 
+  test "Slack catalog entry exposes setup, auth, and runtime capabilities" do
+    entry = Connect.Catalog.entry(Jido.Connect.Slack)
+    features = entry.capabilities |> Enum.map(& &1.feature) |> MapSet.new()
+
+    assert entry.package == :jido_connect_slack
+    assert MapSet.member?(features, :oauth2)
+    assert MapSet.member?(features, :generated_jido_actions)
+    assert MapSet.member?(features, :slack_app_manifest)
+    assert MapSet.member?(features, :signed_request_verification)
+  end
+
   test "Slack integration compiles generated Jido modules" do
     assert Jido.Connect.Slack.jido_action_modules() == [
              Jido.Connect.Slack.Actions.ListChannels,

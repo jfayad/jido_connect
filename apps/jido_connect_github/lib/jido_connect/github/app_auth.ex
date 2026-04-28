@@ -45,21 +45,45 @@ defmodule Jido.Connect.GitHub.AppAuth do
   def installation_credential_lease(installation_id, context, opts \\ []) do
     with {:ok, token} <- installation_token(installation_id, opts) do
       connection_id = Keyword.get(opts, :connection_id, "github-installation-#{installation_id}")
+      scopes = permission_scopes(token.permissions)
 
-      Connect.CredentialLease.new(%{
+      fields = %{
+        access_token: token.token,
+        github_client: Keyword.get(opts, :github_client, Client)
+      }
+
+      metadata = %{
+        installation_id: installation_id,
+        context: context,
+        permissions: token.permissions,
+        repositories: token.repositories
+      }
+
+      lease_opts = [
         connection_id: connection_id,
         expires_at: token.expires_at,
-        fields: %{
-          access_token: token.token,
-          github_client: Keyword.get(opts, :github_client, Client)
-        },
-        metadata: %{
-          installation_id: installation_id,
-          context: context,
-          permissions: token.permissions,
-          repositories: token.repositories
-        }
-      })
+        scopes: scopes,
+        metadata: metadata
+      ]
+
+      case Keyword.get(opts, :connection) do
+        %Connect.Connection{} = connection ->
+          Connect.CredentialLease.from_connection(connection, fields, lease_opts)
+
+        _other ->
+          Connect.CredentialLease.new(%{
+            connection_id: connection_id,
+            provider: :github,
+            profile: :installation,
+            tenant_id: Data.get(context, :tenant_id),
+            owner_type: Keyword.get(opts, :owner_type),
+            owner_id: Keyword.get(opts, :owner_id),
+            scopes: scopes,
+            expires_at: token.expires_at,
+            fields: fields,
+            metadata: metadata
+          })
+      end
     end
   end
 
@@ -206,6 +230,22 @@ defmodule Jido.Connect.GitHub.AppAuth do
     {:ok, datetime, _offset} = DateTime.from_iso8601(value)
     datetime
   end
+
+  defp permission_scopes(permissions) when is_map(permissions) do
+    permissions
+    |> Enum.flat_map(fn {permission, level} ->
+      permission_scope(to_string(permission), to_string(level))
+    end)
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
+  defp permission_scopes(_permissions), do: []
+
+  defp permission_scope(permission, "write"), do: ["#{permission}:read", "#{permission}:write"]
+  defp permission_scope(permission, "admin"), do: ["#{permission}:read", "#{permission}:write"]
+  defp permission_scope(permission, "read"), do: ["#{permission}:read"]
+  defp permission_scope(_permission, _level), do: []
 
   defp error_message(body) when is_map(body), do: Data.get(body, "message", body)
   defp error_message(body), do: body

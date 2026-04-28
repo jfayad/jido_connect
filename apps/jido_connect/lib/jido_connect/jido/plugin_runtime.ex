@@ -2,9 +2,9 @@ defmodule Jido.Connect.JidoPluginRuntime do
   @moduledoc false
 
   alias Jido.Connect
+  alias Jido.Connect.Authorization
   alias Jido.Connect.ConnectionSelector
   alias Jido.Connect.Jido.{PluginProjection, ToolAvailability}
-  alias Jido.Connect.ScopeRequirements
 
   def filtered_actions(%PluginProjection{} = projection, config) do
     allowed = allowed_set(config, :allowed_actions)
@@ -71,17 +71,18 @@ defmodule Jido.Connect.JidoPluginRuntime do
         end
 
       not is_nil(raw_connection_selector) and not is_nil(connection_resolver) ->
-        case ConnectionSelector.resolve(
-               connection_selector || raw_connection_selector,
-               connection_resolver,
-               operation,
-               config
-             ) do
+        selector = connection_selector || raw_connection_selector
+
+        case ConnectionSelector.resolve(selector, connection_resolver, operation, config) do
           {:ok, %Connect.Connection{} = resolved_connection} ->
-            connection_availability(operation, resolved_connection)
+            if connection_selector_matches?(selector, resolved_connection) do
+              connection_availability(operation, resolved_connection)
+            else
+              connection_required(tool, selector)
+            end
 
           _other ->
-            connection_required(tool, connection_selector || raw_connection_selector)
+            connection_required(tool, selector)
         end
 
       is_binary(connection_id) or not is_nil(raw_connection_selector) ->
@@ -127,6 +128,12 @@ defmodule Jido.Connect.JidoPluginRuntime do
     end
   end
 
+  defp connection_selector_matches?(%ConnectionSelector{} = selector, connection) do
+    ConnectionSelector.matches_connection?(selector, connection)
+  end
+
+  defp connection_selector_matches?(_selector, _connection), do: true
+
   defp allowed_set(config, key) do
     case Map.get(config, key) do
       nil -> nil
@@ -138,23 +145,19 @@ defmodule Jido.Connect.JidoPluginRuntime do
   defp connection_availability(operation, %Connect.Connection{} = connection) do
     tool = operation_id(operation)
 
-    with :connected <- connection.status,
-         {:ok, required_scopes} <-
-           ScopeRequirements.required_scopes(operation, %{}, connection) do
-      missing_scopes = required_scopes -- connection.scopes
-
-      if missing_scopes == [] do
+    case Authorization.connection_availability(operation, connection) do
+      {:available, _required_scopes} ->
         ToolAvailability.new!(%{tool: tool, state: :available, connection_id: connection.id})
-      else
+
+      {:missing_scopes, missing_scopes} ->
         ToolAvailability.new!(%{
           tool: tool,
           state: :missing_scopes,
           connection_id: connection.id,
           missing_scopes: missing_scopes
         })
-      end
-    else
-      _other ->
+
+      :connection_required ->
         ToolAvailability.new!(%{
           tool: tool,
           state: :connection_required,

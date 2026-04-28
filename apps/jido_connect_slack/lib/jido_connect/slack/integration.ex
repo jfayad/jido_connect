@@ -13,7 +13,26 @@ defmodule Jido.Connect.Slack do
     name("Slack")
     category(:collaboration)
     docs(["https://docs.slack.dev/apis/web-api", "https://docs.slack.dev/events-api"])
-    metadata(%{package: :jido_connect_slack})
+
+    metadata(%{
+      package: :jido_connect_slack,
+      capabilities: [
+        %{
+          id: "slack.app_manifest",
+          kind: :setup,
+          feature: :slack_app_manifest,
+          label: "Slack app manifest",
+          description: "Manifest-driven app setup for local and hosted OAuth installs."
+        },
+        %{
+          id: "slack.signed_requests",
+          kind: :webhook,
+          feature: :signed_request_verification,
+          label: "Signed request verification",
+          description: "Slack request signature verification and event normalization."
+        }
+      ]
+    })
   end
 
   auth do
