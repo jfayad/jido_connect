@@ -107,4 +107,30 @@ defmodule Jido.Connect.CatalogTest do
              verb: :get
            } = Catalog.tools(type: :action) |> hd() |> Catalog.to_map()
   end
+
+  test "catalog discovery skips modules that fail while building entries" do
+    previous = Application.get_env(:jido_connect, :catalog_modules)
+
+    Application.put_env(:jido_connect, :catalog_modules, [
+      CatalogFixtures.Integration,
+      CatalogFixtures.RaisingIntegration,
+      CatalogFixtures.InvalidIntegration,
+      Module.concat(__MODULE__, MissingIntegration)
+    ])
+
+    on_exit(fn ->
+      if is_nil(previous) do
+        Application.delete_env(:jido_connect, :catalog_modules)
+      else
+        Application.put_env(:jido_connect, :catalog_modules, previous)
+      end
+    end)
+
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover()
+
+    assert [
+             %Catalog.ToolEntry{id: "catalog.item.get"},
+             %Catalog.ToolEntry{id: "catalog.item.created"}
+           ] = Catalog.tools()
+  end
 end

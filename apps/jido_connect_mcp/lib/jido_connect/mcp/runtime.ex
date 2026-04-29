@@ -38,20 +38,54 @@ defmodule Jido.Connect.MCP.Runtime do
   defp call_mcp(opts, function, args, nil) do
     client = mcp_client(opts)
 
-    case apply(client, function, args) do
-      {:ok, %{status: :ok, data: data}} -> {:ok, data}
-      {:ok, %{data: data}} -> {:ok, data}
-      {:error, error} -> {:error, normalize_error(error)}
+    with {:ok, response} <- call_client(client, function, args) do
+      normalize_response(response)
     end
   end
 
   defp call_mcp(opts, function, args, timeout) do
     client = mcp_client(opts)
 
-    case apply(client, function, args ++ [[timeout: timeout]]) do
+    with {:ok, response} <- call_client(client, function, args ++ [[timeout: timeout]]) do
+      normalize_response(response)
+    end
+  end
+
+  defp call_client(client, function, args) do
+    {:ok, apply(client, function, args)}
+  rescue
+    exception ->
+      {:error,
+       Error.provider("MCP request failed",
+         provider: :mcp,
+         reason: :client_exception,
+         details: %{
+           module: client,
+           function: function,
+           message: Exception.message(exception)
+         }
+       )}
+  catch
+    kind, reason ->
+      {:error,
+       Error.provider("MCP request failed",
+         provider: :mcp,
+         reason: :client_exit,
+         details: %{
+           module: client,
+           function: function,
+           kind: kind,
+           reason: Jido.Connect.Sanitizer.sanitize(reason, :transport)
+         }
+       )}
+  end
+
+  defp normalize_response(response) do
+    case response do
       {:ok, %{status: :ok, data: data}} -> {:ok, data}
       {:ok, %{data: data}} -> {:ok, data}
       {:error, error} -> {:error, normalize_error(error)}
+      response -> {:error, invalid_response(response)}
     end
   end
 
@@ -74,6 +108,14 @@ defmodule Jido.Connect.MCP.Runtime do
       provider: :mcp,
       reason: :mcp_error,
       details: %{error: error}
+    )
+  end
+
+  defp invalid_response(response) do
+    Error.provider("MCP request returned an invalid response",
+      provider: :mcp,
+      reason: :invalid_response,
+      details: %{response: Jido.Connect.Sanitizer.sanitize(response, :transport)}
     )
   end
 end

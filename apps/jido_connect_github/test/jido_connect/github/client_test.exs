@@ -140,4 +140,17 @@ defmodule Jido.Connect.GitHub.ClientTest do
     assert {:error, %Error.ProviderError{status: 422, details: %{message: "Validation Failed"}}} =
              Client.create_issue("org/repo", %{title: ""}, "token")
   end
+
+  test "normalizes malformed successful responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      Req.Test.json(conn, %{unexpected: true})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :invalid_response,
+              details: %{body: %{"unexpected" => true}}
+            }} = Client.list_issues("org/repo", "open", "token")
+  end
 end

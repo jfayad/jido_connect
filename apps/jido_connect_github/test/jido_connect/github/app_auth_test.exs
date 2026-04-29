@@ -154,6 +154,20 @@ defmodule Jido.Connect.GitHub.AppAuthTest do
              AppAuth.installation_token(42, app_id: 123, private_key_pem: pem)
   end
 
+  test "normalizes malformed successful token responses", %{private_key_pem: pem} do
+    Req.Test.stub(__MODULE__, fn conn ->
+      Req.Test.json(conn, %{permissions: %{issues: "write"}})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :invalid_response,
+              details: %{body: %{"permissions" => %{"issues" => "write"}}}
+            }} =
+             AppAuth.installation_token(42, app_id: 123, private_key_pem: pem)
+  end
+
   defp decode_json(value) do
     value
     |> Base.url_decode64!(padding: false)

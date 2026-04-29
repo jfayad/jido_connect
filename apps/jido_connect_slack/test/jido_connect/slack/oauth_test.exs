@@ -104,6 +104,24 @@ defmodule Jido.Connect.Slack.OAuthTest do
              )
   end
 
+  test "normalizes malformed successful token responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      Req.Test.json(conn, %{ok: true, token_type: "bot"})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :slack,
+              reason: :invalid_response,
+              details: %{body: %{"ok" => true, "token_type" => "bot"}}
+            }} =
+             OAuth.exchange_code("code",
+               client_id: "client",
+               client_secret: "secret",
+               base_url: "https://slack.test"
+             )
+  end
+
   test "builds a redacted credential lease from a bot token response" do
     token = %{
       access_token: "xoxb-token",

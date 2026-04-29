@@ -93,7 +93,13 @@ defmodule Jido.Connect.Dsl.SpecBuilder do
 
     {:ok, spec}
   rescue
-    error -> {:error, Exception.message(error)}
+    error ->
+      {:error,
+       Spark.Error.DslError.exception(
+         module: transformer.get_persisted(dsl_state, :module),
+         path: [],
+         message: error
+       )}
   end
 
   defp auth_profile!(%Dsl.AuthProfile{} = profile) do

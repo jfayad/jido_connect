@@ -167,6 +167,18 @@ defmodule Jido.Connect.Runtime do
     end)
   end
 
+  defp validate_signals(%TriggerSpec{} = trigger, signals) do
+    {:error,
+     Error.execution("Provider poll handler returned invalid signals",
+       phase: :handler,
+       details: %{
+         operation_id: trigger.id,
+         expected: :list,
+         returned: Jido.Connect.Sanitizer.sanitize(signals, :transport)
+       }
+     )}
+  end
+
   defp parse_schema(schema, value, reason) do
     case Zoi.parse(schema, value) do
       {:ok, parsed} -> {:ok, parsed}

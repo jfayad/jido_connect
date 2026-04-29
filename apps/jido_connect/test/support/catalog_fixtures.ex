@@ -78,4 +78,12 @@ defmodule Jido.Connect.CatalogFixtures do
       })
     end
   end
+
+  defmodule RaisingIntegration do
+    def integration, do: raise("catalog exploded")
+  end
+
+  defmodule InvalidIntegration do
+    def integration, do: %{id: :not_a_spec}
+  end
 end

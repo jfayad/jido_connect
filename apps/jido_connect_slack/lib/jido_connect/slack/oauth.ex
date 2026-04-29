@@ -108,16 +108,21 @@ defmodule Jido.Connect.Slack.OAuth do
 
   defp handle_token_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do
-    {:ok,
-     %{
-       access_token: Data.get(body, "access_token"),
-       token_type: Data.get(body, "token_type"),
-       scope: Data.get(body, "scope") |> Scope.parse(),
-       bot_user_id: Data.get(body, "bot_user_id"),
-       app_id: Data.get(body, "app_id"),
-       team: Data.get(body, "team") || %{},
-       enterprise: Data.get(body, "enterprise")
-     }}
+    with access_token when is_binary(access_token) <- Data.get(body, "access_token") do
+      {:ok,
+       %{
+         access_token: access_token,
+         token_type: Data.get(body, "token_type"),
+         scope: Data.get(body, "scope") |> Scope.parse(),
+         bot_user_id: Data.get(body, "bot_user_id"),
+         app_id: Data.get(body, "app_id"),
+         team: Data.get(body, "team") || %{},
+         enterprise: Data.get(body, "enterprise")
+       }}
+    else
+      _other ->
+        invalid_success_response(body)
+    end
   end
 
   defp handle_token_response({:ok, %{status: status, body: %{"ok" => false} = body}}) do
@@ -146,6 +151,15 @@ defmodule Jido.Connect.Slack.OAuth do
        provider: :slack,
        reason: :request_error,
        details: %{reason: reason}
+     )}
+  end
+
+  defp invalid_success_response(body) do
+    {:error,
+     Error.provider("Slack OAuth response was invalid",
+       provider: :slack,
+       reason: :invalid_response,
+       details: %{body: body}
      )}
   end
 

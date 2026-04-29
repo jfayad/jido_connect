@@ -56,6 +56,14 @@ defmodule Jido.Connect.MCPTest do
     end
   end
 
+  defmodule BadMCPClient do
+    def list_tools(:filesystem, _opts), do: :bad_response
+  end
+
+  defmodule RaisingMCPClient do
+    def list_tools(:filesystem, _opts), do: raise("mcp exploded")
+  end
+
   setup do
     register_endpoint!(:filesystem)
 
@@ -195,6 +203,36 @@ defmodule Jido.Connect.MCPTest do
              )
   end
 
+  test "MCP invalid client responses normalize to provider errors" do
+    {context, lease} = context_and_lease(mcp_client: BadMCPClient)
+
+    assert {:error,
+            %Connect.Error.ProviderError{
+              provider: :mcp,
+              reason: :invalid_response,
+              details: %{response: "bad_response"}
+            }} =
+             Jido.Connect.MCP.Actions.ListTools.run(
+               %{endpoint_id: "filesystem", timeout: 1_000},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "MCP client exceptions normalize to provider errors" do
+    {context, lease} = context_and_lease(mcp_client: RaisingMCPClient)
+
+    assert {:error,
+            %Connect.Error.ProviderError{
+              provider: :mcp,
+              reason: :client_exception,
+              details: %{message: "mcp exploded"}
+            }} =
+             Jido.Connect.MCP.Actions.ListTools.run(
+               %{endpoint_id: "filesystem", timeout: 1_000},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "unknown MCP endpoint returns validation error after scope policy passes" do
     {context, lease} =
       context_and_lease(
@@ -304,7 +342,7 @@ defmodule Jido.Connect.MCPTest do
       Connect.CredentialLease.new!(%{
         connection_id: "mcp-filesystem",
         expires_at: DateTime.add(DateTime.utc_now(), 300, :second),
-        fields: %{mcp_client: FakeMCPClient}
+        fields: %{mcp_client: Keyword.get(opts, :mcp_client, FakeMCPClient)}
       })
 
     {context, lease}

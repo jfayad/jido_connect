@@ -182,14 +182,26 @@ defmodule Jido.Connect.GitHub.AppAuth do
     Application.get_env(:jido_connect_github, :github_api_base_url, "https://api.github.com")
   end
 
+  defp handle_token_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    with token when is_binary(token) <- Data.get(body, "token"),
+         expires_at_value when is_binary(expires_at_value) <- Data.get(body, "expires_at"),
+         {:ok, expires_at} <- parse_datetime(expires_at_value) do
+      {:ok,
+       %{
+         token: token,
+         expires_at: expires_at,
+         permissions: Data.get(body, "permissions", %{}),
+         repositories: Data.get(body, "repositories", [])
+       }}
+    else
+      _other ->
+        invalid_success_response(body)
+    end
+  end
+
   defp handle_token_response({:ok, %{status: status, body: body}}) when status in 200..299 do
-    {:ok,
-     %{
-       token: Data.fetch!(body, "token"),
-       expires_at: parse_datetime!(Data.fetch!(body, "expires_at")),
-       permissions: Data.get(body, "permissions", %{}),
-       repositories: Data.get(body, "repositories", [])
-     }}
+    invalid_success_response(body)
   end
 
   defp handle_token_response(response), do: handle_error_response(response)
@@ -226,9 +238,11 @@ defmodule Jido.Connect.GitHub.AppAuth do
      )}
   end
 
-  defp parse_datetime!(value) do
-    {:ok, datetime, _offset} = DateTime.from_iso8601(value)
-    datetime
+  defp parse_datetime(value) do
+    case DateTime.from_iso8601(value) do
+      {:ok, datetime, _offset} -> {:ok, datetime}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp permission_scopes(permissions) when is_map(permissions) do
@@ -249,6 +263,15 @@ defmodule Jido.Connect.GitHub.AppAuth do
 
   defp error_message(body) when is_map(body), do: Data.get(body, "message", body)
   defp error_message(body), do: body
+
+  defp invalid_success_response(body) do
+    {:error,
+     Error.provider("GitHub App API response was invalid",
+       provider: :github,
+       reason: :invalid_response,
+       details: %{body: body}
+     )}
+  end
 
   defp base64url(value) do
     Base.url_encode64(value, padding: false)

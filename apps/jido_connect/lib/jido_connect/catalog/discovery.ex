@@ -1,6 +1,7 @@
 defmodule Jido.Connect.Catalog.Discovery do
   @moduledoc false
 
+  alias Jido.Connect.Callback
   alias Jido.Connect.Catalog.{Builder, Filter, Search}
 
   @spec configured_modules() :: [module()]
@@ -49,8 +50,13 @@ defmodule Jido.Connect.Catalog.Discovery do
 
   defp safe_entry(module) do
     with {:module, ^module} <- Code.ensure_loaded(module),
-         true <- function_exported?(module, :integration, 0) do
-      [Builder.entry(module)]
+         true <- function_exported?(module, :integration, 0),
+         {:ok, entry} <-
+           Callback.run(fn -> Builder.entry(module) end,
+             phase: :catalog_discovery,
+             details: %{module: module}
+           ) do
+      [entry]
     else
       _other -> []
     end

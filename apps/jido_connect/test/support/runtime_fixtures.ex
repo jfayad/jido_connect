@@ -32,6 +32,10 @@ defmodule Jido.Connect.RuntimeFixtures do
     def poll(_config, _context), do: {:ok, %{signals: [%{}], checkpoint: nil}}
   end
 
+  defmodule NonListPollHandler do
+    def poll(_config, _context), do: {:ok, %{signals: %{repo: "org/repo"}, checkpoint: nil}}
+  end
+
   defmodule Integration do
     def integration, do: Jido.Connect.RuntimeFixtures.spec()
   end
@@ -68,6 +72,13 @@ defmodule Jido.Connect.RuntimeFixtures do
     build_spec(
       actions: [action_attrs()],
       triggers: [Map.merge(trigger_attrs(), %{handler: BadPollHandler})]
+    )
+  end
+
+  def non_list_signal_spec do
+    build_spec(
+      actions: [action_attrs()],
+      triggers: [Map.merge(trigger_attrs(), %{handler: NonListPollHandler})]
     )
   end
 

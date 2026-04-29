@@ -80,6 +80,24 @@ defmodule Jido.Connect.GitHub.OAuthTest do
              )
   end
 
+  test "normalizes malformed successful token responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      Req.Test.json(conn, %{token_type: "bearer"})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :invalid_response,
+              details: %{body: %{"token_type" => "bearer"}}
+            }} =
+             OAuth.exchange_code("code",
+               client_id: "client",
+               client_secret: "secret",
+               base_url: "https://github.test"
+             )
+  end
+
   test "normalizes HTTP errors and revokes tokens" do
     Req.Test.stub(__MODULE__, fn
       %{method: "POST"} = conn ->

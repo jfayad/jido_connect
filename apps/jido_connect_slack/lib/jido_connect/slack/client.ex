@@ -3,7 +3,7 @@ defmodule Jido.Connect.Slack.Client do
   Minimal Slack Web API client for provider handlers and host demos.
   """
 
-  alias Jido.Connect.{Data, Http}
+  alias Jido.Connect.{Data, Error, Http}
 
   def list_channels(params, access_token) when is_map(params) and is_binary(access_token) do
     access_token
@@ -46,11 +46,16 @@ defmodule Jido.Connect.Slack.Client do
 
   defp handle_channel_list_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do
-    {:ok,
-     %{
-       channels: Enum.map(Map.get(body, "channels", []), &normalize_channel/1),
-       next_cursor: get_in(body, ["response_metadata", "next_cursor"]) || ""
-     }}
+    with channels when is_list(channels) <- Map.get(body, "channels", []),
+         true <- Enum.all?(channels, &is_map/1) do
+      {:ok,
+       %{
+         channels: Enum.map(channels, &normalize_channel/1),
+         next_cursor: get_in(body, ["response_metadata", "next_cursor"]) || ""
+       }}
+    else
+      _other -> invalid_success_response("Slack channel list response was invalid", body)
+    end
   end
 
   defp handle_channel_list_response(response), do: handle_error_response(response)
@@ -75,7 +80,7 @@ defmodule Jido.Connect.Slack.Client do
   defp handle_map_response(response), do: handle_error_response(response)
 
   defp handle_error_response({:ok, %{status: status, body: %{"ok" => false} = body}}) do
-    Jido.Connect.Error.provider("Slack API request failed",
+    Error.provider("Slack API request failed",
       provider: :slack,
       status: status,
       reason: Data.get(body, "error"),
@@ -102,5 +107,14 @@ defmodule Jido.Connect.Slack.Client do
       is_private: Data.get(channel, "is_private"),
       is_member: Data.get(channel, "is_member")
     }
+  end
+
+  defp invalid_success_response(message, body) do
+    {:error,
+     Error.provider(message,
+       provider: :slack,
+       reason: :invalid_response,
+       details: %{body: body}
+     )}
   end
 end

@@ -98,12 +98,17 @@ defmodule Jido.Connect.GitHub.OAuth do
          details: %{description: Data.get(body, "error_description"), body: body}
        )}
     else
-      {:ok,
-       %{
-         access_token: Data.get(body, "access_token"),
-         token_type: Data.get(body, "token_type"),
-         scope: body |> Data.get("scope") |> Scope.parse()
-       }}
+      with access_token when is_binary(access_token) <- Data.get(body, "access_token") do
+        {:ok,
+         %{
+           access_token: access_token,
+           token_type: Data.get(body, "token_type"),
+           scope: body |> Data.get("scope") |> Scope.parse()
+         }}
+      else
+        _other ->
+          invalid_success_response(body)
+      end
     end
   end
 
@@ -128,4 +133,13 @@ defmodule Jido.Connect.GitHub.OAuth do
 
   defp error_message(body) when is_map(body), do: Data.get(body, "message", body)
   defp error_message(body), do: body
+
+  defp invalid_success_response(body) do
+    {:error,
+     Error.provider("GitHub OAuth code exchange response was invalid",
+       provider: :github,
+       reason: :invalid_response,
+       details: %{body: body}
+     )}
+  end
 end

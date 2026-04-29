@@ -7,7 +7,7 @@ defmodule Jido.Connect.GitHub.Client do
   module with a real token lease.
   """
 
-  alias Jido.Connect.{Data, Http, Polling}
+  alias Jido.Connect.{Data, Error, Http, Polling}
 
   @api_version "2022-11-28"
 
@@ -85,20 +85,35 @@ defmodule Jido.Connect.GitHub.Client do
     Application.get_env(:jido_connect_github, :github_api_base_url, "https://api.github.com")
   end
 
-  defp handle_list_response({:ok, %{status: status, body: body}}) when status in 200..299 do
+  defp handle_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_list(body) do
     {:ok, Enum.map(body, &normalize_issue/1)}
+  end
+
+  defp handle_list_response({:ok, %{status: status, body: body}}) when status in 200..299 do
+    invalid_success_response("GitHub list issues response was invalid", body)
   end
 
   defp handle_list_response(response), do: handle_error_response(response)
 
-  defp handle_issue_response({:ok, %{status: status, body: body}}) when status in 200..299 do
+  defp handle_issue_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
     {:ok, normalize_issue(body)}
+  end
+
+  defp handle_issue_response({:ok, %{status: status, body: body}}) when status in 200..299 do
+    invalid_success_response("GitHub issue response was invalid", body)
   end
 
   defp handle_issue_response(response), do: handle_error_response(response)
 
-  defp handle_map_response({:ok, %{status: status, body: body}}) when status in 200..299 do
+  defp handle_map_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
     {:ok, body}
+  end
+
+  defp handle_map_response({:ok, %{status: status, body: body}}) when status in 200..299 do
+    invalid_success_response("GitHub response was invalid", body)
   end
 
   defp handle_map_response(response), do: handle_error_response(response)
@@ -114,5 +129,14 @@ defmodule Jido.Connect.GitHub.Client do
       state: Data.get(issue, "state"),
       updated_at: Data.get(issue, "updated_at")
     }
+  end
+
+  defp invalid_success_response(message, body) do
+    {:error,
+     Error.provider(message,
+       provider: :github,
+       reason: :invalid_response,
+       details: %{body: body}
+     )}
   end
 end

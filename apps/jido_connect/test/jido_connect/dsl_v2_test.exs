@@ -301,6 +301,45 @@ defmodule Jido.Connect.DslV2Test do
     end
   end
 
+  test "DSL spec builder preserves structured build errors" do
+    assert_raise Spark.Error.DslError,
+                 ~r/ArgumentError.*cannot declare both inline fields/s,
+                 fn ->
+                   compile_bad!(
+                     quote do
+                       schemas do
+                         schema :item do
+                           field :id, :string
+                         end
+                       end
+
+                       actions do
+                         action :bad_schema_reference do
+                           id "bad.schema"
+                           resource :item
+                           verb :list
+                           data_classification :workspace_content
+                           label "Bad schema"
+                           handler Jido.Connect.DslV2Test.Handler
+                           effect :read
+                           input_schema :item
+
+                           input do
+                             field :id, :string
+                           end
+
+                           access do
+                             auth :tenant
+                             policies [:tenant_access]
+                             scopes ["items:read"]
+                           end
+                         end
+                       end
+                     end
+                   )
+                 end
+  end
+
   defp compile_bad!(body) do
     module = Module.concat(__MODULE__, "BadDsl#{System.unique_integer([:positive])}")
 

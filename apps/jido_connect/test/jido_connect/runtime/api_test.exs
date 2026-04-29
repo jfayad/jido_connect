@@ -219,5 +219,22 @@ defmodule Jido.Connect.Runtime.ApiTest do
                context: context,
                credential_lease: lease
              )
+
+    assert {:error,
+            %Connect.Error.ExecutionError{
+              phase: :handler,
+              details: %{
+                operation_id: "demo.repo.changed",
+                expected: :list,
+                returned: %{"repo" => "org/repo"}
+              }
+            }} =
+             Connect.poll(
+               RuntimeFixtures.non_list_signal_spec(),
+               "demo.repo.changed",
+               %{repo: "org/repo"},
+               context: context,
+               credential_lease: lease
+             )
   end
 end

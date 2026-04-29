@@ -111,4 +111,18 @@ defmodule Jido.Connect.Slack.ClientTest do
               details: %{body: %{"error" => "server_error"}}
             }} = Client.auth_test("token")
   end
+
+  test "normalizes malformed successful responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      Req.Test.json(conn, %{ok: true, channels: %{id: "C123"}})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :slack,
+              reason: :invalid_response,
+              details: %{body: %{"ok" => true, "channels" => %{"id" => "C123"}}}
+            }} =
+             Client.list_channels(%{types: "public_channel"}, "token")
+  end
 end
