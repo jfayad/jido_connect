@@ -7,6 +7,7 @@ Usage:
   scripts/bw_codex_issue.sh [options]
 
 Pick one Beadwork issue, run Codex against it, verify, commit, close, and sync.
+By default this uses the current checkout. Worktrees/branches are opt-in.
 
 Options:
   --dry-run                 Print the selected issue and planned commands only.
@@ -16,11 +17,13 @@ Options:
   --sandbox MODE            Codex sandbox mode. Default: workspace-write.
   --allow-epic              Allow selecting epic issues. Default: false.
   --strict-ready            Do not fall back from bw ready to bw list --all.
-  --no-worktree             Run in the current checkout instead of a fresh worktree.
+  --worktree                Run in a fresh/reused git worktree instead of the current checkout.
+  --no-worktree             Backward-compatible no-op; current checkout is already the default.
   --worktree-root DIR       Directory for created worktrees.
   --base REF                Base ref for new worktree branches. Default: current HEAD.
   --branch NAME             Explicit branch name. Default: bw/<issue-id>-<slug>.
-  --reuse-worktree          Reuse an existing worktree path if it exists.
+  --reuse-worktree          Backward-compatible no-op; existing worktrees are reused by default.
+  --fresh-worktree          Fail if the target worktree path already exists.
   --allow-dirty             Do not require the starting checkout to be clean.
   --no-sync                 Do not run bw sync after closing the issue.
   --no-close                Do not close the issue after committing.
@@ -46,9 +49,10 @@ Command customization:
 Examples:
   scripts/bw_codex_issue.sh --dry-run
   scripts/bw_codex_issue.sh --model gpt-5.5 --issue jido_con-qgc.1
+  scripts/bw_codex_issue.sh --worktree --model gpt-5.5 --issue jido_con-qgc.1
   BW_CODEX_REVIEW_CMD='codex exec review --model gpt-5.5 --cd "$WORKDIR"' \
     scripts/bw_codex_issue.sh --model gpt-5.5
-  CODEX_COMMAND_TEMPLATE='codex exec --cd "$WORKDIR" -m gpt-5.5 -s workspace-write -a never -' \
+  CODEX_COMMAND_TEMPLATE='codex --ask-for-approval never exec --cd "$WORKDIR" -m gpt-5.5 -s workspace-write -' \
     scripts/bw_codex_issue.sh
 USAGE
 }
@@ -141,6 +145,59 @@ select_issue() {
   printf '%s\n' "${selected}"
 }
 
+issue_status() {
+  bw show "$1" --json | jq -r '.status'
+}
+
+issue_commit_sha() {
+  local workdir="$1"
+
+  git -C "${workdir}" log -n 1 --format=%H --grep="^${ISSUE_ID}:" HEAD -- 2>/dev/null || true
+}
+
+start_issue_if_needed() {
+  local status
+
+  status="$(issue_status "${ISSUE_ID}")"
+
+  case "${status}" in
+    open)
+      run bw start "${ISSUE_ID}"
+      ;;
+    in_progress)
+      log "${ISSUE_ID} is already in_progress; continuing."
+      ;;
+    closed)
+      log "${ISSUE_ID} is already closed; nothing to do."
+      exit 0
+      ;;
+    *)
+      die "${ISSUE_ID} has status '${status}', not open/in_progress."
+      ;;
+  esac
+}
+
+finish_issue() {
+  local commit_sha="$1"
+  local status
+
+  if [[ "${CLOSE_AFTER}" == "true" ]]; then
+    status="$(issue_status "${ISSUE_ID}")"
+
+    if [[ "${status}" == "closed" ]]; then
+      log "${ISSUE_ID} is already closed."
+    elif [[ "${DRY_RUN}" == "true" ]]; then
+      run bw close "${ISSUE_ID}" --reason "Implemented by scripted Codex run"
+    else
+      run bw close "${ISSUE_ID}" --reason "Implemented in ${commit_sha}"
+    fi
+  fi
+
+  if [[ "${SYNC_AFTER}" == "true" ]]; then
+    run bw sync
+  fi
+}
+
 write_prompt() {
   local prompt_file="$1"
   local custom_prompt_file="$2"
@@ -185,7 +242,7 @@ run_codex() {
       printf '+ (cd %q && %s < %q)\n' "${workdir}" "${CODEX_COMMAND_TEMPLATE}" "${prompt_file}" >&2
     else
       {
-        printf '+ codex exec --cd %q --model %q --sandbox %q --ask-for-approval never' \
+        printf '+ codex --ask-for-approval never exec --cd %q --model %q --sandbox %q' \
           "${workdir}" "${CODEX_MODEL_VALUE}" "${CODEX_SANDBOX}"
 
         if [[ -n "${CODEX_PROFILE}" ]]; then
@@ -208,7 +265,7 @@ run_codex() {
     return $?
   fi
 
-  local command=(codex exec --cd "${workdir}" --model "${CODEX_MODEL_VALUE}" --sandbox "${CODEX_SANDBOX}" --ask-for-approval never)
+  local command=(codex --ask-for-approval never exec --cd "${workdir}" --model "${CODEX_MODEL_VALUE}" --sandbox "${CODEX_SANDBOX}")
 
   if [[ -n "${CODEX_PROFILE}" ]]; then
     command+=(--profile "${CODEX_PROFILE}")
@@ -233,11 +290,11 @@ CODEX_PROFILE=""
 CODEX_SANDBOX="workspace-write"
 ALLOW_EPIC=false
 STRICT_READY=false
-USE_WORKTREE=true
+USE_WORKTREE=false
 WORKTREE_ROOT=""
 BASE_REF=""
 BRANCH_NAME=""
-REUSE_WORKTREE=false
+FRESH_WORKTREE=false
 ALLOW_DIRTY=false
 SYNC_AFTER=true
 CLOSE_AFTER=true
@@ -279,6 +336,10 @@ while [[ $# -gt 0 ]]; do
       STRICT_READY=true
       shift
       ;;
+    --worktree)
+      USE_WORKTREE=true
+      shift
+      ;;
     --no-worktree)
       USE_WORKTREE=false
       shift
@@ -299,7 +360,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --reuse-worktree)
-      REUSE_WORKTREE=true
+      FRESH_WORKTREE=false
+      shift
+      ;;
+    --fresh-worktree)
+      FRESH_WORKTREE=true
       shift
       ;;
     --allow-dirty)
@@ -363,10 +428,16 @@ fi
 ISSUE_JSON="$(bw show "${ISSUE_ID}" --json)"
 ISSUE_TITLE="$(jq -r '.title' <<<"${ISSUE_JSON}")"
 ISSUE_TYPE="$(jq -r '.type' <<<"${ISSUE_JSON}")"
+ISSUE_STATUS="$(jq -r '.status' <<<"${ISSUE_JSON}")"
 ISSUE_DESCRIPTION="$(jq -r '.description // ""' <<<"${ISSUE_JSON}")"
 
 if [[ "${ISSUE_TYPE}" == "epic" && "${ALLOW_EPIC}" != "true" ]]; then
   die "${ISSUE_ID} is an epic. Pass --allow-epic if you really want to run it."
+fi
+
+if [[ "${ISSUE_STATUS}" == "closed" ]]; then
+  log "${ISSUE_ID} is already closed; nothing to do."
+  exit 0
 fi
 
 ISSUE_SLUG="$(printf '%s' "${ISSUE_TITLE}" | slugify)"
@@ -376,42 +447,74 @@ if [[ "${USE_WORKTREE}" == "true" ]]; then
   WORKDIR="${WORKTREE_ROOT}/${ISSUE_ID}-${ISSUE_SLUG}"
 else
   WORKDIR="${REPO_ROOT}"
+  if [[ -n "${BRANCH_NAME}" && "${BRANCH_NAME}" != "bw/${ISSUE_ID}-${ISSUE_SLUG}" ]]; then
+    die "--branch only applies with --worktree"
+  fi
 fi
 
 export ISSUE_ID ISSUE_TITLE ISSUE_TYPE ISSUE_DESCRIPTION ISSUE_JSON WORKDIR REPO_ROOT
 
 log "Selected ${ISSUE_ID}: ${ISSUE_TITLE}"
 log "Workdir: ${WORKDIR}"
-log "Branch: ${BRANCH_NAME}"
+
+if [[ "${USE_WORKTREE}" == "true" ]]; then
+  log "Branch: ${BRANCH_NAME}"
+else
+  log "Mode: current checkout"
+fi
 
 if [[ "${DRY_RUN}" == "true" ]]; then
   log "Dry run enabled; no mutation will be performed."
 fi
 
 if [[ "${USE_WORKTREE}" == "true" ]]; then
-  if [[ -e "${WORKDIR}" && "${REUSE_WORKTREE}" != "true" ]]; then
-    die "worktree path already exists: ${WORKDIR}. Pass --reuse-worktree or choose another root."
+  if [[ -e "${WORKDIR}" && "${FRESH_WORKTREE}" == "true" ]]; then
+    die "worktree path already exists: ${WORKDIR}. Remove it or omit --fresh-worktree."
   fi
 
   if [[ ! -e "${WORKDIR}" ]]; then
     run mkdir -p "${WORKTREE_ROOT}"
     run git -C "${REPO_ROOT}" worktree add -b "${BRANCH_NAME}" "${WORKDIR}" "${BASE_REF}"
+  else
+    log "Reusing existing worktree: ${WORKDIR}"
+  fi
+
+  if [[ "${DRY_RUN}" == "true" && ! -d "${WORKDIR}/.git" ]]; then
+    log "Worktree does not exist yet; skipping clean check because this is a dry run."
+  else
+    git_clean_or_allowed "${WORKDIR}"
   fi
 else
-  git_clean_or_allowed "${WORKDIR}"
+  if [[ "${DRY_RUN}" == "true" && -n "$(git -C "${WORKDIR}" status --porcelain)" ]]; then
+    log "Workdir is dirty; continuing because this is a dry run."
+  else
+    git_clean_or_allowed "${WORKDIR}"
+  fi
+fi
+
+EXISTING_COMMIT="$(issue_commit_sha "${WORKDIR}")"
+
+if [[ -n "${EXISTING_COMMIT}" ]]; then
+  if [[ -z "$(git -C "${WORKDIR}" status --porcelain)" ]]; then
+    SHORT_COMMIT="$(git -C "${WORKDIR}" rev-parse --short "${EXISTING_COMMIT}")"
+    log "Found existing commit for ${ISSUE_ID}: ${SHORT_COMMIT}; skipping Codex."
+    finish_issue "${SHORT_COMMIT}"
+    log "Done: ${ISSUE_ID}"
+    exit 0
+  fi
 fi
 
 run_shell_hook "prepare" "${BW_CODEX_PREPARE_CMD:-}" "${WORKDIR}"
 
-run bw start "${ISSUE_ID}"
+start_issue_if_needed
 
 run_shell_hook "pre-codex" "${BW_CODEX_PRE_CODEX_CMD:-}" "${WORKDIR}"
 
-PROMPT_FILE="${WORKDIR}/.bw-codex-${ISSUE_ID}.md"
-
 if [[ "${DRY_RUN}" == "true" ]]; then
+  PROMPT_FILE="${TMPDIR:-/tmp}/bw-codex-${ISSUE_ID}.md"
   log "Prompt would be written to ${PROMPT_FILE}"
 else
+  PROMPT_FILE="$(mktemp "${TMPDIR:-/tmp}/bw-codex-${ISSUE_ID}.XXXXXX.md")"
   write_prompt "${PROMPT_FILE}" "${CUSTOM_PROMPT_FILE}"
 fi
 
@@ -430,25 +533,30 @@ fi
 run_shell_hook "pre-commit" "${BW_CODEX_PRE_COMMIT_CMD:-}" "${WORKDIR}"
 
 if [[ "${DRY_RUN}" != "true" && -z "$(git -C "${WORKDIR}" status --porcelain)" ]]; then
+  EXISTING_COMMIT="$(issue_commit_sha "${WORKDIR}")"
+
+  if [[ -n "${EXISTING_COMMIT}" ]]; then
+    SHORT_COMMIT="$(git -C "${WORKDIR}" rev-parse --short "${EXISTING_COMMIT}")"
+    log "No working-tree changes, but ${ISSUE_ID} is already committed as ${SHORT_COMMIT}."
+    finish_issue "${SHORT_COMMIT}"
+    log "Done: ${ISSUE_ID}"
+    exit 0
+  fi
+
   die "Codex produced no working-tree changes."
 fi
 
 run git -C "${WORKDIR}" add -A
 run git -C "${WORKDIR}" commit -m "${ISSUE_ID}: ${ISSUE_TITLE}" -m "Implemented from Beadwork issue ${ISSUE_ID}."
 
+if [[ "${DRY_RUN}" == "true" ]]; then
+  COMMIT_SHA="dry-run"
+else
+  COMMIT_SHA="$(git -C "${WORKDIR}" rev-parse --short HEAD)"
+fi
+
 run_shell_hook "post-commit" "${BW_CODEX_POST_COMMIT_CMD:-}" "${WORKDIR}"
 
-if [[ "${CLOSE_AFTER}" == "true" ]]; then
-  if [[ "${DRY_RUN}" == "true" ]]; then
-    run bw close "${ISSUE_ID}" --reason "Implemented by scripted Codex run"
-  else
-    COMMIT_SHA="$(git -C "${WORKDIR}" rev-parse --short HEAD)"
-    run bw close "${ISSUE_ID}" --reason "Implemented in ${COMMIT_SHA}"
-  fi
-fi
-
-if [[ "${SYNC_AFTER}" == "true" ]]; then
-  run bw sync
-fi
+finish_issue "${COMMIT_SHA}"
 
 log "Done: ${ISSUE_ID}"
