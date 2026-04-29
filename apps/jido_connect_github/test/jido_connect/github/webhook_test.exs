@@ -99,6 +99,82 @@ defmodule Jido.Connect.GitHub.WebhookTest do
              })
   end
 
+  test "normalizes GitHub push event into stable signal shape" do
+    payload = push_payload()
+
+    assert {:ok,
+            %{
+              repository: %{
+                id: 123,
+                name: "repo",
+                full_name: "org/repo",
+                owner: %{login: "org"},
+                private?: false,
+                default_branch: "main",
+                url: "https://github.com/org/repo"
+              },
+              ref: %{full: "refs/heads/main", name: "main", type: "branch"},
+              before: "before-sha",
+              after: "after-sha",
+              compare_url: "https://github.com/org/repo/compare/before...after",
+              commits: [
+                %{
+                  id: "after-sha",
+                  distinct?: true,
+                  message: "Ship it",
+                  timestamp: "2026-04-29T15:00:00Z",
+                  url: "https://github.com/org/repo/commit/after-sha",
+                  author: %{name: "A Dev", email: "a@example.com", username: "adev"},
+                  committer: %{name: "C Dev", email: "c@example.com", username: "cdev"},
+                  added: ["lib/new.ex"],
+                  removed: [],
+                  modified: ["README.md"]
+                }
+              ],
+              head_commit: %{id: "after-sha", message: "Ship it"},
+              pusher: %{name: "A Dev", email: "a@example.com"},
+              created?: false,
+              deleted?: false,
+              forced?: true
+            }} = Webhook.normalize_signal("push", payload)
+  end
+
+  test "verified GitHub push deliveries include normalized signal delivery metadata" do
+    body = Jason.encode!(push_payload())
+    signature = "sha256=" <> hmac("secret", body)
+
+    assert {:ok,
+            %WebhookDelivery{
+              provider: :github,
+              delivery_id: "delivery-2",
+              event: "push",
+              duplicate?: true,
+              normalized_signal: %{
+                repository: %{full_name: "org/repo"},
+                ref: %{name: "main", type: "branch"},
+                commits: [%{id: "after-sha"}],
+                pusher: %{email: "a@example.com"},
+                delivery: %{
+                  provider: :github,
+                  event: "push",
+                  id: "delivery-2",
+                  duplicate?: true,
+                  received_at: %DateTime{}
+                }
+              }
+            }} =
+             Webhook.verify_delivery(
+               body,
+               %{
+                 "x-github-delivery" => "delivery-2",
+                 "x-github-event" => "push",
+                 "x-hub-signature-256" => signature
+               },
+               "secret",
+               seen_delivery_ids: ["delivery-2"]
+             )
+  end
+
   test "does not normalize non-opened issue events into new issue signals" do
     assert {:error,
             %Error.ProviderError{
@@ -109,7 +185,7 @@ defmodule Jido.Connect.GitHub.WebhookTest do
              Webhook.normalize_signal("issues", %{"action" => "closed"})
 
     assert {:error, %Error.ProviderError{provider: :github, reason: :unsupported_event}} =
-             Webhook.normalize_signal("push", %{})
+             Webhook.normalize_signal("ping", %{})
   end
 
   test "invalid JSON payloads are provider errors" do
@@ -129,5 +205,52 @@ defmodule Jido.Connect.GitHub.WebhookTest do
     :hmac
     |> :crypto.mac(:sha256, secret, body)
     |> Base.encode16(case: :lower)
+  end
+
+  defp push_payload do
+    %{
+      "ref" => "refs/heads/main",
+      "before" => "before-sha",
+      "after" => "after-sha",
+      "compare" => "https://github.com/org/repo/compare/before...after",
+      "created" => false,
+      "deleted" => false,
+      "forced" => true,
+      "repository" => %{
+        "id" => 123,
+        "node_id" => "repo-node",
+        "name" => "repo",
+        "full_name" => "org/repo",
+        "private" => false,
+        "default_branch" => "main",
+        "html_url" => "https://github.com/org/repo",
+        "owner" => %{"login" => "org", "id" => 456}
+      },
+      "pusher" => %{"name" => "A Dev", "email" => "a@example.com"},
+      "commits" => [
+        %{
+          "id" => "after-sha",
+          "tree_id" => "tree-sha",
+          "distinct" => true,
+          "message" => "Ship it",
+          "timestamp" => "2026-04-29T15:00:00Z",
+          "url" => "https://github.com/org/repo/commit/after-sha",
+          "author" => %{
+            "name" => "A Dev",
+            "email" => "a@example.com",
+            "username" => "adev"
+          },
+          "committer" => %{
+            "name" => "C Dev",
+            "email" => "c@example.com",
+            "username" => "cdev"
+          },
+          "added" => ["lib/new.ex"],
+          "removed" => [],
+          "modified" => ["README.md"]
+        }
+      ],
+      "head_commit" => %{"id" => "after-sha", "message" => "Ship it"}
+    }
   end
 end

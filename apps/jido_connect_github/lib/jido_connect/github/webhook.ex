@@ -53,16 +53,45 @@ defmodule Jido.Connect.GitHub.Webhook do
     parsed = parse_headers(headers)
 
     with :ok <- verify_signature(body, parsed.signature, secret),
-         {:ok, payload} <- decode_body(body) do
-      WebhookDelivery.verified(:github, %{
-        delivery_id: parsed.delivery_id,
-        event: parsed.event,
-        headers: headers,
-        payload: payload,
-        duplicate?: duplicate?(parsed.delivery_id, Keyword.get(opts, :seen_delivery_ids, [])),
-        metadata: %{signature: parsed.signature}
-      })
+         {:ok, payload} <- decode_body(body),
+         {:ok, delivery} <-
+           WebhookDelivery.verified(:github, %{
+             delivery_id: parsed.delivery_id,
+             event: parsed.event,
+             headers: headers,
+             payload: payload,
+             duplicate?:
+               duplicate?(parsed.delivery_id, Keyword.get(opts, :seen_delivery_ids, [])),
+             metadata: %{signature: parsed.signature}
+           }) do
+      {:ok, maybe_put_normalized_signal(delivery)}
     end
+  end
+
+  def normalize_signal(%WebhookDelivery{event: event, payload: payload} = delivery) do
+    with {:ok, signal} <- normalize_signal(event, payload) do
+      {:ok, Map.put(signal, :delivery, delivery_metadata(delivery))}
+    end
+  end
+
+  def normalize_signal("push", payload) when is_map(payload) do
+    repository = Data.get(payload, "repository") || %{}
+    pusher = Data.get(payload, "pusher") || %{}
+
+    {:ok,
+     %{
+       repository: normalize_repository(repository),
+       ref: normalize_ref(Data.get(payload, "ref")),
+       before: Data.get(payload, "before"),
+       after: Data.get(payload, "after"),
+       compare_url: Data.get(payload, "compare"),
+       commits: normalize_commits(Data.get(payload, "commits", [])),
+       head_commit: normalize_commit(Data.get(payload, "head_commit")),
+       pusher: normalize_actor(pusher),
+       created?: Data.get(payload, "created"),
+       deleted?: Data.get(payload, "deleted"),
+       forced?: Data.get(payload, "forced")
+     }}
   end
 
   def normalize_signal("issues", %{"action" => "opened"} = payload) do
@@ -102,6 +131,90 @@ defmodule Jido.Connect.GitHub.Webhook do
 
   def duplicate?(delivery_id, seen_delivery_ids) do
     CoreWebhook.duplicate?(delivery_id, seen_delivery_ids)
+  end
+
+  defp maybe_put_normalized_signal(%WebhookDelivery{} = delivery) do
+    case normalize_signal(delivery) do
+      {:ok, signal} -> WebhookDelivery.put_signal(delivery, signal)
+      {:error, _reason} -> delivery
+    end
+  end
+
+  defp normalize_repository(repository) do
+    owner = Data.get(repository, "owner") || %{}
+
+    Data.compact(%{
+      id: Data.get(repository, "id"),
+      node_id: Data.get(repository, "node_id"),
+      name: Data.get(repository, "name"),
+      full_name: Data.get(repository, "full_name"),
+      owner: normalize_actor(owner),
+      private?: Data.get(repository, "private"),
+      default_branch: Data.get(repository, "default_branch"),
+      url: Data.get(repository, "html_url") || Data.get(repository, "url")
+    })
+  end
+
+  defp normalize_ref("refs/heads/" <> branch) do
+    %{full: "refs/heads/" <> branch, name: branch, type: "branch"}
+  end
+
+  defp normalize_ref("refs/tags/" <> tag) do
+    %{full: "refs/tags/" <> tag, name: tag, type: "tag"}
+  end
+
+  defp normalize_ref(ref) when is_binary(ref) do
+    %{full: ref, name: ref, type: "unknown"}
+  end
+
+  defp normalize_ref(_ref), do: nil
+
+  defp normalize_commits(commits) when is_list(commits) do
+    Enum.map(commits, &normalize_commit/1)
+  end
+
+  defp normalize_commits(_commits), do: []
+
+  defp normalize_commit(commit) when is_map(commit) do
+    Data.compact(%{
+      id: Data.get(commit, "id"),
+      tree_id: Data.get(commit, "tree_id"),
+      distinct?: Data.get(commit, "distinct"),
+      message: Data.get(commit, "message"),
+      timestamp: Data.get(commit, "timestamp"),
+      url: Data.get(commit, "url"),
+      author: normalize_actor(Data.get(commit, "author") || %{}),
+      committer: normalize_actor(Data.get(commit, "committer") || %{}),
+      added: Data.get(commit, "added", []),
+      removed: Data.get(commit, "removed", []),
+      modified: Data.get(commit, "modified", [])
+    })
+  end
+
+  defp normalize_commit(_commit), do: nil
+
+  defp normalize_actor(actor) when is_map(actor) do
+    Data.compact(%{
+      id: Data.get(actor, "id"),
+      node_id: Data.get(actor, "node_id"),
+      login: Data.get(actor, "login"),
+      name: Data.get(actor, "name"),
+      email: Data.get(actor, "email"),
+      username: Data.get(actor, "username"),
+      url: Data.get(actor, "html_url") || Data.get(actor, "url")
+    })
+  end
+
+  defp normalize_actor(_actor), do: %{}
+
+  defp delivery_metadata(%WebhookDelivery{} = delivery) do
+    %{
+      provider: delivery.provider,
+      event: delivery.event,
+      id: delivery.delivery_id,
+      duplicate?: delivery.duplicate?,
+      received_at: delivery.received_at
+    }
   end
 
   defp decode_body(body) when is_binary(body) do
