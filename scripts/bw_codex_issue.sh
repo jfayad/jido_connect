@@ -20,7 +20,7 @@ Options:
   --issue ID                Run a specific Beadwork issue instead of selecting one.
   --model MODEL             Codex model to use. Default: $CODEX_MODEL or gpt-5.5.
   --effort EFFORT           Codex reasoning effort: low, medium, high, xhigh.
-                            Default: $CODEX_EFFORT, $CODEX_REASONING_EFFORT, or low.
+                            Default: $CODEX_EFFORT, $CODEX_REASONING_EFFORT, or medium.
   --profile PROFILE         Optional Codex config profile.
   --sandbox MODE            Codex sandbox mode. Default: workspace-write.
   --allow-epic              Allow selecting epic issues. Default: false.
@@ -76,13 +76,13 @@ Command customization:
 
 Examples:
   scripts/bw_codex_issue.sh --dry-run
-  scripts/bw_codex_issue.sh --loop --model gpt-5.4 --effort low --order priority
-  scripts/bw_codex_issue.sh --loop --max-issues 5 --model gpt-5.4 --effort low
-  scripts/bw_codex_issue.sh --model gpt-5.5 --effort low --issue jido_con-qgc.1
+  scripts/bw_codex_issue.sh --loop --order priority
+  scripts/bw_codex_issue.sh --loop --max-issues 5
+  scripts/bw_codex_issue.sh --model gpt-5.5 --effort medium --issue jido_con-qgc.1
   scripts/bw_codex_issue.sh --worktree --model gpt-5.5 --effort high --issue jido_con-qgc.1
   BW_CODEX_REVIEW_CMD='codex exec review --model gpt-5.5 --cd "$WORKDIR"' \
     scripts/bw_codex_issue.sh --model gpt-5.5
-  CODEX_COMMAND_TEMPLATE='codex --ask-for-approval never exec --cd "$WORKDIR" -m gpt-5.5 -c model_reasoning_effort=\"low\" -s workspace-write -' \
+  CODEX_COMMAND_TEMPLATE='codex --ask-for-approval never exec --cd "$WORKDIR" -m gpt-5.5 -c model_reasoning_effort=\"medium\" -s workspace-write -' \
     scripts/bw_codex_issue.sh
 USAGE
 }
@@ -492,7 +492,7 @@ LOOP_DELAY=0
 LOG_FILE="${BW_CODEX_LOG_FILE:-}"
 ISSUE_ID=""
 CODEX_MODEL_VALUE="${CODEX_MODEL:-gpt-5.5}"
-CODEX_EFFORT_VALUE="${CODEX_EFFORT:-${CODEX_REASONING_EFFORT:-low}}"
+CODEX_EFFORT_VALUE="${CODEX_EFFORT:-${CODEX_REASONING_EFFORT:-medium}}"
 CODEX_PROFILE=""
 CODEX_SANDBOX="workspace-write"
 ALLOW_EPIC=false
