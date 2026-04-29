@@ -43,6 +43,7 @@ defmodule Jido.Connect.Taxonomy do
     :download,
     :get,
     :list,
+    :merge,
     :poll,
     :read,
     :search,

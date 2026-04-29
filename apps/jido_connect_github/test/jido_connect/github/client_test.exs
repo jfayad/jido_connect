@@ -248,6 +248,42 @@ defmodule Jido.Connect.GitHub.ClientTest do
     assert_received {:request, "GET", "/repos/org/repo/issues/4"}
   end
 
+  test "merge pull request sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "PUT"
+      assert conn.request_path == "/repos/org/repo/pulls/4/merge"
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "commit_message" => "Ship the feature",
+               "commit_title" => "Merge feature",
+               "merge_method" => "squash",
+               "sha" => "abc123"
+             }
+
+      Req.Test.json(conn, %{
+        sha: "def456",
+        merged: true,
+        message: "Pull Request successfully merged"
+      })
+    end)
+
+    assert {:ok, %{sha: "def456", merged: true, message: "Pull Request successfully merged"}} =
+             Client.merge_pull_request(
+               "org/repo",
+               4,
+               %{
+                 merge_method: "squash",
+                 commit_title: "Merge feature",
+                 commit_message: "Ship the feature",
+                 sha: "abc123"
+               },
+               "token"
+             )
+  end
+
   test "create pull request sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

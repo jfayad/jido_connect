@@ -130,6 +130,25 @@ defmodule Jido.Connect.GitHubTest do
        }}
     end
 
+    def merge_pull_request(
+          "org/repo",
+          5,
+          %{
+            merge_method: "squash",
+            commit_title: "Merge feature",
+            commit_message: "Ship the feature",
+            sha: "abc123"
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         sha: "def456",
+         merged: true,
+         message: "Pull Request successfully merged"
+       }}
+    end
+
     def update_issue("org/repo", 2, %{title: "Bug", labels: ["bug"], type: "Bug"}, "token") do
       {:ok, %{number: 2, url: "https://github.test/2", title: "Bug", state: "open"}}
     end
@@ -239,6 +258,17 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.pull_request.merge",
+              resource: :pull_request,
+              verb: :merge,
+              mutation?: true,
+              confirmation: :always,
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} = Connect.action(spec, "github.pull_request.merge")
+
+    assert {:ok,
+            %{
               id: "github.issue.update",
               resource: :issue,
               verb: :update,
@@ -296,6 +326,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.GetPullRequest,
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
+             Jido.Connect.GitHub.Actions.MergePullRequest,
              Jido.Connect.GitHub.Actions.UpdateIssue,
              Jido.Connect.GitHub.Actions.CreateIssueComment
            ]
@@ -318,6 +349,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.GetPullRequest,
                  Jido.Connect.GitHub.Actions.CreatePullRequest,
                  Jido.Connect.GitHub.Actions.UpdatePullRequest,
+                 Jido.Connect.GitHub.Actions.MergePullRequest,
                  Jido.Connect.GitHub.Actions.UpdateIssue,
                  Jido.Connect.GitHub.Actions.CreateIssueComment
                ],
@@ -347,6 +379,9 @@ defmodule Jido.Connect.GitHubTest do
     assert {:module, Jido.Connect.GitHub.Actions.UpdatePullRequest} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.UpdatePullRequest)
 
+    assert {:module, Jido.Connect.GitHub.Actions.MergePullRequest} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.MergePullRequest)
+
     assert {:module, Jido.Connect.GitHub.Actions.UpdateIssue} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.UpdateIssue)
 
@@ -362,6 +397,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.GetPullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.CreatePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdatePullRequest, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.MergePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdateIssue, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.CreateIssueComment, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Sensors.NewIssues, :init, 2)
@@ -535,6 +571,32 @@ defmodule Jido.Connect.GitHubTest do
     assert Jido.Connect.GitHub.Actions.UpdatePullRequest.name() == "github_pull_request_update"
   end
 
+  test "generated merge pull request action metadata tracks merge guard fields" do
+    projection = Jido.Connect.GitHub.Actions.MergePullRequest.jido_connect_projection()
+
+    assert projection.action_id == "github.pull_request.merge"
+    assert projection.label == "Merge pull request"
+
+    assert Enum.map(projection.input, & &1.name) == [
+             :repo,
+             :pull_number,
+             :merge_method,
+             :commit_title,
+             :commit_message,
+             :sha
+           ]
+
+    assert Enum.map(projection.output, & &1.name) == [:sha, :merged, :message]
+    assert projection.risk == :write
+    assert projection.confirmation == :always
+    assert projection.resource == :pull_request
+    assert projection.verb == :merge
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.MergePullRequest.name() == "github_pull_request_merge"
+  end
+
   test "invokes GitHub list issue action through injected client and lease" do
     {context, lease} = context_and_lease()
 
@@ -678,6 +740,26 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "invokes GitHub merge pull request action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{sha: "def456", merged: true, message: "Pull Request successfully merged"}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request.merge",
+               %{
+                 repo: "org/repo",
+                 pull_number: 5,
+                 merge_method: "squash",
+                 commit_title: "Merge feature",
+                 commit_message: "Ship the feature",
+                 sha: "abc123"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   test "GitHub App installation connections use installation-specific scopes" do
     {context, lease} =
       context_and_lease(profile: :installation, scopes: ["metadata:read", "issues:read"])
@@ -725,6 +807,19 @@ defmodule Jido.Connect.GitHubTest do
                Jido.Connect.GitHub.integration(),
                "github.pull_request.update",
                %{repo: "org/repo", pull_number: 5, title: "Updated feature"},
+               context: missing_write,
+               credential_lease: lease
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["pull_requests:write", "contents:write"]
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request.merge",
+               %{repo: "org/repo", pull_number: 5, merge_method: "merge"},
                context: missing_write,
                credential_lease: lease
              )
@@ -814,6 +909,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.GetPullRequest,
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
+             Jido.Connect.GitHub.Actions.MergePullRequest,
              Jido.Connect.GitHub.Actions.UpdateIssue,
              Jido.Connect.GitHub.Actions.CreateIssueComment
            ]
@@ -916,7 +1012,7 @@ defmodule Jido.Connect.GitHubTest do
   end
 
   defp default_scopes(:installation),
-    do: ["metadata:read", "issues:read", "issues:write", "pull_requests:read"]
+    do: ["metadata:read", "issues:read", "issues:write", "pull_requests:read", "contents:write"]
 
   defp default_scopes(_profile), do: ["repo"]
 

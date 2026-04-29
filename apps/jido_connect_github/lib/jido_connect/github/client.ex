@@ -75,6 +75,14 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_pull_request_response()
   end
 
+  def merge_pull_request(repo, pull_number, attrs, access_token)
+      when is_integer(pull_number) and is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.put(url: "/repos/#{repo}/pulls/#{pull_number}/merge", json: attrs)
+    |> handle_pull_request_merge_response()
+  end
+
   def create_issue(repo, attrs, access_token) when is_binary(access_token) do
     access_token
     |> request()
@@ -228,6 +236,18 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_pull_request_response(response), do: handle_error_response(response)
 
+  defp handle_pull_request_merge_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_pull_request_merge(body)}
+  end
+
+  defp handle_pull_request_merge_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub pull request merge response was invalid", body)
+  end
+
+  defp handle_pull_request_merge_response(response), do: handle_error_response(response)
+
   defp handle_issue_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     {:ok, normalize_issue(body)}
@@ -342,6 +362,15 @@ defmodule Jido.Connect.GitHub.Client do
       url: Data.get(comment, "html_url") || Data.get(comment, "url"),
       body: Data.get(comment, "body")
     }
+  end
+
+  defp normalize_pull_request_merge(result) when is_map(result) do
+    %{
+      sha: Data.get(result, "sha"),
+      merged: Data.get(result, "merged"),
+      message: Data.get(result, "message")
+    }
+    |> Data.compact()
   end
 
   defp normalize_repository_owner(owner) when is_map(owner) do

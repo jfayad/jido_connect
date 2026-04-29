@@ -194,6 +194,38 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :merge_pull_request do
+      id "github.pull_request.merge"
+      resource :pull_request
+      verb :merge
+      data_classification :workspace_content
+      label "Merge pull request"
+      description "Merge a GitHub pull request into the base branch."
+      handler Jido.Connect.GitHub.Handlers.Actions.MergePullRequest
+      effect :write, confirmation: :always
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :pull_number, :integer, required?: true
+        field :merge_method, :string, required?: true, enum: ["merge", "squash", "rebase"]
+        field :commit_title, :string
+        field :commit_message, :string
+        field :sha, :string
+      end
+
+      output do
+        field :sha, :string
+        field :merged, :boolean
+        field :message, :string
+      end
+    end
+
     action :update_issue do
       id "github.issue.update"
       resource :issue
