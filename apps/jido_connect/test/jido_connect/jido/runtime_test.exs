@@ -5,6 +5,10 @@ defmodule Jido.Connect.Jido.RuntimeTest do
   alias Jido.Connect.Jido.{ActionProjection, PluginProjection, SensorProjection, ToolAvailability}
   alias Jido.Connect.RuntimeFixtures
 
+  defmodule RaisingConnectionResolver do
+    def resolve(_selector), do: raise("tuple resolver exploded")
+  end
+
   test "Jido runtimes adapt projections without provider logic" do
     {context, lease} = RuntimeFixtures.context_and_lease()
     projection = RuntimeFixtures.action_projection()
@@ -93,12 +97,33 @@ defmodule Jido.Connect.Jido.RuntimeTest do
                credential_lease: lease
              })
 
-    assert {:ok, _state, [{:emit, signal}, {:schedule, 1_000}]} =
+    assert {:ok, state, [{:emit, signal}, {:schedule, 1_000}]} =
              Connect.JidoSensorRuntime.handle_event(sensor, :tick, state)
 
     assert signal.type == "demo.repo.changed"
     assert signal.source == "/jido/connect/demo"
     assert signal.data.repo == "org/repo"
+    assert state.checkpoint == "next"
+
+    advancing_sensor = %{sensor | integration_module: RuntimeFixtures.AdvancingIntegration}
+
+    assert {:ok, advancing_state, [{:schedule, 1_000}]} =
+             Connect.JidoSensorRuntime.init(advancing_sensor, %{repo: "org/repo"}, %{
+               integration_context: context,
+               credential_lease: lease
+             })
+
+    assert {:ok, advancing_state, [{:emit, first_signal}, {:schedule, 1_000}]} =
+             Connect.JidoSensorRuntime.handle_event(advancing_sensor, :tick, advancing_state)
+
+    assert first_signal.data.repo == "org/repo:first"
+    assert advancing_state.checkpoint == "first"
+
+    assert {:ok, advancing_state, [{:emit, second_signal}, {:schedule, 1_000}]} =
+             Connect.JidoSensorRuntime.handle_event(advancing_sensor, :tick, advancing_state)
+
+    assert second_signal.data.repo == "org/repo:second"
+    assert advancing_state.checkpoint == "second"
 
     assert {:ok, selector_state, [{:schedule, 1_000}]} =
              Connect.JidoSensorRuntime.init(sensor, %{repo: "org/repo"}, %{
@@ -246,6 +271,48 @@ defmodule Jido.Connect.Jido.RuntimeTest do
            ] =
              Connect.JidoPluginRuntime.tool_availability(projection, %{
                connection_selector: {:provider, :demo}
+             })
+
+    assert {:error,
+            %Connect.Error.ExecutionError{
+              phase: :connection_resolver,
+              details: %{message: "tuple resolver exploded"}
+            }} =
+             Connect.ConnectionSelector.resolve("conn_1", {RaisingConnectionResolver, :resolve})
+
+    assert [
+             %ToolAvailability{
+               state: :configuration_error,
+               connection_id: "conn_1",
+               metadata: %{error: %{type: :execution_error}}
+             },
+             %ToolAvailability{
+               state: :configuration_error,
+               connection_id: "conn_1",
+               metadata: %{error: %{type: :execution_error}}
+             }
+           ] =
+             Connect.JidoPluginRuntime.tool_availability(projection, %{
+               connection_id: "conn_1",
+               connection_resolver: {RaisingConnectionResolver, :resolve}
+             })
+
+    broken_action = %{
+      RuntimeFixtures.action_projection()
+      | scope_resolver: RuntimeFixtures.ExplodingScopeResolver
+    }
+
+    broken_projection = %{projection | actions: [broken_action], sensors: []}
+
+    assert [
+             %ToolAvailability{
+               state: :configuration_error,
+               connection_id: "conn_1",
+               metadata: %{error: %{type: :execution_error}}
+             }
+           ] =
+             Connect.JidoPluginRuntime.tool_availability(broken_projection, %{
+               connection: context.connection
              })
   end
 

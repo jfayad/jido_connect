@@ -12,6 +12,10 @@ defmodule Jido.Connect.AuthorizationTest do
     def authorize(_operation, _input, _context, _connection), do: raise("policy failed")
   end
 
+  defmodule InvalidScopeResolver do
+    def required_scopes(_operation, _input, _connection), do: :invalid
+  end
+
   test "authorizes a connected operation with a matching active lease" do
     connection = connection()
     context = context(connection)
@@ -121,6 +125,13 @@ defmodule Jido.Connect.AuthorizationTest do
                policy: AllowPolicy,
                policy_context: %{allow?: false}
              )
+
+    assert {:configuration_error, %Error.ConfigError{key: :scope_resolver}} =
+             Authorization.connection_availability(
+               operation(scope_resolver: InvalidScopeResolver),
+               connection(),
+               %{}
+             )
   end
 
   defp operation(attrs \\ []) do
@@ -128,7 +139,8 @@ defmodule Jido.Connect.AuthorizationTest do
       id: "github.issue.list",
       auth_profile: Keyword.get(attrs, :auth_profile, :user),
       auth_profiles: Keyword.get(attrs, :auth_profiles, [:user]),
-      scopes: Keyword.get(attrs, :scopes, ["repo"])
+      scopes: Keyword.get(attrs, :scopes, ["repo"]),
+      scope_resolver: Keyword.get(attrs, :scope_resolver)
     }
   end
 

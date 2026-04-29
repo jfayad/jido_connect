@@ -6,7 +6,16 @@ defmodule Jido.Connect.Catalog do
   available providers, auth modes, generated tools, and maturity metadata.
   """
 
-  alias Jido.Connect.Catalog.{Builder, Discovery, Entry, Filter, Search, Serializer, ToolEntry}
+  alias Jido.Connect.Catalog.{
+    Builder,
+    Discovery,
+    DiscoveryResult,
+    Entry,
+    Filter,
+    Search,
+    Serializer,
+    ToolEntry
+  }
 
   @spec entry(module(), keyword()) :: Entry.t()
   defdelegate entry(integration_module, opts \\ []), to: Builder
@@ -21,6 +30,9 @@ defmodule Jido.Connect.Catalog do
 
   @spec discover(keyword()) :: [Entry.t()]
   defdelegate discover(opts \\ []), to: Discovery
+
+  @spec discover_with_diagnostics(keyword()) :: DiscoveryResult.t()
+  defdelegate discover_with_diagnostics(opts \\ []), to: Discovery
 
   @spec search([Entry.t()], String.t() | nil) :: [Entry.t()]
   defdelegate search(entries, query), to: Search, as: :entries

@@ -49,7 +49,7 @@ defmodule Jido.Connect.Dsl.Transformers.BuildSpec do
   defp validate_operation_rules(dsl_state) do
     case OperationRules.violations(dsl_state, Transformer) do
       [] -> :ok
-      [violation | _] -> {:error, violation.message}
+      [violation | _] -> {:error, OperationRules.dsl_error(violation)}
     end
   end
 end

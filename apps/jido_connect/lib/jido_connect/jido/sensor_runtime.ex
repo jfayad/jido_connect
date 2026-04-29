@@ -6,7 +6,12 @@ defmodule Jido.Connect.JidoSensorRuntime do
   alias Jido.Connect.Jido.SensorProjection
 
   def init(%SensorProjection{} = projection, config, context) when is_map(config) do
-    state = %{projection: projection, config: config, context: context}
+    state = %{
+      projection: projection,
+      config: config,
+      context: context,
+      checkpoint: context_value(context, :checkpoint)
+    }
 
     case projection.kind do
       :poll -> {:ok, state, [{:schedule, projection.interval_ms || 300_000}]}
@@ -30,10 +35,11 @@ defmodule Jido.Connect.JidoSensorRuntime do
              projection.trigger_id,
              Map.get(state, :config, %{}),
              RuntimeContext.runtime_opts(context, integration_context, lease, %{
-               checkpoint: Map.get(context, :checkpoint)
+               checkpoint: Map.get(state, :checkpoint)
              })
            ) do
       signals = Enum.map(result.signals, &signal!(projection, &1))
+      state = Map.put(state, :checkpoint, result.checkpoint)
 
       directives =
         Enum.map(signals, &{:emit, &1}) ++ [{:schedule, projection.interval_ms || 300_000}]
@@ -53,4 +59,7 @@ defmodule Jido.Connect.JidoSensorRuntime do
       source: projection.signal_source
     )
   end
+
+  defp context_value(context, key) when is_map(context), do: Map.get(context, key)
+  defp context_value(_context, _key), do: nil
 end

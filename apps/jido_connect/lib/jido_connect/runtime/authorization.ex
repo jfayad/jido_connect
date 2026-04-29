@@ -73,6 +73,7 @@ defmodule Jido.Connect.Authorization do
           | {:missing_scopes, [String.t()]}
           | :connection_required
           | :disabled_by_policy
+          | {:configuration_error, Error.error()}
   def connection_availability(operation, %Connection{} = connection, input \\ %{}, opts \\ [])
       when is_map(input) do
     with :ok <- require_connected(connection, operation),
@@ -96,6 +97,8 @@ defmodule Jido.Connect.Authorization do
       end
     else
       {:error, %Error.AuthError{reason: :policy_denied}} -> :disabled_by_policy
+      {:error, %Error.AuthError{}} -> :connection_required
+      {:error, %_{} = error} -> {:configuration_error, error}
       _other -> :connection_required
     end
   end

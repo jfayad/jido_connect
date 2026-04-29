@@ -86,4 +86,7 @@ defmodule Jido.Connect.CatalogFixtures do
   defmodule InvalidIntegration do
     def integration, do: %{id: :not_a_spec}
   end
+
+  defmodule MissingIntegrationCallback do
+  end
 end

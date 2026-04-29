@@ -115,6 +115,7 @@ defmodule Jido.Connect.CatalogTest do
       CatalogFixtures.Integration,
       CatalogFixtures.RaisingIntegration,
       CatalogFixtures.InvalidIntegration,
+      CatalogFixtures.MissingIntegrationCallback,
       Module.concat(__MODULE__, MissingIntegration)
     ])
 
@@ -127,6 +128,23 @@ defmodule Jido.Connect.CatalogTest do
     end)
 
     assert [%Catalog.Entry{id: :catalog}] = Catalog.discover()
+
+    assert %Catalog.DiscoveryResult{
+             entries: [%Catalog.Entry{id: :catalog}],
+             diagnostics: diagnostics
+           } = Catalog.discover_with_diagnostics()
+
+    assert Enum.map(diagnostics, & &1.reason) == [
+             :entry_failed,
+             :entry_failed,
+             :missing_integration_callback,
+             :module_not_loaded
+           ]
+
+    assert Enum.any?(diagnostics, &(&1.module == CatalogFixtures.RaisingIntegration))
+    assert Enum.any?(diagnostics, &(&1.module == CatalogFixtures.InvalidIntegration))
+    assert Enum.any?(diagnostics, &(&1.module == CatalogFixtures.MissingIntegrationCallback))
+    assert Enum.any?(diagnostics, &(&1.module == Module.concat(__MODULE__, MissingIntegration)))
 
     assert [
              %Catalog.ToolEntry{id: "catalog.item.get"},

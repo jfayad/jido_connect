@@ -161,15 +161,15 @@ defmodule Jido.Connect.ConnectionSelector do
 
   def resolve(selector_or_id, {module, function}, _operation, _config)
       when is_atom(module) and is_atom(function) do
-    module
-    |> apply(function, [selector_or_id])
+    {module, function}
+    |> apply_resolver([selector_or_id])
     |> normalize_connection_result()
   end
 
   def resolve(selector_or_id, {module, function, extra_args}, _operation, _config)
       when is_atom(module) and is_atom(function) and is_list(extra_args) do
-    module
-    |> apply(function, [selector_or_id | extra_args])
+    {module, function, extra_args}
+    |> apply_resolver([selector_or_id | extra_args])
     |> normalize_connection_result()
   end
 
@@ -219,7 +219,7 @@ defmodule Jido.Connect.ConnectionSelector do
   defp attrs_map(attrs) when is_list(attrs), do: Map.new(attrs)
   defp attrs_map(attrs) when is_map(attrs), do: attrs
 
-  defp apply_resolver(resolver, args) do
+  defp apply_resolver(resolver, args) when is_function(resolver) do
     case Callback.run(fn -> apply(resolver, args) end,
            phase: :connection_resolver,
            details: %{resolver: inspect(resolver)}
@@ -227,6 +227,28 @@ defmodule Jido.Connect.ConnectionSelector do
       {:ok, result} -> result
       {:error, error} -> {:error, error}
     end
+  end
+
+  defp apply_resolver({module, function}, args) do
+    apply_module_resolver({module, function}, module, function, args)
+  end
+
+  defp apply_resolver({module, function, _extra_args} = resolver, args) do
+    apply_module_resolver(resolver, module, function, args)
+  end
+
+  defp apply_module_resolver(resolver, module, function, args) do
+    case Callback.run(fn -> apply(module, function, args) end,
+           phase: :connection_resolver,
+           details: resolver_details(resolver, module, function, args)
+         ) do
+      {:ok, result} -> result
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp resolver_details(_resolver, module, function, args) do
+    %{module: module, function: function, arity: length(args)}
   end
 
   defp normalize_connection_result({:error, %_{} = error}) do

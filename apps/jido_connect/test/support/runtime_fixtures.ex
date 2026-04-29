@@ -36,8 +36,29 @@ defmodule Jido.Connect.RuntimeFixtures do
     def poll(_config, _context), do: {:ok, %{signals: %{repo: "org/repo"}, checkpoint: nil}}
   end
 
+  defmodule NilSignalsPollHandler do
+    def poll(_config, _context), do: {:ok, %{signals: nil, checkpoint: nil}}
+  end
+
+  defmodule AdvancingPollHandler do
+    def poll(%{repo: repo}, %{checkpoint: checkpoint}) do
+      next_checkpoint =
+        case checkpoint do
+          nil -> "first"
+          "first" -> "second"
+          other -> "#{other}:next"
+        end
+
+      {:ok, %{signals: [%{repo: "#{repo}:#{next_checkpoint}"}], checkpoint: next_checkpoint}}
+    end
+  end
+
   defmodule Integration do
     def integration, do: Jido.Connect.RuntimeFixtures.spec()
+  end
+
+  defmodule AdvancingIntegration do
+    def integration, do: Jido.Connect.RuntimeFixtures.advancing_poll_spec()
   end
 
   defmodule InvalidIntegration do
@@ -79,6 +100,20 @@ defmodule Jido.Connect.RuntimeFixtures do
     build_spec(
       actions: [action_attrs()],
       triggers: [Map.merge(trigger_attrs(), %{handler: NonListPollHandler})]
+    )
+  end
+
+  def nil_signal_spec do
+    build_spec(
+      actions: [action_attrs()],
+      triggers: [Map.merge(trigger_attrs(), %{handler: NilSignalsPollHandler})]
+    )
+  end
+
+  def advancing_poll_spec do
+    build_spec(
+      actions: [action_attrs()],
+      triggers: [Map.merge(trigger_attrs(), %{handler: AdvancingPollHandler})]
     )
   end
 

@@ -124,7 +124,8 @@ defmodule Jido.Connect.Jido.ToolAvailability do
                   :available,
                   :connection_required,
                   :missing_scopes,
-                  :disabled_by_policy
+                  :disabled_by_policy,
+                  :configuration_error
                 ]),
               connection_id: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
               connection_selector: Zoi.any() |> Zoi.optional(),

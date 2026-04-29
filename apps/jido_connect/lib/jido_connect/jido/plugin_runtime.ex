@@ -66,8 +66,11 @@ defmodule Jido.Connect.JidoPluginRuntime do
           {:ok, %Connect.Connection{} = resolved_connection} ->
             connection_availability(operation, resolved_connection, config)
 
+          {:error, %Connect.Error.AuthError{} = error} ->
+            connection_required(tool, connection_id, error)
+
           {:error, %_{} = error} ->
-            execution_unavailable(tool, connection_id, error)
+            configuration_unavailable(tool, connection_id, error)
 
           _other ->
             connection_required(tool, connection_id)
@@ -84,8 +87,11 @@ defmodule Jido.Connect.JidoPluginRuntime do
               connection_required(tool, selector)
             end
 
+          {:error, %Connect.Error.AuthError{} = error} ->
+            connection_required(tool, selector, error)
+
           {:error, %_{} = error} ->
-            execution_unavailable(tool, selector, error)
+            configuration_unavailable(tool, selector, error)
 
           _other ->
             connection_required(tool, selector)
@@ -100,6 +106,34 @@ defmodule Jido.Connect.JidoPluginRuntime do
           state: :connection_required
         })
     end
+  end
+
+  defp connection_required(tool, connection_id, error) when is_binary(connection_id) do
+    ToolAvailability.new!(%{
+      tool: tool,
+      state: :connection_required,
+      connection_id: connection_id,
+      metadata: %{error: Connect.Error.to_map(error)}
+    })
+  end
+
+  defp connection_required(tool, %ConnectionSelector{} = selector, error) do
+    ToolAvailability.new!(%{
+      tool: tool,
+      state: :connection_required,
+      connection_id: selector.connection_id,
+      connection_selector: selector,
+      metadata: %{error: Connect.Error.to_map(error)}
+    })
+  end
+
+  defp connection_required(tool, selector, error) do
+    ToolAvailability.new!(%{
+      tool: tool,
+      state: :connection_required,
+      connection_selector: selector,
+      metadata: %{error: Connect.Error.to_map(error)}
+    })
   end
 
   defp connection_required(tool, connection_id) when is_binary(connection_id) do
@@ -180,6 +214,14 @@ defmodule Jido.Connect.JidoPluginRuntime do
           state: :connection_required,
           connection_id: connection.id
         })
+
+      {:configuration_error, error} ->
+        ToolAvailability.new!(%{
+          tool: tool,
+          state: :configuration_error,
+          connection_id: connection.id,
+          metadata: %{error: Connect.Error.to_map(error)}
+        })
     end
   end
 
@@ -190,29 +232,29 @@ defmodule Jido.Connect.JidoPluginRuntime do
     Map.get(config, :integration_context) || Map.get(config, :context)
   end
 
-  defp execution_unavailable(tool, connection_id, error) when is_binary(connection_id) do
+  defp configuration_unavailable(tool, connection_id, error) when is_binary(connection_id) do
     ToolAvailability.new!(%{
       tool: tool,
-      state: :connection_required,
+      state: :configuration_error,
       connection_id: connection_id,
       metadata: %{error: Connect.Error.to_map(error)}
     })
   end
 
-  defp execution_unavailable(tool, %ConnectionSelector{} = selector, error) do
+  defp configuration_unavailable(tool, %ConnectionSelector{} = selector, error) do
     ToolAvailability.new!(%{
       tool: tool,
-      state: :connection_required,
+      state: :configuration_error,
       connection_id: selector.connection_id,
       connection_selector: selector,
       metadata: %{error: Connect.Error.to_map(error)}
     })
   end
 
-  defp execution_unavailable(tool, selector, error) do
+  defp configuration_unavailable(tool, selector, error) do
     ToolAvailability.new!(%{
       tool: tool,
-      state: :connection_required,
+      state: :configuration_error,
       connection_selector: selector,
       metadata: %{error: Connect.Error.to_map(error)}
     })

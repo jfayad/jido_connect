@@ -221,84 +221,93 @@ defmodule Jido.Connect.DslV2Test do
   end
 
   test "DSL verifier requires canonical operation metadata" do
-    assert_raise RuntimeError, ~r/Operation must declare data_classification/, fn ->
-      compile_bad!(
-        quote do
-          actions do
-            action :missing_classification do
-              id "bad.item.list"
-              resource :item
-              verb :list
-              label "Missing classification"
-              handler Jido.Connect.DslV2Test.Handler
-              effect :read
+    error =
+      assert_raise Spark.Error.DslError, ~r/Operation must declare data_classification/, fn ->
+        compile_bad!(
+          quote do
+            actions do
+              action :missing_classification do
+                id "bad.item.list"
+                resource :item
+                verb :list
+                label "Missing classification"
+                handler Jido.Connect.DslV2Test.Handler
+                effect :read
 
-              access do
-                auth :tenant
-                policies [:tenant_access]
-                scopes ["items:read"]
+                access do
+                  auth :tenant
+                  policies [:tenant_access]
+                  scopes ["items:read"]
+                end
               end
             end
           end
-        end
-      )
-    end
+        )
+      end
+
+    assert error.path == [:actions, :missing_classification]
   end
 
   test "DSL verifier rejects mixed canonical and legacy access" do
-    assert_raise RuntimeError, ~r/Do not mix access with legacy requirements/, fn ->
-      compile_bad!(
-        quote do
-          actions do
-            action :mixed_access do
-              id "bad.item.mixed"
-              resource :item
-              verb :list
-              data_classification :workspace_metadata
-              label "Mixed access"
-              handler Jido.Connect.DslV2Test.Handler
-              effect :read
+    error =
+      assert_raise Spark.Error.DslError, ~r/Do not mix access with legacy requirements/, fn ->
+        compile_bad!(
+          quote do
+            actions do
+              action :mixed_access do
+                id "bad.item.mixed"
+                resource :item
+                verb :list
+                data_classification :workspace_metadata
+                label "Mixed access"
+                handler Jido.Connect.DslV2Test.Handler
+                effect :read
 
-              access do
-                auth :tenant
-                policies [:tenant_access]
-                scopes ["items:read"]
-              end
+                access do
+                  auth :tenant
+                  policies [:tenant_access]
+                  scopes ["items:read"]
+                end
 
-              requirements do
-                scopes ["items:read"]
+                requirements do
+                  scopes ["items:read"]
+                end
               end
             end
           end
-        end
-      )
-    end
+        )
+      end
+
+    assert error.path == [:actions, :mixed_access]
   end
 
   test "DSL verifier requires confirmation for mutating effects" do
-    assert_raise RuntimeError, ~r/Mutating effect must declare confirmation/, fn ->
-      compile_bad!(
-        quote do
-          actions do
-            action :unconfirmed_write do
-              id "bad.item.create"
-              resource :item
-              verb :create
-              data_classification :workspace_content
-              label "Unconfirmed write"
-              handler Jido.Connect.DslV2Test.Handler
-              effect :write
+    error =
+      assert_raise Spark.Error.DslError, ~r/Mutating effect must declare confirmation/, fn ->
+        compile_bad!(
+          quote do
+            actions do
+              action :unconfirmed_write do
+                id "bad.item.create"
+                resource :item
+                verb :create
+                data_classification :workspace_content
+                label "Unconfirmed write"
+                handler Jido.Connect.DslV2Test.Handler
+                effect :write
 
-              access do
-                auth :tenant
-                policies [:tenant_access]
-                scopes ["items:write"]
+                access do
+                  auth :tenant
+                  policies [:tenant_access]
+                  scopes ["items:write"]
+                end
               end
             end
           end
-        end
-      )
-    end
+        )
+      end
+
+    assert error.path == [:actions, :unconfirmed_write]
   end
 
   test "DSL spec builder preserves structured build errors" do

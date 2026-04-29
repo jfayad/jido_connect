@@ -84,6 +84,17 @@ Host-owned policy stays outside the package but can be passed at runtime with
 `policy:`. Core normalizes policy denial to `:policy_denied` and plugin
 availability to `:disabled_by_policy`.
 
+Availability distinguishes user-actionable connection states from package or
+host configuration bugs. Missing or disconnected connections report
+`:connection_required`; scope gaps report `:missing_scopes`; resolver, policy,
+or dynamic scope failures that are not auth failures report
+`:configuration_error` with sanitized error metadata.
+
+Catalog discovery is lenient by default so one broken connector does not hide
+the rest of the catalog. Use `Jido.Connect.Catalog.discover_with_diagnostics/1`
+in CI, demo apps, and admin surfaces when you need to show unavailable
+connectors and their structured failure reasons.
+
 Provider packages should normalize reusable runtime shapes into the core
 Zoi-backed structs:
 
