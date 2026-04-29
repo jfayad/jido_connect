@@ -142,6 +142,82 @@ defmodule Jido.Connect.GitHub.WebhookTest do
              )
   end
 
+  test "normalizes GitHub issue comment actions" do
+    assert {:ok,
+            %{
+              action: "created",
+              repo: "org/repo",
+              issue_number: 10,
+              title: "Bug",
+              url: "https://github.com/org/repo/issues/10#issuecomment-99",
+              comment_id: 99,
+              comment_target: "issue",
+              pull_request?: false,
+              repository: %{full_name: "org/repo"},
+              issue: %{number: 10, pull_request?: false},
+              comment: %{
+                id: 99,
+                body: "I can reproduce this",
+                url: "https://github.com/org/repo/issues/10#issuecomment-99",
+                issue_url: "https://api.github.com/repos/org/repo/issues/10",
+                author: %{login: "commenter"}
+              },
+              sender: %{login: "sender"}
+            }} = Webhook.normalize_signal("issue_comment", issue_comment_payload("created"))
+
+    assert {:ok,
+            %{
+              action: "edited",
+              changes: %{"body" => %{from: "Old comment"}},
+              comment: %{body: "Updated comment"}
+            }} =
+             Webhook.normalize_signal(
+               "issue_comment",
+               issue_comment_payload("edited", %{
+                 "comment" => %{"body" => "Updated comment"},
+                 "changes" => %{"body" => %{"from" => "Old comment"}}
+               })
+             )
+
+    assert {:ok, %{action: "deleted", comment: %{id: 99}}} =
+             Webhook.normalize_signal("issue_comment", issue_comment_payload("deleted"))
+  end
+
+  test "distinguishes pull request issue comments" do
+    payload =
+      issue_comment_payload("created", %{
+        "issue" => %{
+          "number" => 11,
+          "title" => "Fix crash",
+          "html_url" => "https://github.com/org/repo/pull/11",
+          "pull_request" => %{
+            "url" => "https://api.github.com/repos/org/repo/pulls/11",
+            "html_url" => "https://github.com/org/repo/pull/11",
+            "diff_url" => "https://github.com/org/repo/pull/11.diff",
+            "patch_url" => "https://github.com/org/repo/pull/11.patch"
+          }
+        },
+        "comment" => %{
+          "html_url" => "https://github.com/org/repo/pull/11#issuecomment-99"
+        }
+      })
+
+    assert {:ok,
+            %{
+              issue_number: 11,
+              comment_target: "pull_request",
+              pull_request?: true,
+              issue: %{
+                pull_request?: true,
+                pull_request: %{
+                  url: "https://github.com/org/repo/pull/11",
+                  api_url: "https://api.github.com/repos/org/repo/pulls/11"
+                }
+              },
+              comment: %{url: "https://github.com/org/repo/pull/11#issuecomment-99"}
+            }} = Webhook.normalize_signal("issue_comment", payload)
+  end
+
   test "normalizes GitHub push event into stable signal shape" do
     payload = push_payload()
 
@@ -227,6 +303,14 @@ defmodule Jido.Connect.GitHub.WebhookTest do
             }} =
              Webhook.normalize_signal("issues", %{"action" => "transferred"})
 
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :unsupported_issue_comment_action,
+              details: %{action: "pinned"}
+            }} =
+             Webhook.normalize_signal("issue_comment", %{"action" => "pinned"})
+
     assert {:error, %Error.ProviderError{provider: :github, reason: :unsupported_event}} =
              Webhook.normalize_signal("ping", %{})
   end
@@ -284,6 +368,50 @@ defmodule Jido.Connect.GitHub.WebhookTest do
 
   defp issue_state_reason("closed"), do: "completed"
   defp issue_state_reason(_action), do: nil
+
+  defp issue_comment_payload(action, extra \\ %{}) do
+    Map.merge(
+      %{
+        "action" => action,
+        "repository" => %{
+          "id" => 123,
+          "name" => "repo",
+          "full_name" => "org/repo",
+          "html_url" => "https://github.com/org/repo",
+          "owner" => %{"login" => "org"}
+        },
+        "issue" => %{
+          "id" => 456,
+          "number" => 10,
+          "title" => "Bug",
+          "body" => "Details",
+          "state" => "open",
+          "html_url" => "https://github.com/org/repo/issues/10",
+          "user" => %{"login" => "author"},
+          "labels" => [%{"name" => "existing"}],
+          "assignees" => [%{"login" => "assignee"}]
+        },
+        "comment" => %{
+          "id" => 99,
+          "node_id" => "comment-node",
+          "body" => "I can reproduce this",
+          "html_url" => "https://github.com/org/repo/issues/10#issuecomment-99",
+          "url" => "https://api.github.com/repos/org/repo/issues/comments/99",
+          "issue_url" => "https://api.github.com/repos/org/repo/issues/10",
+          "created_at" => "2026-04-29T15:00:00Z",
+          "updated_at" => "2026-04-29T15:01:00Z",
+          "user" => %{"login" => "commenter"}
+        },
+        "sender" => %{"login" => "sender"}
+      },
+      extra,
+      fn _key, original, override ->
+        if is_map(original) and is_map(override),
+          do: Map.merge(original, override),
+          else: override
+      end
+    )
+  end
 
   defp push_payload do
     %{

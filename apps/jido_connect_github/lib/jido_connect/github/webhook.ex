@@ -7,6 +7,7 @@ defmodule Jido.Connect.GitHub.Webhook do
   alias Jido.Connect.Webhook, as: CoreWebhook
 
   @issue_actions ~w(opened edited closed reopened assigned labeled unlabeled)
+  @issue_comment_actions ~w(created edited deleted)
 
   def parse_headers(headers) when is_map(headers) do
     %{
@@ -111,6 +112,21 @@ defmodule Jido.Connect.GitHub.Webhook do
     end
   end
 
+  def normalize_signal("issue_comment", payload) when is_map(payload) do
+    action = Data.get(payload, "action")
+
+    if action in @issue_comment_actions do
+      normalize_issue_comment_signal(action, payload)
+    else
+      {:error,
+       Error.provider("Unsupported GitHub issue comment webhook action",
+         provider: :github,
+         reason: :unsupported_issue_comment_action,
+         details: %{action: action}
+       )}
+    end
+  end
+
   def normalize_signal(event, _payload) do
     {:error,
      Error.provider("Unsupported GitHub webhook event",
@@ -142,6 +158,31 @@ defmodule Jido.Connect.GitHub.Webhook do
        changes: normalize_changes(Data.get(payload, "changes")),
        assignee: normalize_optional_actor(Data.get(payload, "assignee")),
        label: normalize_label(Data.get(payload, "label"))
+     })}
+  end
+
+  defp normalize_issue_comment_signal(action, payload) do
+    issue = Data.get(payload, "issue") || %{}
+    comment = Data.get(payload, "comment") || %{}
+    repo = Data.get(payload, "repository") || %{}
+    sender = Data.get(payload, "sender") || %{}
+    pull_request? = pull_request_issue?(issue)
+
+    {:ok,
+     Data.compact(%{
+       action: action,
+       repo: Data.get(repo, "full_name"),
+       issue_number: Data.get(issue, "number"),
+       title: Data.get(issue, "title"),
+       url: Data.get(comment, "html_url") || Data.get(comment, "url"),
+       comment_id: Data.get(comment, "id"),
+       comment_target: comment_target(pull_request?),
+       pull_request?: pull_request?,
+       repository: normalize_repository(repo),
+       issue: normalize_issue(issue),
+       comment: normalize_issue_comment(comment),
+       sender: normalize_actor(sender),
+       changes: normalize_changes(Data.get(payload, "changes"))
      })}
   end
 
@@ -185,11 +226,46 @@ defmodule Jido.Connect.GitHub.Webhook do
       closed_at: Data.get(issue, "closed_at"),
       author: normalize_actor(Data.get(issue, "user") || %{}),
       assignees: normalize_actors(Data.get(issue, "assignees", [])),
-      labels: normalize_labels(Data.get(issue, "labels", []))
+      labels: normalize_labels(Data.get(issue, "labels", [])),
+      pull_request?: pull_request_issue?(issue),
+      pull_request: normalize_pull_request_ref(Data.get(issue, "pull_request"))
     })
   end
 
   defp normalize_issue(_issue), do: %{}
+
+  defp normalize_issue_comment(comment) when is_map(comment) do
+    Data.compact(%{
+      id: Data.get(comment, "id"),
+      node_id: Data.get(comment, "node_id"),
+      body: Data.get(comment, "body"),
+      url: Data.get(comment, "html_url") || Data.get(comment, "url"),
+      api_url: Data.get(comment, "url"),
+      issue_url: Data.get(comment, "issue_url"),
+      created_at: Data.get(comment, "created_at"),
+      updated_at: Data.get(comment, "updated_at"),
+      author: normalize_actor(Data.get(comment, "user") || %{})
+    })
+  end
+
+  defp normalize_issue_comment(_comment), do: %{}
+
+  defp pull_request_issue?(issue) when is_map(issue), do: is_map(Data.get(issue, "pull_request"))
+  defp pull_request_issue?(_issue), do: false
+
+  defp comment_target(true), do: "pull_request"
+  defp comment_target(false), do: "issue"
+
+  defp normalize_pull_request_ref(pull_request) when is_map(pull_request) do
+    Data.compact(%{
+      url: Data.get(pull_request, "html_url") || Data.get(pull_request, "url"),
+      api_url: Data.get(pull_request, "url"),
+      diff_url: Data.get(pull_request, "diff_url"),
+      patch_url: Data.get(pull_request, "patch_url")
+    })
+  end
+
+  defp normalize_pull_request_ref(_pull_request), do: nil
 
   defp normalize_actors(actors) when is_list(actors), do: Enum.map(actors, &normalize_actor/1)
   defp normalize_actors(_actors), do: []
