@@ -127,6 +127,44 @@ defmodule Jido.Connect.GitHub.ClientTest do
              Client.create_issue("org/repo", %{title: "Bug"}, "token")
   end
 
+  test "update issue sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "PATCH"
+      assert conn.request_path == "/repos/org/repo/issues/2"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "assignees" => ["octocat"],
+               "labels" => ["bug"],
+               "milestone" => 3,
+               "state" => "open",
+               "title" => "Bug"
+             } = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        number: 2,
+        html_url: "https://github.test/2",
+        title: "Bug",
+        state: "open"
+      })
+    end)
+
+    assert {:ok, %{number: 2, title: "Bug"}} =
+             Client.update_issue(
+               "org/repo",
+               2,
+               %{
+                 title: "Bug",
+                 state: "open",
+                 labels: ["bug"],
+                 milestone: 3,
+                 assignees: ["octocat"]
+               },
+               "token"
+             )
+  end
+
   test "create issue comment sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"
@@ -224,6 +262,11 @@ defmodule Jido.Connect.GitHub.ClientTest do
         conn
         |> Plug.Conn.put_status(422)
         |> Req.Test.json(%{message: "Validation Failed"})
+
+      %{method: "PATCH"} = conn ->
+        conn
+        |> Plug.Conn.put_status(422)
+        |> Req.Test.json(%{message: "Validation Failed"})
     end)
 
     assert {:error, %Error.ProviderError{status: 404, details: %{message: "Not Found"}}} =
@@ -231,6 +274,9 @@ defmodule Jido.Connect.GitHub.ClientTest do
 
     assert {:error, %Error.ProviderError{status: 422, details: %{message: "Validation Failed"}}} =
              Client.create_issue("org/repo", %{title: ""}, "token")
+
+    assert {:error, %Error.ProviderError{status: 422, details: %{message: "Validation Failed"}}} =
+             Client.update_issue("org/repo", 2, %{title: ""}, "token")
   end
 
   test "normalizes issue comment mutation error responses" do

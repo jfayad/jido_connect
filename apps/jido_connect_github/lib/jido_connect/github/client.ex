@@ -40,6 +40,14 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_issue_response()
   end
 
+  def update_issue(repo, issue_number, attrs, access_token)
+      when is_integer(issue_number) and is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.patch(url: "/repos/#{repo}/issues/#{issue_number}", json: attrs)
+    |> handle_issue_response()
+  end
+
   def create_issue_comment(repo, issue_number, body, access_token)
       when is_integer(issue_number) and is_binary(access_token) do
     access_token
