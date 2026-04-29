@@ -2,9 +2,9 @@ defmodule Jido.Connect.Catalog.Serializer do
   @moduledoc false
 
   alias Jido.Connect.{ConnectorCapability, NamedSchema, PolicyRequirement}
-  alias Jido.Connect.Catalog.{AuthProfileSummary, Entry, Tool, ToolEntry}
+  alias Jido.Connect.Catalog.{AuthProfileSummary, Entry, Manifest, Tool, ToolEntry}
 
-  @spec to_map(Entry.t() | ToolEntry.t()) :: map()
+  @spec to_map(Entry.t() | Manifest.t() | ToolEntry.t()) :: map()
   def to_map(%Entry{} = entry) do
     %{
       id: entry.id,
@@ -24,6 +24,29 @@ defmodule Jido.Connect.Catalog.Serializer do
       actions: Enum.map(entry.actions, &tool_to_map/1),
       triggers: Enum.map(entry.triggers, &tool_to_map/1),
       metadata: entry.metadata
+    }
+  end
+
+  def to_map(%Manifest{} = manifest) do
+    %{
+      id: manifest.id,
+      name: manifest.name,
+      description: manifest.description,
+      app: manifest.app,
+      package: manifest.package,
+      module: inspect(manifest.module),
+      version: manifest.version,
+      status: manifest.status,
+      category: manifest.category,
+      tags: manifest.tags,
+      visibility: manifest.visibility,
+      docs: manifest.docs,
+      capabilities: Enum.map(manifest.capabilities, &ConnectorCapability.to_map/1),
+      auth_profiles: Enum.map(manifest.auth_profiles, &auth_profile_to_map/1),
+      actions: Enum.map(manifest.actions, &tool_to_map/1),
+      triggers: Enum.map(manifest.triggers, &tool_to_map/1),
+      generated_modules: generated_modules_to_map(manifest.generated_modules),
+      metadata: manifest.metadata
     }
   end
 
@@ -114,6 +137,14 @@ defmodule Jido.Connect.Catalog.Serializer do
 
   defp module_name(nil), do: nil
   defp module_name(module), do: inspect(module)
+
+  defp generated_modules_to_map(modules) do
+    %{
+      actions: Enum.map(Map.get(modules, :actions, []), &module_name/1),
+      sensors: Enum.map(Map.get(modules, :sensors, []), &module_name/1),
+      plugin: module_name(Map.get(modules, :plugin))
+    }
+  end
 
   defp json_safe(tuple) when is_tuple(tuple) do
     tuple

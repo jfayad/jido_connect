@@ -111,6 +111,10 @@ defmodule Jido.Connect.MCPTest do
   end
 
   test "MCP integration compiles generated Jido modules" do
+    assert Application.get_env(:jido_connect_mcp, :jido_connect_providers) == [
+             Jido.Connect.MCP
+           ]
+
     assert Jido.Connect.MCP.jido_action_modules() == [
              Jido.Connect.MCP.Actions.ListTools,
              Jido.Connect.MCP.Actions.CallTool
@@ -118,6 +122,19 @@ defmodule Jido.Connect.MCPTest do
 
     assert Jido.Connect.MCP.jido_sensor_modules() == []
     assert Jido.Connect.MCP.jido_plugin_module() == Jido.Connect.MCP.Plugin
+
+    assert %Connect.Catalog.Manifest{
+             id: :mcp,
+             package: :jido_connect_mcp,
+             generated_modules: %{
+               actions: [
+                 Jido.Connect.MCP.Actions.ListTools,
+                 Jido.Connect.MCP.Actions.CallTool
+               ],
+               sensors: [],
+               plugin: Jido.Connect.MCP.Plugin
+             }
+           } = Jido.Connect.MCP.jido_connect_manifest()
 
     assert {:module, Jido.Connect.MCP.Actions.ListTools} =
              Code.ensure_loaded(Jido.Connect.MCP.Actions.ListTools)

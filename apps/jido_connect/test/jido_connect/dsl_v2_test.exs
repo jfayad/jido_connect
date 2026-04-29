@@ -195,6 +195,25 @@ defmodule Jido.Connect.DslV2Test do
     assert Enum.map(trigger.signal, & &1.name) == [:id, :name]
   end
 
+  test "V2 DSL generates provider manifest and module introspection" do
+    assert %Connect.Catalog.Manifest{
+             id: :v2_demo,
+             package: :jido_connect_v2_demo,
+             status: :experimental,
+             generated_modules: %{
+               actions: [Jido.Connect.DslV2Test.Integration.Actions.ListItems],
+               sensors: [Jido.Connect.DslV2Test.Integration.Sensors.ItemCreated],
+               plugin: Jido.Connect.DslV2Test.Integration.Plugin
+             }
+           } = Integration.jido_connect_manifest()
+
+    assert Integration.jido_connect_modules() == %{
+             actions: [Jido.Connect.DslV2Test.Integration.Actions.ListItems],
+             sensors: [Jido.Connect.DslV2Test.Integration.Sensors.ItemCreated],
+             plugin: Jido.Connect.DslV2Test.Integration.Plugin
+           }
+  end
+
   test "V2 projections expose policy and resource metadata" do
     action_projection = Integration.Actions.ListItems.jido_connect_projection()
     sensor_projection = Integration.Sensors.ItemCreated.jido_connect_projection()
@@ -311,42 +330,45 @@ defmodule Jido.Connect.DslV2Test do
   end
 
   test "DSL spec builder preserves structured build errors" do
-    assert_raise Spark.Error.DslError,
-                 ~r/ArgumentError.*cannot declare both inline fields/s,
-                 fn ->
-                   compile_bad!(
-                     quote do
-                       schemas do
-                         schema :item do
-                           field :id, :string
-                         end
-                       end
-
-                       actions do
-                         action :bad_schema_reference do
-                           id "bad.schema"
-                           resource :item
-                           verb :list
-                           data_classification :workspace_content
-                           label "Bad schema"
-                           handler Jido.Connect.DslV2Test.Handler
-                           effect :read
-                           input_schema :item
-
-                           input do
+    error =
+      assert_raise Spark.Error.DslError,
+                   ~r/ArgumentError.*cannot declare both inline fields/s,
+                   fn ->
+                     compile_bad!(
+                       quote do
+                         schemas do
+                           schema :item do
                              field :id, :string
                            end
+                         end
 
-                           access do
-                             auth :tenant
-                             policies [:tenant_access]
-                             scopes ["items:read"]
+                         actions do
+                           action :bad_schema_reference do
+                             id "bad.schema"
+                             resource :item
+                             verb :list
+                             data_classification :workspace_content
+                             label "Bad schema"
+                             handler Jido.Connect.DslV2Test.Handler
+                             effect :read
+                             input_schema :item
+
+                             input do
+                               field :id, :string
+                             end
+
+                             access do
+                               auth :tenant
+                               policies [:tenant_access]
+                               scopes ["items:read"]
+                             end
                            end
                          end
                        end
-                     end
-                   )
-                 end
+                     )
+                   end
+
+    assert error.path == [:actions, :bad_schema_reference]
   end
 
   defp compile_bad!(body) do

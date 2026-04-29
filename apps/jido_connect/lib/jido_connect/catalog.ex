@@ -12,6 +12,7 @@ defmodule Jido.Connect.Catalog do
     DiscoveryResult,
     Entry,
     Filter,
+    Manifest,
     Search,
     Serializer,
     ToolEntry
@@ -20,6 +21,9 @@ defmodule Jido.Connect.Catalog do
   @spec entry(module(), keyword()) :: Entry.t()
   defdelegate entry(integration_module, opts \\ []), to: Builder
 
+  @spec manifest(module(), keyword()) :: Manifest.t()
+  defdelegate manifest(integration_module, opts \\ []), to: Builder
+
   @spec entries([module()], keyword()) :: [Entry.t()]
   def entries(integration_modules, opts \\ []) when is_list(integration_modules) do
     Enum.map(integration_modules, &entry(&1, opts))
@@ -27,6 +31,9 @@ defmodule Jido.Connect.Catalog do
 
   @spec configured_modules() :: [module()]
   defdelegate configured_modules, to: Discovery
+
+  @spec registered_modules() :: [module()]
+  defdelegate registered_modules, to: Discovery
 
   @spec discover(keyword()) :: [Entry.t()]
   defdelegate discover(opts \\ []), to: Discovery
@@ -52,6 +59,6 @@ defmodule Jido.Connect.Catalog do
     |> Search.tools(Keyword.get(opts, :query, Keyword.get(opts, :q)))
   end
 
-  @spec to_map(Entry.t() | ToolEntry.t()) :: map()
+  @spec to_map(Entry.t() | Manifest.t() | ToolEntry.t()) :: map()
   defdelegate to_map(entry_or_tool), to: Serializer
 end

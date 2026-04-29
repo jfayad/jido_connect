@@ -6,6 +6,7 @@ defmodule Jido.Connect.CatalogTest do
 
   test "catalog entries derive host-facing metadata from specs" do
     entry = Catalog.entry(CatalogFixtures.Integration)
+    manifest = Catalog.manifest(CatalogFixtures.Integration)
 
     assert %Catalog.Entry{
              id: :catalog,
@@ -34,33 +35,46 @@ defmodule Jido.Connect.CatalogTest do
              entry.triggers
 
     assert [%Catalog.Entry{id: :catalog}] = Catalog.entries([CatalogFixtures.Integration])
+
+    assert %Catalog.Manifest{
+             id: :catalog,
+             package: :jido_connect_catalog,
+             generated_modules: %{actions: [], sensors: [], plugin: nil}
+           } = manifest
   end
 
   test "catalog discovery searches and filters configured modules" do
-    previous = Application.get_env(:jido_connect, :catalog_modules)
-    Application.put_env(:jido_connect, :catalog_modules, [CatalogFixtures.Integration])
+    modules = [CatalogFixtures.Integration]
 
-    on_exit(fn ->
-      if is_nil(previous) do
-        Application.delete_env(:jido_connect, :catalog_modules)
-      else
-        Application.put_env(:jido_connect, :catalog_modules, previous)
-      end
-    end)
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(modules: modules)
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(modules: modules, query: "item")
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(modules: modules, status: :available)
 
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover()
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(query: "item")
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(status: :available)
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(auth_kind: "oauth2")
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(auth_profile: "user")
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(scope: "read")
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(package: "jido_connect_catalog")
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(tag: "catalog_test")
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(capability_kind: "auth")
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(capability: "polling")
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(tool: "catalog.item.get")
-    assert [] = Catalog.discover(query: "missing")
-    assert [] = Catalog.discover(status: "unknown_status")
+    assert [%Catalog.Entry{id: :catalog}] =
+             Catalog.discover(modules: modules, auth_kind: "oauth2")
+
+    assert [%Catalog.Entry{id: :catalog}] =
+             Catalog.discover(modules: modules, auth_profile: "user")
+
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(modules: modules, scope: "read")
+
+    assert [%Catalog.Entry{id: :catalog}] =
+             Catalog.discover(modules: modules, package: "jido_connect_catalog")
+
+    assert [%Catalog.Entry{id: :catalog}] =
+             Catalog.discover(modules: modules, tag: "catalog_test")
+
+    assert [%Catalog.Entry{id: :catalog}] =
+             Catalog.discover(modules: modules, capability_kind: "auth")
+
+    assert [%Catalog.Entry{id: :catalog}] =
+             Catalog.discover(modules: modules, capability: "polling")
+
+    assert [%Catalog.Entry{id: :catalog}] =
+             Catalog.discover(modules: modules, tool: "catalog.item.get")
+
+    assert [] = Catalog.discover(modules: modules, query: "missing")
+    assert [] = Catalog.discover(modules: modules, status: "unknown_status")
 
     assert %{
              id: :catalog,
@@ -68,7 +82,7 @@ defmodule Jido.Connect.CatalogTest do
              capabilities: [%{provider: :catalog} | _],
              policies: [%{id: :item_access}],
              actions: [%{id: "catalog.item.get"}]
-           } = Catalog.discover() |> hd() |> Catalog.to_map()
+           } = Catalog.discover(modules: modules) |> hd() |> Catalog.to_map()
 
     assert [
              %Catalog.ToolEntry{
@@ -82,20 +96,24 @@ defmodule Jido.Connect.CatalogTest do
                type: :trigger,
                id: "catalog.item.created"
              }
-           ] = Catalog.tools()
-
-    assert [%Catalog.ToolEntry{id: "catalog.item.get"}] = Catalog.tools(type: :action)
+           ] = Catalog.tools(modules: modules)
 
     assert [%Catalog.ToolEntry{id: "catalog.item.get"}] =
-             Catalog.tools(resource: :item, verb: :get)
+             Catalog.tools(modules: modules, type: :action)
 
-    assert [%Catalog.ToolEntry{id: "catalog.item.created"}] = Catalog.tools(query: "created")
-    assert [%Catalog.ToolEntry{id: "catalog.item.get"}] = Catalog.tools(tool: "catalog.item.get")
+    assert [%Catalog.ToolEntry{id: "catalog.item.get"}] =
+             Catalog.tools(modules: modules, resource: :item, verb: :get)
+
+    assert [%Catalog.ToolEntry{id: "catalog.item.created"}] =
+             Catalog.tools(modules: modules, query: "created")
+
+    assert [%Catalog.ToolEntry{id: "catalog.item.get"}] =
+             Catalog.tools(modules: modules, tool: "catalog.item.get")
 
     assert [
              %Catalog.ToolEntry{id: "catalog.item.get"},
              %Catalog.ToolEntry{id: "catalog.item.created"}
-           ] = Catalog.tools(auth_kind: :oauth2)
+           ] = Catalog.tools(modules: modules, auth_kind: :oauth2)
 
     assert %{
              provider: :catalog,
@@ -105,34 +123,41 @@ defmodule Jido.Connect.CatalogTest do
              policies: [:item_access],
              resource: :item,
              verb: :get
-           } = Catalog.tools(type: :action) |> hd() |> Catalog.to_map()
+           } = Catalog.tools(modules: modules, type: :action) |> hd() |> Catalog.to_map()
+  end
+
+  test "catalog discovery includes app-registered provider modules" do
+    previous_modules = Application.get_env(:jido_connect, :catalog_modules)
+    previous_providers = Application.get_env(:jido_connect, :jido_connect_providers)
+
+    Application.put_env(:jido_connect, :catalog_modules, [])
+    Application.put_env(:jido_connect, :jido_connect_providers, [CatalogFixtures.Integration])
+
+    on_exit(fn ->
+      restore_env(:catalog_modules, previous_modules)
+      restore_env(:jido_connect_providers, previous_providers)
+    end)
+
+    assert CatalogFixtures.Integration in Catalog.configured_modules()
+    assert CatalogFixtures.Integration in Catalog.registered_modules()
+    assert Enum.any?(Catalog.discover(), &(&1.id == :catalog))
   end
 
   test "catalog discovery skips modules that fail while building entries" do
-    previous = Application.get_env(:jido_connect, :catalog_modules)
-
-    Application.put_env(:jido_connect, :catalog_modules, [
+    modules = [
       CatalogFixtures.Integration,
       CatalogFixtures.RaisingIntegration,
       CatalogFixtures.InvalidIntegration,
       CatalogFixtures.MissingIntegrationCallback,
       Module.concat(__MODULE__, MissingIntegration)
-    ])
+    ]
 
-    on_exit(fn ->
-      if is_nil(previous) do
-        Application.delete_env(:jido_connect, :catalog_modules)
-      else
-        Application.put_env(:jido_connect, :catalog_modules, previous)
-      end
-    end)
-
-    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover()
+    assert [%Catalog.Entry{id: :catalog}] = Catalog.discover(modules: modules)
 
     assert %Catalog.DiscoveryResult{
              entries: [%Catalog.Entry{id: :catalog}],
              diagnostics: diagnostics
-           } = Catalog.discover_with_diagnostics()
+           } = Catalog.discover_with_diagnostics(modules: modules)
 
     assert Enum.map(diagnostics, & &1.reason) == [
              :entry_failed,
@@ -149,6 +174,9 @@ defmodule Jido.Connect.CatalogTest do
     assert [
              %Catalog.ToolEntry{id: "catalog.item.get"},
              %Catalog.ToolEntry{id: "catalog.item.created"}
-           ] = Catalog.tools()
+           ] = Catalog.tools(modules: [CatalogFixtures.Integration])
   end
+
+  defp restore_env(key, nil), do: Application.delete_env(:jido_connect, key)
+  defp restore_env(key, value), do: Application.put_env(:jido_connect, key, value)
 end

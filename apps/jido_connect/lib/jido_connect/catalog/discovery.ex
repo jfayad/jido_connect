@@ -1,13 +1,29 @@
 defmodule Jido.Connect.Catalog.Discovery do
   @moduledoc false
 
-  alias Jido.Connect.Callback
+  alias Jido.Connect.{Callback, Provider}
   alias Jido.Connect.Catalog.{Builder, Diagnostic, DiscoveryResult, Filter, Search}
+
+  @provider_env_key :jido_connect_providers
 
   @spec configured_modules() :: [module()]
   def configured_modules do
-    :jido_connect
-    |> Application.get_env(:catalog_modules, [])
+    configured =
+      :jido_connect
+      |> Application.get_env(:catalog_modules, [])
+      |> List.wrap()
+
+    normalize_modules(configured ++ registered_modules())
+  end
+
+  @spec registered_modules() :: [module()]
+  def registered_modules do
+    Application.loaded_applications()
+    |> Enum.flat_map(fn {app, _description, _version} ->
+      app
+      |> Application.get_env(@provider_env_key, [])
+      |> List.wrap()
+    end)
     |> normalize_modules()
   end
 
@@ -52,8 +68,9 @@ defmodule Jido.Connect.Catalog.Discovery do
   defp entry_result(module) do
     with {:module, ^module} <- Code.ensure_loaded(module),
          true <- function_exported?(module, :integration, 0),
+         {:ok, spec} <- Provider.spec(module),
          {:ok, entry} <-
-           Callback.run(fn -> Builder.entry(module) end,
+           Callback.run(fn -> Builder.entry_from_spec(spec, module, projection(module)) end,
              phase: :catalog_discovery,
              details: %{module: module}
            ) do
@@ -81,6 +98,12 @@ defmodule Jido.Connect.Catalog.Discovery do
 
       _other ->
         {:diagnostic, diagnostic(module, :entry_failed, "Catalog entry could not be built")}
+    end
+  end
+
+  defp projection(module) do
+    if function_exported?(module, :jido_projection, 0) do
+      module.jido_projection()
     end
   end
 

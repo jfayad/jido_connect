@@ -6,7 +6,8 @@ defmodule Mix.Tasks.Jido.Connect.Catalog do
       mix jido.connect.catalog --query issue
       mix jido.connect.catalog --module Jido.Connect.GitHub --format json
 
-  Configure default modules with:
+  Provider packages self-register through application metadata. Host apps can
+  still add or override modules with:
 
       config :jido_connect, catalog_modules: [Jido.Connect.GitHub]
   """

@@ -8,13 +8,18 @@ defmodule Jido.Connect.Catalog.Builder do
     TriggerSpec
   }
 
-  alias Jido.Connect.Catalog.{AuthProfileSummary, Entry, Tool, ToolEntry}
+  alias Jido.Connect.Catalog.{AuthProfileSummary, Entry, Manifest, Tool, ToolEntry}
 
   @spec entry(module(), keyword()) :: Entry.t()
   def entry(integration_module, opts \\ []) when is_atom(integration_module) do
     spec = integration_module.integration()
     projection = projection(integration_module)
 
+    entry_from_spec(spec, integration_module, projection, opts)
+  end
+
+  @spec entry_from_spec(Jido.Connect.Spec.t(), module(), term(), keyword()) :: Entry.t()
+  def entry_from_spec(spec, integration_module, projection, opts \\ []) do
     Entry.new!(%{
       id: spec.id,
       name: spec.name,
@@ -34,6 +39,62 @@ defmodule Jido.Connect.Catalog.Builder do
       actions: Enum.map(spec.actions, &action_tool(&1, projection)),
       triggers: Enum.map(spec.triggers, &trigger_tool(&1, projection)),
       metadata: spec.metadata
+    })
+  end
+
+  @spec manifest(module(), keyword()) :: Manifest.t()
+  def manifest(integration_module, opts \\ []) when is_atom(integration_module) do
+    spec = integration_module.integration()
+    projection = projection(integration_module)
+
+    manifest_from_spec(spec, integration_module, projection, opts)
+  end
+
+  @spec manifest_from_spec(Jido.Connect.Spec.t(), module(), term(), keyword()) :: Manifest.t()
+  def manifest_from_spec(spec, integration_module, projection, opts \\ []) do
+    Entry.new!(%{
+      id: spec.id,
+      name: spec.name,
+      description: spec.description,
+      category: spec.category,
+      package: spec.package || Map.get(spec.metadata, :package),
+      module: integration_module,
+      status:
+        Keyword.get(opts, :status, spec.status || Map.get(spec.metadata, :status, :available)),
+      tags: spec.tags,
+      visibility: spec.visibility,
+      docs: spec.docs,
+      capabilities: ConnectorCapability.from_spec(spec, integration_module),
+      policies: spec.policies,
+      schemas: spec.schemas,
+      auth_profiles: Enum.map(spec.auth_profiles, &auth_summary/1),
+      actions: Enum.map(spec.actions, &action_tool(&1, projection)),
+      triggers: Enum.map(spec.triggers, &trigger_tool(&1, projection)),
+      metadata: spec.metadata
+    })
+    |> manifest_from_entry(projection)
+  end
+
+  defp manifest_from_entry(%Entry{} = entry, projection) do
+    Manifest.new!(%{
+      id: entry.id,
+      name: entry.name,
+      description: entry.description,
+      app: entry.package,
+      package: entry.package,
+      module: entry.module,
+      version: Map.get(entry.metadata, :version),
+      status: entry.status,
+      category: entry.category,
+      tags: entry.tags,
+      visibility: entry.visibility,
+      docs: entry.docs,
+      capabilities: entry.capabilities,
+      auth_profiles: entry.auth_profiles,
+      actions: entry.actions,
+      triggers: entry.triggers,
+      generated_modules: generated_modules(projection),
+      metadata: entry.metadata
     })
   end
 
@@ -103,6 +164,16 @@ defmodule Jido.Connect.Catalog.Builder do
     if function_exported?(integration_module, :jido_projection, 0) do
       integration_module.jido_projection()
     end
+  end
+
+  defp generated_modules(nil), do: %{actions: [], sensors: [], plugin: nil}
+
+  defp generated_modules(projection) do
+    %{
+      actions: Enum.map(projection.actions, & &1.module),
+      sensors: Enum.map(projection.sensors, & &1.module),
+      plugin: projection.module
+    }
   end
 
   defp projection_module(nil, _key, _id), do: nil

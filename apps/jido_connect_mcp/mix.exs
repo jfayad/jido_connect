@@ -24,7 +24,9 @@ defmodule JidoConnectMCP.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {Jido.Connect.MCP.Application, []}
+      env: [
+        jido_connect_providers: [Jido.Connect.MCP]
+      ]
     ]
   end
 
@@ -102,10 +104,7 @@ defmodule JidoConnectMCP.MixProject do
 
   defp test_coverage do
     [
-      summary: [threshold: 80],
-      ignore_modules: [
-        Jido.Connect.MCP.Application
-      ]
+      summary: [threshold: 80]
     ]
   end
 end

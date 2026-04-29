@@ -79,6 +79,10 @@ defmodule Jido.Connect.GitHubTest do
   end
 
   test "GitHub integration compiles Jido action, sensor, and plugin modules" do
+    assert Application.get_env(:jido_connect_github, :jido_connect_providers) == [
+             Jido.Connect.GitHub
+           ]
+
     assert Jido.Connect.GitHub.jido_action_modules() == [
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue
@@ -89,6 +93,19 @@ defmodule Jido.Connect.GitHubTest do
            ]
 
     assert Jido.Connect.GitHub.jido_plugin_module() == Jido.Connect.GitHub.Plugin
+
+    assert %Connect.Catalog.Manifest{
+             id: :github,
+             package: :jido_connect_github,
+             generated_modules: %{
+               actions: [
+                 Jido.Connect.GitHub.Actions.ListIssues,
+                 Jido.Connect.GitHub.Actions.CreateIssue
+               ],
+               sensors: [Jido.Connect.GitHub.Sensors.NewIssues],
+               plugin: Jido.Connect.GitHub.Plugin
+             }
+           } = Jido.Connect.GitHub.jido_connect_manifest()
 
     assert {:module, Jido.Connect.GitHub.Actions.ListIssues} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListIssues)

@@ -257,6 +257,22 @@ defmodule Jido.Connect.Error do
     )
   end
 
+  def invalid_provider_manifest(provider, value) do
+    validation("Provider module did not return a Jido.Connect.Catalog.Manifest",
+      reason: :invalid_provider_manifest,
+      subject: provider,
+      details: %{returned: inspect(value)}
+    )
+  end
+
+  def invalid_provider_modules(provider, value) do
+    validation("Provider module returned invalid generated module metadata",
+      reason: :invalid_provider_modules,
+      subject: provider,
+      details: %{returned: inspect(value)}
+    )
+  end
+
   def zoi(reason, errors, details \\ %{}) do
     validation("Schema validation failed",
       reason: reason,

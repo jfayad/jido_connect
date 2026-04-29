@@ -42,6 +42,21 @@ defmodule Jido.Connect.Runtime.ApiTest do
     assert {:error, %Connect.Error.ValidationError{reason: :invalid_integration}} =
              Connect.spec(RuntimeFixtures.InvalidIntegration)
 
+    assert {:error, %Connect.Error.ExecutionError{phase: :provider_integration}} =
+             Connect.spec(RuntimeFixtures.RaisingIntegration)
+
+    assert {:ok, %Connect.Catalog.Manifest{id: :demo}} =
+             Connect.Provider.manifest(RuntimeFixtures.Integration)
+
+    assert {:ok, %{actions: [], sensors: [], plugin: nil}} =
+             Connect.Provider.generated_modules(RuntimeFixtures.Integration)
+
+    assert {:error, %Connect.Error.ValidationError{reason: :invalid_provider_manifest}} =
+             Connect.Provider.manifest(RuntimeFixtures.BadManifestProvider)
+
+    assert {:error, %Connect.Error.ValidationError{reason: :invalid_provider_modules}} =
+             Connect.Provider.generated_modules(RuntimeFixtures.BadModulesProvider)
+
     assert {:error, %Connect.Error.ValidationError{reason: :invalid_action_id}} =
              Connect.action(RuntimeFixtures.Integration, :not_a_string)
 

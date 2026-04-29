@@ -65,6 +65,20 @@ defmodule Jido.Connect.RuntimeFixtures do
     def integration, do: :not_a_spec
   end
 
+  defmodule RaisingIntegration do
+    def integration, do: raise("integration lookup exploded")
+  end
+
+  defmodule BadManifestProvider do
+    def integration, do: Jido.Connect.RuntimeFixtures.spec()
+    def jido_connect_manifest, do: %{id: :bad_manifest}
+  end
+
+  defmodule BadModulesProvider do
+    def integration, do: Jido.Connect.RuntimeFixtures.spec()
+    def jido_connect_modules, do: %{actions: ["not a module"], sensors: [], plugin: nil}
+  end
+
   def spec(overrides \\ %{}) do
     build_spec(
       auth_profiles: [auth_profile()],

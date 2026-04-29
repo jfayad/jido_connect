@@ -21,11 +21,12 @@ defmodule JidoConnectGitHub.MixProject do
     ]
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:logger],
-      mod: {Jido.Connect.GitHub.Application, []}
+      env: [
+        jido_connect_providers: [Jido.Connect.GitHub]
+      ]
     ]
   end
 
@@ -98,7 +99,6 @@ defmodule JidoConnectGitHub.MixProject do
     [
       summary: [threshold: 80],
       ignore_modules: [
-        Jido.Connect.GitHub.Application,
         ~r/^Mix\.Tasks\./
       ]
     ]

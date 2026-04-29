@@ -24,7 +24,9 @@ defmodule JidoConnectSlack.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {Jido.Connect.Slack.Application, []}
+      env: [
+        jido_connect_providers: [Jido.Connect.Slack]
+      ]
     ]
   end
 
@@ -96,7 +98,6 @@ defmodule JidoConnectSlack.MixProject do
     [
       summary: [threshold: 80],
       ignore_modules: [
-        Jido.Connect.Slack.Application,
         ~r/^Mix\.Tasks\./
       ]
     ]

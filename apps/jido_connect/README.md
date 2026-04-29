@@ -60,6 +60,22 @@ returns provider entries; `Catalog.tools/1` returns a flattened action/trigger
 catalog for search and tool pickers, including filters such as `:tag`,
 `:resource`, `:verb`, `:auth_kind`, `:auth_profile`, and `:scope`.
 
+Provider packages self-register catalog modules with application metadata:
+
+```elixir
+def application do
+  [
+    extra_applications: [:logger],
+    env: [jido_connect_providers: [Jido.Connect.GitHub]]
+  ]
+end
+```
+
+`use Jido.Connect` generates the provider behavior callbacks and
+`Jido.Connect.Catalog.Manifest` from the DSL. Connector authors should not
+maintain a second manifest by hand; the compiled spec and generated projection
+stay the source of truth.
+
 Authenticated generated actions and sensors require both a connection and a
 matching credential lease. The connection is durable host-owned metadata; the
 lease is short-lived credential material and has a redacted `Inspect`

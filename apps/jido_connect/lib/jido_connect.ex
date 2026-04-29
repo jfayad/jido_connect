@@ -35,6 +35,7 @@ defmodule Jido.Connect do
   alias Jido.Connect.{
     ActionSpec,
     Error,
+    Provider,
     Runtime,
     Schema,
     Spec,
@@ -44,8 +45,6 @@ defmodule Jido.Connect do
   use Spark.Dsl,
     default_extensions: [extensions: Jido.Connect.Dsl.Extension]
 
-  @callback integration() :: Spec.t()
-
   @doc """
   Returns a compiled integration spec from a provider module or spec.
 
@@ -53,26 +52,7 @@ defmodule Jido.Connect do
   the runtime source of truth.
   """
   @spec spec(integration_ref()) :: {:ok, Spec.t()} | {:error, Error.error()}
-  def spec(%Spec{} = integration), do: {:ok, integration}
-
-  def spec(integration_module) when is_atom(integration_module) do
-    with {:module, _module} <- Code.ensure_loaded(integration_module),
-         true <- function_exported?(integration_module, :integration, 0),
-         %Spec{} = integration <- integration_module.integration() do
-      {:ok, integration}
-    else
-      {:error, _reason} ->
-        {:error, Error.unknown_integration(integration_module)}
-
-      false ->
-        {:error, Error.unknown_integration(integration_module)}
-
-      other ->
-        {:error, Error.invalid_integration(integration_module, other)}
-    end
-  end
-
-  def spec(integration_ref), do: {:error, Error.unknown_integration(integration_ref)}
+  defdelegate spec(integration_ref), to: Provider
 
   @doc "Returns the action specs for an integration."
   @spec actions(integration_ref()) :: {:ok, [ActionSpec.t()]} | {:error, Error.error()}

@@ -181,14 +181,21 @@ while allowing provider packages to organize DSL files as `issues.ex`,
 
 ## Discovering The Catalog
 
-Host apps can configure installed providers once:
+Provider packages self-register through application metadata:
 
 ```elixir
-config :jido_connect,
-  catalog_modules: [Jido.Connect.GitHub, Jido.Connect.Slack]
+def application do
+  [
+    extra_applications: [:logger],
+    env: [jido_connect_providers: [Jido.Connect.GitHub]]
+  ]
+end
 ```
 
-Then browse them from code:
+`use Jido.Connect` generates the provider behavior and catalog manifest from
+the DSL, so connector authors should not maintain a second manifest by hand.
+Host apps can still pass `modules: [...]` to catalog functions when they need an
+explicit subset. Browse installed providers from code:
 
 ```elixir
 Jido.Connect.Catalog.discover(query: "issue")

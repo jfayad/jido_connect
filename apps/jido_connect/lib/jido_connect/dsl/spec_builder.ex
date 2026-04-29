@@ -44,7 +44,12 @@ defmodule Jido.Connect.Dsl.SpecBuilder do
          metadata: Map.merge(integration_metadata, catalog_metadata)
        }}
     else
-      {:error, "integration section with id and name is required"}
+      {:error,
+       Spark.Error.DslError.exception(
+         module: transformer.get_persisted(dsl_state, :module),
+         path: [:integration],
+         message: "integration section with id and name is required"
+       )}
     end
   end
 
@@ -52,34 +57,58 @@ defmodule Jido.Connect.Dsl.SpecBuilder do
     auth_profiles =
       dsl_state
       |> transformer.get_entities([:auth])
-      |> Enum.map(&auth_profile!/1)
+      |> Enum.map(fn profile ->
+        build_entity!(dsl_state, transformer, [:auth, profile.id], fn ->
+          auth_profile!(profile)
+        end)
+      end)
 
     capabilities =
       dsl_state
       |> transformer.get_entities([:catalog])
-      |> Enum.map(&capability!(&1, integration_attrs))
+      |> Enum.map(fn capability ->
+        build_entity!(dsl_state, transformer, [:catalog, capability.name], fn ->
+          capability!(capability, integration_attrs)
+        end)
+      end)
 
     policies =
       dsl_state
       |> transformer.get_entities([:policies])
-      |> Enum.map(&policy_requirement!/1)
+      |> Enum.map(fn policy ->
+        build_entity!(dsl_state, transformer, [:policies, policy.name], fn ->
+          policy_requirement!(policy)
+        end)
+      end)
 
     schemas =
       dsl_state
       |> transformer.get_entities([:schemas])
-      |> Enum.map(&named_schema!/1)
+      |> Enum.map(fn schema ->
+        build_entity!(dsl_state, transformer, [:schemas, schema.name], fn ->
+          named_schema!(schema)
+        end)
+      end)
 
     schemas_by_id = Map.new(schemas, &{&1.id, &1})
 
     actions =
       dsl_state
       |> transformer.get_entities([:actions])
-      |> Enum.map(&action_spec!(&1, integration_attrs.id, schemas_by_id, auth_profiles))
+      |> Enum.map(fn action ->
+        build_entity!(dsl_state, transformer, [:actions, action.name], fn ->
+          action_spec!(action, integration_attrs.id, schemas_by_id, auth_profiles)
+        end)
+      end)
 
     triggers =
       dsl_state
       |> transformer.get_entities([:triggers])
-      |> Enum.map(&trigger_spec!(&1, integration_attrs.id, schemas_by_id, auth_profiles))
+      |> Enum.map(fn trigger ->
+        build_entity!(dsl_state, transformer, [:triggers, trigger.name], fn ->
+          trigger_spec!(trigger, integration_attrs.id, schemas_by_id, auth_profiles)
+        end)
+      end)
 
     spec =
       integration_attrs
@@ -93,13 +122,29 @@ defmodule Jido.Connect.Dsl.SpecBuilder do
 
     {:ok, spec}
   rescue
+    error in [Spark.Error.DslError] ->
+      {:error, error}
+
     error ->
-      {:error,
-       Spark.Error.DslError.exception(
-         module: transformer.get_persisted(dsl_state, :module),
-         path: [],
-         message: error
-       )}
+      {:error, dsl_error(dsl_state, transformer, [], error)}
+  end
+
+  defp build_entity!(dsl_state, transformer, path, fun) do
+    fun.()
+  rescue
+    error in [Spark.Error.DslError] ->
+      raise error
+
+    error ->
+      raise dsl_error(dsl_state, transformer, path, error)
+  end
+
+  defp dsl_error(dsl_state, transformer, path, error) do
+    Spark.Error.DslError.exception(
+      module: transformer.get_persisted(dsl_state, :module),
+      path: path,
+      message: error
+    )
   end
 
   defp auth_profile!(%Dsl.AuthProfile{} = profile) do

@@ -83,6 +83,10 @@ defmodule Jido.Connect.SlackTest do
   end
 
   test "Slack integration compiles generated Jido modules" do
+    assert Application.get_env(:jido_connect_slack, :jido_connect_providers) == [
+             Jido.Connect.Slack
+           ]
+
     assert Jido.Connect.Slack.jido_action_modules() == [
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.PostMessage
@@ -90,6 +94,19 @@ defmodule Jido.Connect.SlackTest do
 
     assert Jido.Connect.Slack.jido_sensor_modules() == []
     assert Jido.Connect.Slack.jido_plugin_module() == Jido.Connect.Slack.Plugin
+
+    assert %Connect.Catalog.Manifest{
+             id: :slack,
+             package: :jido_connect_slack,
+             generated_modules: %{
+               actions: [
+                 Jido.Connect.Slack.Actions.ListChannels,
+                 Jido.Connect.Slack.Actions.PostMessage
+               ],
+               sensors: [],
+               plugin: Jido.Connect.Slack.Plugin
+             }
+           } = Jido.Connect.Slack.jido_connect_manifest()
 
     assert {:module, Jido.Connect.Slack.Actions.ListChannels} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.ListChannels)
