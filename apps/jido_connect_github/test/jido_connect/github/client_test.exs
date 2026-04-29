@@ -110,6 +110,69 @@ defmodule Jido.Connect.GitHub.ClientTest do
             }} = Client.list_repositories(%{page: 1, per_page: 30}, "token")
   end
 
+  test "list pull requests sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/repos/org/repo/pulls"
+
+      assert %{
+               "base" => "main",
+               "direction" => "asc",
+               "head" => "octo:feature",
+               "page" => "2",
+               "per_page" => "10",
+               "sort" => "updated",
+               "state" => "open"
+             } = URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, [
+        %{
+          number: 4,
+          html_url: "https://github.test/pull/4",
+          title: "Feature",
+          state: "open",
+          head: %{
+            label: "octo:feature",
+            ref: "feature",
+            sha: "abc",
+            repo: %{
+              id: 10,
+              name: "repo",
+              full_name: "org/repo",
+              html_url: "https://github.test/org/repo"
+            }
+          },
+          base: %{label: "org:main", ref: "main", sha: "def"}
+        }
+      ])
+    end)
+
+    assert {:ok,
+            [
+              %{
+                number: 4,
+                url: "https://github.test/pull/4",
+                head: %{ref: "feature", repo: %{full_name: "org/repo"}},
+                base: %{ref: "main"}
+              }
+            ]} =
+             Client.list_pull_requests(
+               %{
+                 repo: "org/repo",
+                 state: "open",
+                 head: "octo:feature",
+                 base: "main",
+                 sort: "updated",
+                 direction: "asc",
+                 page: 2,
+                 per_page: 10
+               },
+               "token"
+             )
+  end
+
   test "create issue sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

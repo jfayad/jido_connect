@@ -70,8 +70,8 @@ defmodule Jido.Connect.GitHub do
       setup :github_app_installation
       credential_fields [:access_token]
       lease_fields [:access_token]
-      scopes ["metadata:read", "issues:read", "issues:write"]
-      default_scopes ["metadata:read", "issues:read"]
+      scopes ["metadata:read", "issues:read", "issues:write", "pull_requests:read"]
+      default_scopes ["metadata:read", "issues:read", "pull_requests:read"]
     end
   end
 

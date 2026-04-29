@@ -33,6 +33,17 @@ defmodule Jido.Connect.GitHub.Client do
     |> response_handler.()
   end
 
+  def list_pull_requests(%{repo: repo} = params, access_token)
+      when is_binary(repo) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(
+      url: "/repos/#{repo}/pulls",
+      params: pull_request_list_params(params)
+    )
+    |> handle_pull_request_list_response()
+  end
+
   def create_issue(repo, attrs, access_token) when is_binary(access_token) do
     access_token
     |> request()
@@ -162,6 +173,18 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_user_repository_list_response(response), do: handle_error_response(response)
 
+  defp handle_pull_request_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_list(body) do
+    {:ok, Enum.map(body, &normalize_pull_request/1)}
+  end
+
+  defp handle_pull_request_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub pull request list response was invalid", body)
+  end
+
+  defp handle_pull_request_list_response(response), do: handle_error_response(response)
+
   defp handle_issue_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     {:ok, normalize_issue(body)}
@@ -220,6 +243,18 @@ defmodule Jido.Connect.GitHub.Client do
     }
   end
 
+  defp normalize_pull_request(pull_request) when is_map(pull_request) do
+    %{
+      number: Data.get(pull_request, "number"),
+      url: Data.get(pull_request, "html_url") || Data.get(pull_request, "url"),
+      title: Data.get(pull_request, "title"),
+      state: Data.get(pull_request, "state"),
+      head: normalize_pull_request_ref(Data.get(pull_request, "head")),
+      base: normalize_pull_request_ref(Data.get(pull_request, "base")),
+      updated_at: Data.get(pull_request, "updated_at")
+    }
+  end
+
   defp normalize_comment(comment) when is_map(comment) do
     %{
       id: Data.get(comment, "id"),
@@ -240,11 +275,48 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp normalize_repository_owner(_owner), do: nil
 
+  defp normalize_pull_request_ref(ref) when is_map(ref) do
+    %{
+      label: Data.get(ref, "label"),
+      ref: Data.get(ref, "ref"),
+      sha: Data.get(ref, "sha"),
+      repo: normalize_pull_request_ref_repo(Data.get(ref, "repo"))
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_pull_request_ref(_ref), do: nil
+
+  defp normalize_pull_request_ref_repo(repo) when is_map(repo) do
+    %{
+      id: Data.get(repo, "id"),
+      name: Data.get(repo, "name"),
+      full_name: Data.get(repo, "full_name"),
+      url: Data.get(repo, "html_url") || Data.get(repo, "url")
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_pull_request_ref_repo(_repo), do: nil
+
   defp repository_list_params(params) do
     [
       per_page: Map.get(params, :per_page, 30),
       page: Map.get(params, :page, 1)
     ]
+  end
+
+  defp pull_request_list_params(params) do
+    [
+      state: Map.get(params, :state, "open"),
+      head: Map.get(params, :head),
+      base: Map.get(params, :base),
+      sort: Map.get(params, :sort, "created"),
+      direction: Map.get(params, :direction, "desc"),
+      per_page: Map.get(params, :per_page, 30),
+      page: Map.get(params, :page, 1)
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end
 
   defp repository_list_request(%{auth_profile: :installation}),
