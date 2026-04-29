@@ -218,6 +218,90 @@ defmodule Jido.Connect.GitHub.WebhookTest do
             }} = Webhook.normalize_signal("issue_comment", payload)
   end
 
+  test "normalizes GitHub pull request lifecycle actions" do
+    assert {:ok,
+            %{
+              action: "opened",
+              github_action: "opened",
+              repo: "org/repo",
+              pull_request_number: 42,
+              title: "Add webhook support",
+              url: "https://github.com/org/repo/pull/42",
+              state: "open",
+              draft?: false,
+              merged?: false,
+              repository: %{full_name: "org/repo"},
+              pull_request: %{
+                number: 42,
+                title: "Add webhook support",
+                state: "open",
+                draft?: false,
+                merged?: false,
+                head: %{ref: "feature/webhooks", sha: "head-sha", repo: %{full_name: "org/repo"}},
+                base: %{ref: "main", sha: "base-sha", repo: %{full_name: "org/repo"}}
+              },
+              sender: %{login: "sender"}
+            }} = Webhook.normalize_signal("pull_request", pull_request_payload("opened"))
+
+    assert {:ok, %{action: "synchronize", pull_request: %{head: %{sha: "new-head-sha"}}}} =
+             Webhook.normalize_signal(
+               "pull_request",
+               pull_request_payload("synchronize", %{
+                 "pull_request" => %{"head" => %{"sha" => "new-head-sha"}}
+               })
+             )
+
+    assert {:ok, %{action: "synchronized", github_action: "synchronized"}} =
+             Webhook.normalize_signal("pull_request", pull_request_payload("synchronized"))
+
+    assert {:ok, %{action: "reopened", state: "open"}} =
+             Webhook.normalize_signal("pull_request", pull_request_payload("reopened"))
+
+    assert {:ok, %{action: "closed", state: "closed", merged?: false}} =
+             Webhook.normalize_signal("pull_request", pull_request_payload("closed"))
+
+    assert {:ok,
+            %{
+              action: "merged",
+              github_action: "closed",
+              state: "closed",
+              merged?: true,
+              pull_request: %{merged?: true, merged_at: "2026-04-29T15:10:00Z"}
+            }} =
+             Webhook.normalize_signal(
+               "pull_request",
+               pull_request_payload("closed", %{
+                 "pull_request" => %{
+                   "merged" => true,
+                   "merged_at" => "2026-04-29T15:10:00Z"
+                 }
+               })
+             )
+
+    assert {:ok, %{action: "ready_for_review", draft?: false}} =
+             Webhook.normalize_signal("pull_request", pull_request_payload("ready_for_review"))
+
+    assert {:ok, %{action: "converted_to_draft", draft?: true, pull_request: %{draft?: true}}} =
+             Webhook.normalize_signal(
+               "pull_request",
+               pull_request_payload("converted_to_draft", %{"pull_request" => %{"draft" => true}})
+             )
+  end
+
+  test "normalizes GitHub pull request edits with changes" do
+    assert {:ok,
+            %{
+              action: "synchronize",
+              changes: %{"base" => %{from: %{"ref" => "develop"}}}
+            }} =
+             Webhook.normalize_signal(
+               "pull_request",
+               pull_request_payload("synchronize", %{
+                 "changes" => %{"base" => %{"from" => %{"ref" => "develop"}}}
+               })
+             )
+  end
+
   test "normalizes GitHub push event into stable signal shape" do
     payload = push_payload()
 
@@ -310,6 +394,14 @@ defmodule Jido.Connect.GitHub.WebhookTest do
               details: %{action: "pinned"}
             }} =
              Webhook.normalize_signal("issue_comment", %{"action" => "pinned"})
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :unsupported_pull_request_action,
+              details: %{action: "auto_merge_enabled"}
+            }} =
+             Webhook.normalize_signal("pull_request", %{"action" => "auto_merge_enabled"})
 
     assert {:error, %Error.ProviderError{provider: :github, reason: :unsupported_event}} =
              Webhook.normalize_signal("ping", %{})
@@ -411,6 +503,83 @@ defmodule Jido.Connect.GitHub.WebhookTest do
           else: override
       end
     )
+  end
+
+  defp pull_request_payload(action, extra \\ %{}) do
+    Map.merge(
+      %{
+        "action" => action,
+        "repository" => github_repository(),
+        "pull_request" => %{
+          "id" => 789,
+          "node_id" => "pr-node",
+          "number" => 42,
+          "title" => "Add webhook support",
+          "body" => "Details",
+          "state" => pull_request_state(action),
+          "draft" => false,
+          "merged" => false,
+          "html_url" => "https://github.com/org/repo/pull/42",
+          "url" => "https://api.github.com/repos/org/repo/pulls/42",
+          "diff_url" => "https://github.com/org/repo/pull/42.diff",
+          "patch_url" => "https://github.com/org/repo/pull/42.patch",
+          "created_at" => "2026-04-29T15:00:00Z",
+          "updated_at" => "2026-04-29T15:01:00Z",
+          "closed_at" => pull_request_closed_at(action),
+          "user" => %{"login" => "author"},
+          "labels" => [%{"name" => "enhancement"}],
+          "assignees" => [%{"login" => "reviewer"}],
+          "head" => %{
+            "label" => "org:feature/webhooks",
+            "ref" => "feature/webhooks",
+            "sha" => "head-sha",
+            "user" => %{"login" => "author"},
+            "repo" => github_repository()
+          },
+          "base" => %{
+            "label" => "org:main",
+            "ref" => "main",
+            "sha" => "base-sha",
+            "user" => %{"login" => "org"},
+            "repo" => github_repository()
+          }
+        },
+        "sender" => %{"login" => "sender"}
+      },
+      extra,
+      fn _key, original, override ->
+        if is_map(original) and is_map(override),
+          do: deep_merge(original, override),
+          else: override
+      end
+    )
+  end
+
+  defp pull_request_state("closed"), do: "closed"
+  defp pull_request_state(_action), do: "open"
+
+  defp pull_request_closed_at("closed"), do: "2026-04-29T15:05:00Z"
+  defp pull_request_closed_at(_action), do: nil
+
+  defp github_repository do
+    %{
+      "id" => 123,
+      "node_id" => "repo-node",
+      "name" => "repo",
+      "full_name" => "org/repo",
+      "private" => false,
+      "default_branch" => "main",
+      "html_url" => "https://github.com/org/repo",
+      "owner" => %{"login" => "org", "id" => 456}
+    }
+  end
+
+  defp deep_merge(left, right) when is_map(left) and is_map(right) do
+    Map.merge(left, right, fn _key, left_value, right_value ->
+      if is_map(left_value) and is_map(right_value),
+        do: deep_merge(left_value, right_value),
+        else: right_value
+    end)
   end
 
   defp push_payload do

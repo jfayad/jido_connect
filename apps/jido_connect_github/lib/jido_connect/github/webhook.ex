@@ -8,6 +8,7 @@ defmodule Jido.Connect.GitHub.Webhook do
 
   @issue_actions ~w(opened edited closed reopened assigned labeled unlabeled)
   @issue_comment_actions ~w(created edited deleted)
+  @pull_request_actions ~w(opened synchronize synchronized reopened closed ready_for_review converted_to_draft)
 
   def parse_headers(headers) when is_map(headers) do
     %{
@@ -127,6 +128,21 @@ defmodule Jido.Connect.GitHub.Webhook do
     end
   end
 
+  def normalize_signal("pull_request", payload) when is_map(payload) do
+    action = Data.get(payload, "action")
+
+    if action in @pull_request_actions do
+      normalize_pull_request_signal(action, payload)
+    else
+      {:error,
+       Error.provider("Unsupported GitHub pull request webhook action",
+         provider: :github,
+         reason: :unsupported_pull_request_action,
+         details: %{action: action}
+       )}
+    end
+  end
+
   def normalize_signal(event, _payload) do
     {:error,
      Error.provider("Unsupported GitHub webhook event",
@@ -181,6 +197,29 @@ defmodule Jido.Connect.GitHub.Webhook do
        repository: normalize_repository(repo),
        issue: normalize_issue(issue),
        comment: normalize_issue_comment(comment),
+       sender: normalize_actor(sender),
+       changes: normalize_changes(Data.get(payload, "changes"))
+     })}
+  end
+
+  defp normalize_pull_request_signal(action, payload) do
+    pull_request = Data.get(payload, "pull_request") || %{}
+    repo = Data.get(payload, "repository") || %{}
+    sender = Data.get(payload, "sender") || %{}
+
+    {:ok,
+     Data.compact(%{
+       action: pull_request_action(action, pull_request),
+       github_action: action,
+       repo: Data.get(repo, "full_name"),
+       pull_request_number: Data.get(pull_request, "number"),
+       title: Data.get(pull_request, "title"),
+       url: Data.get(pull_request, "html_url") || Data.get(pull_request, "url"),
+       state: Data.get(pull_request, "state"),
+       draft?: Data.get(pull_request, "draft"),
+       merged?: pull_request_merged?(pull_request),
+       repository: normalize_repository(repo),
+       pull_request: normalize_pull_request(pull_request),
        sender: normalize_actor(sender),
        changes: normalize_changes(Data.get(payload, "changes"))
      })}
@@ -250,6 +289,36 @@ defmodule Jido.Connect.GitHub.Webhook do
 
   defp normalize_issue_comment(_comment), do: %{}
 
+  defp normalize_pull_request(pull_request) when is_map(pull_request) do
+    Data.compact(%{
+      id: Data.get(pull_request, "id"),
+      node_id: Data.get(pull_request, "node_id"),
+      number: Data.get(pull_request, "number"),
+      title: Data.get(pull_request, "title"),
+      body: Data.get(pull_request, "body"),
+      state: Data.get(pull_request, "state"),
+      draft?: Data.get(pull_request, "draft"),
+      merged?: pull_request_merged?(pull_request),
+      mergeable?: Data.get(pull_request, "mergeable"),
+      rebaseable?: Data.get(pull_request, "rebaseable"),
+      url: Data.get(pull_request, "html_url") || Data.get(pull_request, "url"),
+      api_url: Data.get(pull_request, "url"),
+      diff_url: Data.get(pull_request, "diff_url"),
+      patch_url: Data.get(pull_request, "patch_url"),
+      created_at: Data.get(pull_request, "created_at"),
+      updated_at: Data.get(pull_request, "updated_at"),
+      closed_at: Data.get(pull_request, "closed_at"),
+      merged_at: Data.get(pull_request, "merged_at"),
+      author: normalize_actor(Data.get(pull_request, "user") || %{}),
+      assignees: normalize_actors(Data.get(pull_request, "assignees", [])),
+      labels: normalize_labels(Data.get(pull_request, "labels", [])),
+      head: normalize_pull_request_branch(Data.get(pull_request, "head")),
+      base: normalize_pull_request_branch(Data.get(pull_request, "base"))
+    })
+  end
+
+  defp normalize_pull_request(_pull_request), do: %{}
+
   defp pull_request_issue?(issue) when is_map(issue), do: is_map(Data.get(issue, "pull_request"))
   defp pull_request_issue?(_issue), do: false
 
@@ -266,6 +335,30 @@ defmodule Jido.Connect.GitHub.Webhook do
   end
 
   defp normalize_pull_request_ref(_pull_request), do: nil
+
+  defp normalize_pull_request_branch(branch) when is_map(branch) do
+    Data.compact(%{
+      label: Data.get(branch, "label"),
+      ref: Data.get(branch, "ref"),
+      sha: Data.get(branch, "sha"),
+      user: normalize_actor(Data.get(branch, "user") || %{}),
+      repo: normalize_repository(Data.get(branch, "repo") || %{})
+    })
+  end
+
+  defp normalize_pull_request_branch(_branch), do: nil
+
+  defp pull_request_action("closed", pull_request) do
+    if pull_request_merged?(pull_request), do: "merged", else: "closed"
+  end
+
+  defp pull_request_action(action, _pull_request), do: action
+
+  defp pull_request_merged?(pull_request) when is_map(pull_request) do
+    Data.get(pull_request, "merged") == true or not is_nil(Data.get(pull_request, "merged_at"))
+  end
+
+  defp pull_request_merged?(_pull_request), do: false
 
   defp normalize_actors(actors) when is_list(actors), do: Enum.map(actors, &normalize_actor/1)
   defp normalize_actors(_actors), do: []
