@@ -51,6 +51,42 @@ defmodule Jido.Connect.GitHubTest do
        ]}
     end
 
+    def search_issues(
+          %{
+            q: "crash repo:org/repo is:pr state:open author:octocat assignee:mona label:bug",
+            sort: "updated",
+            direction: "desc",
+            page: 2,
+            per_page: 10
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         total_count: 2,
+         results: [
+           %{
+             type: :issue,
+             number: 5,
+             url: "https://github.test/issues/5",
+             title: "Crash",
+             state: "open",
+             labels: [%{name: "bug"}],
+             comments: 3
+           },
+           %{
+             type: :pull_request,
+             number: 6,
+             url: "https://github.test/pull/6",
+             title: "Fix crash",
+             state: "open",
+             user: %{login: "octocat"},
+             updated_at: "2026-04-29T10:00:00Z"
+           }
+         ]
+       }}
+    end
+
     def get_pull_request("org/repo", 4, "token") do
       {:ok,
        %{
@@ -265,6 +301,18 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.issue.search",
+              resource: :issue,
+              verb: :search,
+              mutation?: false,
+              auth_profiles: [:user, :installation],
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.issue.search")
+
+    assert {:ok,
+            %{
               id: "github.workflow_run.list",
               resource: :workflow_run,
               verb: :list,
@@ -389,6 +437,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
+             Jido.Connect.GitHub.Actions.SearchIssues,
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
              Jido.Connect.GitHub.Actions.DispatchWorkflow,
              Jido.Connect.GitHub.Actions.GetPullRequest,
@@ -414,6 +463,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.ListIssues,
                  Jido.Connect.GitHub.Actions.CreateIssue,
                  Jido.Connect.GitHub.Actions.ListPullRequests,
+                 Jido.Connect.GitHub.Actions.SearchIssues,
                  Jido.Connect.GitHub.Actions.ListWorkflowRuns,
                  Jido.Connect.GitHub.Actions.DispatchWorkflow,
                  Jido.Connect.GitHub.Actions.GetPullRequest,
@@ -439,6 +489,9 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:module, Jido.Connect.GitHub.Actions.ListPullRequests} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListPullRequests)
+
+    assert {:module, Jido.Connect.GitHub.Actions.SearchIssues} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.SearchIssues)
 
     assert {:module, Jido.Connect.GitHub.Actions.ListWorkflowRuns} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListWorkflowRuns)
@@ -470,6 +523,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListPullRequests, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.SearchIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListWorkflowRuns, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.DispatchWorkflow, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.GetPullRequest, :run, 2)
@@ -574,6 +628,36 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.ListPullRequests.name() == "github_pull_request_list"
+  end
+
+  test "generated issue search action metadata tracks query helper and pagination fields" do
+    projection = Jido.Connect.GitHub.Actions.SearchIssues.jido_connect_projection()
+
+    assert projection.action_id == "github.issue.search"
+    assert projection.label == "Search issues and pull requests"
+
+    assert Enum.map(projection.input, & &1.name) == [
+             :repo,
+             :query,
+             :type,
+             :state,
+             :author,
+             :assignee,
+             :label,
+             :sort,
+             :direction,
+             :page,
+             :per_page
+           ]
+
+    assert Enum.map(projection.output, & &1.name) == [:results, :total_count]
+    assert projection.risk == :read
+    assert projection.resource == :issue
+    assert projection.verb == :search
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.SearchIssues.name() == "github_issue_search"
   end
 
   test "generated workflow run list action metadata tracks filter fields" do
@@ -1021,6 +1105,36 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "generated issue search action delegates with query helpers and pagination" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              total_count: 2,
+              results: [
+                %{type: :issue, number: 5, title: "Crash", labels: [%{name: "bug"}]},
+                %{type: :pull_request, number: 6, title: "Fix crash", user: %{login: "octocat"}}
+              ]
+            }} =
+             Jido.Connect.GitHub.Actions.SearchIssues.run(
+               %{
+                 repo: "org/repo",
+                 query: "crash",
+                 type: "pull_request",
+                 state: "open",
+                 author: "octocat",
+                 assignee: "mona",
+                 label: "bug",
+                 page: 2,
+                 per_page: 10
+               },
+               %{
+                 integration_context: context,
+                 credential_lease: lease
+               }
+             )
+  end
+
   test "generated workflow dispatch action delegates to integration invoke runtime" do
     {context, lease} = context_and_lease()
 
@@ -1076,6 +1190,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
+             Jido.Connect.GitHub.Actions.SearchIssues,
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
              Jido.Connect.GitHub.Actions.DispatchWorkflow,
              Jido.Connect.GitHub.Actions.GetPullRequest,

@@ -173,6 +173,80 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "search issues sends expected request and normalizes issues and pull requests" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/search/issues"
+
+      assert %{
+               "order" => "desc",
+               "page" => "2",
+               "per_page" => "10",
+               "q" => "crash repo:org/repo is:pr state:open",
+               "sort" => "updated"
+             } = URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        total_count: 2,
+        items: [
+          %{
+            number: 5,
+            html_url: "https://github.test/issues/5",
+            title: "Crash",
+            state: "open",
+            user: %{login: "octocat", id: 1, type: "User"},
+            labels: [%{name: "bug", color: "d73a4a"}],
+            comments: 3,
+            created_at: "2026-04-29T09:00:00Z",
+            updated_at: "2026-04-29T10:00:00Z"
+          },
+          %{
+            number: 6,
+            html_url: "https://github.test/pull/6",
+            title: "Fix crash",
+            state: "open",
+            pull_request: %{url: "https://api.github.test/pulls/6"},
+            comments: 1
+          }
+        ]
+      })
+    end)
+
+    assert {:ok,
+            %{
+              total_count: 2,
+              results: [
+                %{
+                  type: :issue,
+                  number: 5,
+                  url: "https://github.test/issues/5",
+                  user: %{login: "octocat"},
+                  labels: [%{name: "bug"}],
+                  comments: 3
+                },
+                %{
+                  type: :pull_request,
+                  number: 6,
+                  url: "https://github.test/pull/6",
+                  title: "Fix crash",
+                  state: "open"
+                }
+              ]
+            }} =
+             Client.search_issues(
+               %{
+                 q: "crash repo:org/repo is:pr state:open",
+                 sort: "updated",
+                 direction: "desc",
+                 page: 2,
+                 per_page: 10
+               },
+               "token"
+             )
+  end
+
   test "list workflow runs sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

@@ -44,6 +44,14 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_pull_request_list_response()
   end
 
+  def search_issues(%{q: query} = params, access_token)
+      when is_binary(query) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/search/issues", params: search_issue_params(params))
+    |> handle_search_issue_response()
+  end
+
   def list_workflow_runs(%{repo: repo} = params, access_token)
       when is_binary(repo) and is_binary(access_token) do
     {url, request_params} = workflow_run_list_request(repo, params)
@@ -242,6 +250,28 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_pull_request_list_response(response), do: handle_error_response(response)
 
+  defp handle_search_issue_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    case Data.get(body, "items") do
+      items when is_list(items) ->
+        {:ok,
+         %{
+           results: Enum.map(items, &normalize_search_issue/1),
+           total_count: Data.get(body, "total_count")
+         }}
+
+      _other ->
+        invalid_success_response("GitHub issue search response was invalid", body)
+    end
+  end
+
+  defp handle_search_issue_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub issue search response was invalid", body)
+  end
+
+  defp handle_search_issue_response(response), do: handle_error_response(response)
+
   defp handle_pull_request_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     {:ok, normalize_pull_request_details(body)}
@@ -377,6 +407,26 @@ defmodule Jido.Connect.GitHub.Client do
       base: normalize_pull_request_ref(Data.get(pull_request, "base")),
       updated_at: Data.get(pull_request, "updated_at")
     }
+  end
+
+  defp normalize_search_issue(issue) when is_map(issue) do
+    %{
+      type: search_issue_type(issue),
+      number: Data.get(issue, "number"),
+      url: Data.get(issue, "html_url") || Data.get(issue, "url"),
+      title: Data.get(issue, "title"),
+      state: Data.get(issue, "state"),
+      user: normalize_user(Data.get(issue, "user")),
+      labels: normalize_labels(Data.get(issue, "labels")),
+      comments: Data.get(issue, "comments"),
+      created_at: Data.get(issue, "created_at"),
+      updated_at: Data.get(issue, "updated_at")
+    }
+    |> Data.compact()
+  end
+
+  defp search_issue_type(issue) do
+    if Data.get(issue, "pull_request"), do: :pull_request, else: :issue
   end
 
   defp normalize_pull_request_details(pull_request) when is_map(pull_request) do
@@ -544,6 +594,17 @@ defmodule Jido.Connect.GitHub.Client do
       base: Map.get(params, :base),
       sort: Map.get(params, :sort, "created"),
       direction: Map.get(params, :direction, "desc"),
+      per_page: Map.get(params, :per_page, 30),
+      page: Map.get(params, :page, 1)
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp search_issue_params(params) do
+    [
+      q: Map.fetch!(params, :q),
+      sort: Map.get(params, :sort, "updated"),
+      order: Map.get(params, :direction, "desc"),
       per_page: Map.get(params, :per_page, 30),
       page: Map.get(params, :page, 1)
     ]
