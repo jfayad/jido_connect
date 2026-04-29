@@ -173,6 +173,81 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "get pull request sends expected requests" do
+    parent = self()
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      send(parent, {:request, conn.method, conn.request_path})
+
+      case {conn.method, conn.request_path} do
+        {"GET", "/repos/org/repo/pulls/4"} ->
+          assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+          Req.Test.json(conn, %{
+            number: 4,
+            html_url: "https://github.test/pull/4",
+            title: "Feature",
+            state: "open",
+            body: "Implements the feature",
+            draft: false,
+            merged: false,
+            mergeable: true,
+            mergeable_state: "clean",
+            merge_commit_sha: "abc123",
+            commits: 3,
+            additions: 20,
+            deletions: 5,
+            changed_files: 2,
+            head: %{label: "octo:feature", ref: "feature", sha: "abc"},
+            base: %{label: "org:main", ref: "main", sha: "def"},
+            user: %{
+              login: "octocat",
+              id: 1,
+              type: "User",
+              html_url: "https://github.test/octocat"
+            },
+            labels: [%{name: "enhancement", color: "84b6eb"}]
+          })
+
+        {"GET", "/repos/org/repo/issues/4"} ->
+          assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+          Req.Test.json(conn, %{
+            number: 4,
+            html_url: "https://github.test/issues/4",
+            title: "Feature",
+            state: "open",
+            labels: [%{name: "enhancement", color: "84b6eb"}],
+            assignees: [
+              %{login: "octocat", id: 1, type: "User", html_url: "https://github.test/octocat"}
+            ],
+            milestone: %{number: 1, title: "v1", state: "open"}
+          })
+      end
+    end)
+
+    assert {:ok,
+            %{
+              number: 4,
+              url: "https://github.test/pull/4",
+              mergeable: true,
+              mergeable_state: "clean",
+              head: %{ref: "feature"},
+              base: %{ref: "main"},
+              user: %{login: "octocat"},
+              labels: [%{name: "enhancement"}],
+              issue: %{
+                number: 4,
+                labels: [%{name: "enhancement"}],
+                assignees: [%{login: "octocat"}],
+                milestone: %{title: "v1"}
+              }
+            }} = Client.get_pull_request("org/repo", 4, "token")
+
+    assert_received {:request, "GET", "/repos/org/repo/pulls/4"}
+    assert_received {:request, "GET", "/repos/org/repo/issues/4"}
+  end
+
   test "create issue sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

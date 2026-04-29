@@ -44,6 +44,22 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_pull_request_list_response()
   end
 
+  def get_pull_request(repo, pull_number, access_token)
+      when is_binary(repo) and is_integer(pull_number) and is_binary(access_token) do
+    with {:ok, pull_request} <-
+           access_token
+           |> request()
+           |> Req.get(url: "/repos/#{repo}/pulls/#{pull_number}")
+           |> handle_pull_request_response(),
+         {:ok, issue} <-
+           access_token
+           |> request()
+           |> Req.get(url: "/repos/#{repo}/issues/#{pull_number}")
+           |> handle_issue_context_response() do
+      {:ok, Map.put(pull_request, :issue, issue)}
+    end
+  end
+
   def create_issue(repo, attrs, access_token) when is_binary(access_token) do
     access_token
     |> request()
@@ -185,6 +201,18 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_pull_request_list_response(response), do: handle_error_response(response)
 
+  defp handle_pull_request_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_pull_request_details(body)}
+  end
+
+  defp handle_pull_request_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub pull request response was invalid", body)
+  end
+
+  defp handle_pull_request_response(response), do: handle_error_response(response)
+
   defp handle_issue_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     {:ok, normalize_issue(body)}
@@ -217,6 +245,18 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_map_response(response), do: handle_error_response(response)
+
+  defp handle_issue_context_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_issue_context(body)}
+  end
+
+  defp handle_issue_context_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub issue context response was invalid", body)
+  end
+
+  defp handle_issue_context_response(response), do: handle_error_response(response)
 
   defp handle_error_response(response),
     do: Http.provider_error(response, provider: :github, message: "GitHub API request failed")
@@ -253,6 +293,31 @@ defmodule Jido.Connect.GitHub.Client do
       base: normalize_pull_request_ref(Data.get(pull_request, "base")),
       updated_at: Data.get(pull_request, "updated_at")
     }
+  end
+
+  defp normalize_pull_request_details(pull_request) when is_map(pull_request) do
+    %{
+      number: Data.get(pull_request, "number"),
+      url: Data.get(pull_request, "html_url") || Data.get(pull_request, "url"),
+      title: Data.get(pull_request, "title"),
+      state: Data.get(pull_request, "state"),
+      body: Data.get(pull_request, "body"),
+      draft: Data.get(pull_request, "draft"),
+      merged: Data.get(pull_request, "merged"),
+      mergeable: Data.get(pull_request, "mergeable"),
+      mergeable_state: Data.get(pull_request, "mergeable_state"),
+      merge_commit_sha: Data.get(pull_request, "merge_commit_sha"),
+      commits: Data.get(pull_request, "commits"),
+      additions: Data.get(pull_request, "additions"),
+      deletions: Data.get(pull_request, "deletions"),
+      changed_files: Data.get(pull_request, "changed_files"),
+      head: normalize_pull_request_ref(Data.get(pull_request, "head")),
+      base: normalize_pull_request_ref(Data.get(pull_request, "base")),
+      user: normalize_user(Data.get(pull_request, "user")),
+      labels: normalize_labels(Data.get(pull_request, "labels")),
+      updated_at: Data.get(pull_request, "updated_at")
+    }
+    |> Data.compact()
   end
 
   defp normalize_comment(comment) when is_map(comment) do
@@ -298,6 +363,60 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp normalize_pull_request_ref_repo(_repo), do: nil
+
+  defp normalize_issue_context(issue) when is_map(issue) do
+    %{
+      number: Data.get(issue, "number"),
+      url: Data.get(issue, "html_url") || Data.get(issue, "url"),
+      title: Data.get(issue, "title"),
+      state: Data.get(issue, "state"),
+      labels: normalize_labels(Data.get(issue, "labels")),
+      assignees: normalize_users(Data.get(issue, "assignees")),
+      milestone: normalize_milestone(Data.get(issue, "milestone"))
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_labels(labels) when is_list(labels) do
+    Enum.map(labels, fn label ->
+      %{
+        name: Data.get(label, "name"),
+        color: Data.get(label, "color"),
+        description: Data.get(label, "description")
+      }
+      |> Data.compact()
+    end)
+  end
+
+  defp normalize_labels(_labels), do: []
+
+  defp normalize_users(users) when is_list(users), do: Enum.map(users, &normalize_user/1)
+  defp normalize_users(_users), do: []
+
+  defp normalize_user(user) when is_map(user) do
+    %{
+      login: Data.get(user, "login"),
+      id: Data.get(user, "id"),
+      type: Data.get(user, "type"),
+      url: Data.get(user, "html_url") || Data.get(user, "url")
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_user(_user), do: nil
+
+  defp normalize_milestone(milestone) when is_map(milestone) do
+    %{
+      number: Data.get(milestone, "number"),
+      title: Data.get(milestone, "title"),
+      state: Data.get(milestone, "state"),
+      description: Data.get(milestone, "description"),
+      due_on: Data.get(milestone, "due_on")
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_milestone(_milestone), do: nil
 
   defp repository_list_params(params) do
     [

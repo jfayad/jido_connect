@@ -97,6 +97,32 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :get_pull_request do
+      id "github.pull_request.get"
+      resource :pull_request
+      verb :get
+      data_classification :workspace_content
+      label "Get pull request"
+      description "Fetch pull request details, refs, mergeability metadata, and issue context."
+      handler Jido.Connect.GitHub.Handlers.Actions.GetPullRequest
+      effect :read
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :pull_number, :integer, required?: true
+      end
+
+      output do
+        field :pull_request, :map
+      end
+    end
+
     action :update_issue do
       id "github.issue.update"
       resource :issue
