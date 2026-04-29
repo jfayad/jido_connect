@@ -3,6 +3,24 @@ defmodule Jido.Connect.GitHubTest do
   alias Jido.Connect
 
   defmodule FakeGitHubClient do
+    def list_repositories(%{auth_profile: :installation, page: 2, per_page: 10}, "token") do
+      {:ok,
+       %{
+         total_count: 1,
+         repositories: [
+           %{
+             id: 10,
+             name: "repo",
+             full_name: "org/repo",
+             owner: %{login: "org", type: "Organization"},
+             private: true,
+             default_branch: "main",
+             url: "https://github.test/org/repo"
+           }
+         ]
+       }}
+    end
+
     def list_repositories(%{page: 2, per_page: 10}, "token") do
       {:ok,
        %{
@@ -274,6 +292,17 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.installation_repository.list",
+              resource: :repository,
+              verb: :list,
+              mutation?: false,
+              auth_profiles: [:installation],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.installation_repository.list")
+
+    assert {:ok,
+            %{
               id: "github.issue.list",
               resource: :issue,
               verb: :list,
@@ -434,6 +463,7 @@ defmodule Jido.Connect.GitHubTest do
 
     assert Jido.Connect.GitHub.jido_action_modules() == [
              Jido.Connect.GitHub.Actions.ListRepositories,
+             Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
@@ -460,6 +490,7 @@ defmodule Jido.Connect.GitHubTest do
              generated_modules: %{
                actions: [
                  Jido.Connect.GitHub.Actions.ListRepositories,
+                 Jido.Connect.GitHub.Actions.ListInstallationRepositories,
                  Jido.Connect.GitHub.Actions.ListIssues,
                  Jido.Connect.GitHub.Actions.CreateIssue,
                  Jido.Connect.GitHub.Actions.ListPullRequests,
@@ -483,6 +514,9 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:module, Jido.Connect.GitHub.Actions.ListRepositories} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListRepositories)
+
+    assert {:module, Jido.Connect.GitHub.Actions.ListInstallationRepositories} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListInstallationRepositories)
 
     assert {:module, Jido.Connect.GitHub.Actions.CreateIssueComment} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.CreateIssueComment)
@@ -522,6 +556,7 @@ defmodule Jido.Connect.GitHubTest do
 
     assert function_exported?(Jido.Connect.GitHub.Actions.ListIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.ListInstallationRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListPullRequests, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.SearchIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListWorkflowRuns, :run, 2)
@@ -832,6 +867,28 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "invokes GitHub installation repository action through injected client and lease" do
+    {context, lease} =
+      context_and_lease(
+        profile: :installation,
+        lease_metadata: %{permissions: %{"metadata" => "read", "issues" => "write"}}
+      )
+
+    assert {:ok,
+            %{
+              total_count: 1,
+              permissions: %{"metadata" => "read", "issues" => "write"},
+              repositories: [%{id: 10, full_name: "org/repo", owner: %{login: "org"}}]
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.installation_repository.list",
+               %{page: 2, per_page: 10},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   test "invokes GitHub update issue action through injected client and lease" do
     {context, lease} = context_and_lease()
 
@@ -1080,6 +1137,28 @@ defmodule Jido.Connect.GitHubTest do
              })
   end
 
+  test "generated installation repository action delegates to integration invoke runtime" do
+    {context, lease} =
+      context_and_lease(
+        profile: :installation,
+        lease_metadata: %{permissions: %{"metadata" => "read", "issues" => "write"}}
+      )
+
+    assert {:ok,
+            %{
+              total_count: 1,
+              permissions: %{"metadata" => "read", "issues" => "write"},
+              repositories: [%{id: 10, full_name: "org/repo", owner: %{login: "org"}}]
+            }} =
+             Jido.Connect.GitHub.Actions.ListInstallationRepositories.run(
+               %{page: 2, per_page: 10},
+               %{
+                 integration_context: context,
+                 credential_lease: lease
+               }
+             )
+  end
+
   test "generated workflow run action delegates to integration invoke runtime" do
     {context, lease} = context_and_lease()
 
@@ -1187,6 +1266,7 @@ defmodule Jido.Connect.GitHubTest do
 
     assert spec.actions == [
              Jido.Connect.GitHub.Actions.ListRepositories,
+             Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
@@ -1280,6 +1360,7 @@ defmodule Jido.Connect.GitHubTest do
   defp context_and_lease(opts \\ []) do
     profile = Keyword.get(opts, :profile, :user)
     scopes = Keyword.get(opts, :scopes, default_scopes(profile))
+    lease_metadata = Keyword.get(opts, :lease_metadata, %{})
 
     connection =
       Connect.Connection.new!(%{
@@ -1304,7 +1385,9 @@ defmodule Jido.Connect.GitHubTest do
       Connect.CredentialLease.new!(%{
         connection_id: "conn_1",
         expires_at: DateTime.add(DateTime.utc_now(), 300, :second),
-        fields: %{access_token: "token", github_client: FakeGitHubClient}
+        fields: %{access_token: "token", github_client: FakeGitHubClient},
+        metadata: lease_metadata,
+        profile: profile
       })
 
     {context, lease}
