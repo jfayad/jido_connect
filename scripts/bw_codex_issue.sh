@@ -15,6 +15,8 @@ Options:
                             Stops on the first failure so the checkout can be inspected.
   --max-issues N            Maximum issues to process in --loop mode. Default: unlimited.
   --loop-delay SECONDS      Sleep between loop iterations. Default: 0.
+  --log-file FILE           Write a timestamped transcript. Default: $BW_CODEX_LOG_FILE
+                            or <repo-git-dir>/bw_codex_issue.log.
   --issue ID                Run a specific Beadwork issue instead of selecting one.
   --model MODEL             Codex model to use. Default: $CODEX_MODEL or gpt-5.5.
   --effort EFFORT           Codex reasoning effort: low, medium, high, xhigh.
@@ -64,6 +66,7 @@ Command customization:
   CODEX_EFFORT              Default reasoning effort when --effort is not provided.
   CODEX_REASONING_EFFORT    Alternate env name for default reasoning effort.
   BW_CODEX_ORDER            Default issue order when --order is not provided.
+  BW_CODEX_LOG_FILE         Default log file. Keep this outside tracked paths.
   BW_CODEX_FORMAT_CMD       Default formatter command when --format-cmd is not provided.
   CODEX_EXTRA_ARGS          Extra shell words appended to the default codex exec command.
   CODEX_COMMAND_TEMPLATE    Full command template. If set, it is evaluated with the prompt
@@ -85,17 +88,29 @@ USAGE
 }
 
 log() {
-  printf '==> %s\n' "$*" >&2
+  local line
+  line="$(printf '[%s] %s' "$(date '+%Y-%m-%d %H:%M:%S')" "$*")"
+  printf '==> %s\n' "$line" >&2
+
+  if [[ -n "${LOG_FILE:-}" ]]; then
+    printf '%s\n' "$line" >>"${LOG_FILE}"
+  fi
 }
 
 die() {
-  printf 'error: %s\n' "$*" >&2
+  log "ERROR: $*"
   exit 1
 }
 
 quote_command() {
   printf '%q ' "$@"
   printf '\n'
+}
+
+quoted_command() {
+  local quoted
+  quoted="$(quote_command "$@")"
+  printf '%s' "${quoted% }"
 }
 
 validate_effort() {
@@ -125,12 +140,17 @@ validate_non_negative_integer() {
   [[ "${value}" =~ ^[0-9]+$ ]] || die "${label} must be a non-negative integer"
 }
 
+set_phase() {
+  CURRENT_PHASE="$1"
+  log "Phase: ${CURRENT_PHASE}"
+}
+
 run() {
   if [[ "${DRY_RUN}" == "true" ]]; then
-    printf '+ ' >&2
-    quote_command "$@" >&2
+    log "+ $(quoted_command "$@")"
   else
-    "$@"
+    log "Running: $(quoted_command "$@")"
+    "$@" 2>&1 | tee -a "${LOG_FILE}"
   fi
 }
 
@@ -146,9 +166,9 @@ run_script_hook() {
   log "Running script hook: ${label}"
 
   if [[ "${DRY_RUN}" == "true" ]]; then
-    printf '+ (cd %q && %q)\n' "${workdir}" "${script}" >&2
+    log "+ (cd $(printf '%q' "${workdir}") && $(printf '%q' "${script}"))"
   else
-    (cd "${workdir}" && "${script}")
+    (cd "${workdir}" && "${script}") 2>&1 | tee -a "${LOG_FILE}"
   fi
 }
 
@@ -162,9 +182,9 @@ run_shell_hook() {
   log "Running trusted raw command hook: ${label}"
 
   if [[ "${DRY_RUN}" == "true" ]]; then
-    printf '+ (cd %q && %s)\n' "${workdir}" "${command}" >&2
+    log "+ (cd $(printf '%q' "${workdir}") && ${command})"
   else
-    (cd "${workdir}" && eval "${command}")
+    (cd "${workdir}" && eval "${command}") 2>&1 | tee -a "${LOG_FILE}"
   fi
 }
 
@@ -174,6 +194,7 @@ run_hook() {
   local command="$3"
   local workdir="$4"
 
+  set_phase "hook:${label}"
   run_script_hook "${label}" "${script}" "${workdir}"
   run_shell_hook "${label}" "${command}" "${workdir}"
 }
@@ -232,6 +253,29 @@ record_dirty_baseline() {
 cleanup_baseline() {
   if [[ -n "${DIRTY_BASELINE_FILE}" && -f "${DIRTY_BASELINE_FILE}" ]]; then
     rm -f "${DIRTY_BASELINE_FILE}"
+  fi
+}
+
+on_error() {
+  local status="$1"
+  local line="$2"
+  local command="$3"
+
+  log "FAILED phase=${CURRENT_PHASE:-unknown} status=${status} line=${line}"
+  log "FAILED command: ${command}"
+
+  if [[ -n "${ISSUE_ID:-}" ]]; then
+    log "FAILED issue: ${ISSUE_ID}"
+  fi
+
+  if [[ -n "${WORKDIR:-}" && -d "${WORKDIR}" ]]; then
+    log "FAILED workdir: ${WORKDIR}"
+    log "FAILED git status:"
+    if [[ -n "${LOG_FILE:-}" ]]; then
+      git -C "${WORKDIR}" status --short 2>&1 | tee -a "${LOG_FILE}" >&2 || true
+    else
+      git -C "${WORKDIR}" status --short >&2 || true
+    fi
   fi
 }
 
@@ -380,36 +424,37 @@ run_codex() {
   local prompt_file="$1"
   local workdir="$2"
 
+  set_phase "codex:${ISSUE_ID}"
   log "Running Codex for ${ISSUE_ID}"
+  log "Prompt file: ${prompt_file}"
 
   if [[ "${DRY_RUN}" == "true" ]]; then
     if [[ -n "${CODEX_COMMAND_TEMPLATE:-}" ]]; then
-      printf '+ (cd %q && %s < %q)\n' "${workdir}" "${CODEX_COMMAND_TEMPLATE}" "${prompt_file}" >&2
+      log "+ (cd $(printf '%q' "${workdir}") && ${CODEX_COMMAND_TEMPLATE} < $(printf '%q' "${prompt_file}"))"
     else
-      {
-        printf '+ codex --ask-for-approval never exec --cd %q --model %q -c %q --sandbox %q' \
-          "${workdir}" \
-          "${CODEX_MODEL_VALUE}" \
-          "model_reasoning_effort=\"${CODEX_EFFORT_VALUE}\"" \
-          "${CODEX_SANDBOX}"
+      local dry_command=(
+        codex
+        --ask-for-approval never
+        exec
+        --cd "${workdir}"
+        --model "${CODEX_MODEL_VALUE}"
+        -c "model_reasoning_effort=\"${CODEX_EFFORT_VALUE}\""
+        --sandbox "${CODEX_SANDBOX}"
+      )
 
-        if [[ -n "${CODEX_PROFILE}" ]]; then
-          printf ' --profile %q' "${CODEX_PROFILE}"
-        fi
+      if [[ -n "${CODEX_PROFILE}" ]]; then
+        dry_command+=(--profile "${CODEX_PROFILE}")
+      fi
 
-        if [[ -n "${CODEX_EXTRA_ARGS:-}" ]]; then
-          printf ' %s' "${CODEX_EXTRA_ARGS}"
-        fi
-
-        printf ' - < %q\n' "${prompt_file}"
-      } >&2
+      log "+ $(quoted_command "${dry_command[@]}") ${CODEX_EXTRA_ARGS:-} - < $(printf '%q' "${prompt_file}")"
     fi
 
     return 0
   fi
 
   if [[ -n "${CODEX_COMMAND_TEMPLATE:-}" ]]; then
-    (cd "${workdir}" && eval "${CODEX_COMMAND_TEMPLATE}" <"${prompt_file}")
+    log "Running Codex template command"
+    (cd "${workdir}" && eval "${CODEX_COMMAND_TEMPLATE}" <"${prompt_file}") 2>&1 | tee -a "${LOG_FILE}"
     return $?
   fi
 
@@ -436,13 +481,15 @@ run_codex() {
   fi
 
   command+=(-)
-  "${command[@]}" <"${prompt_file}"
+  log "Running: $(quoted_command "${command[@]}") < ${prompt_file}"
+  "${command[@]}" <"${prompt_file}" 2>&1 | tee -a "${LOG_FILE}"
 }
 
 DRY_RUN=false
 LOOP=false
 MAX_ISSUES=0
 LOOP_DELAY=0
+LOG_FILE="${BW_CODEX_LOG_FILE:-}"
 ISSUE_ID=""
 CODEX_MODEL_VALUE="${CODEX_MODEL:-gpt-5.5}"
 CODEX_EFFORT_VALUE="${CODEX_EFFORT:-${CODEX_REASONING_EFFORT:-low}}"
@@ -466,6 +513,7 @@ FORMAT=true
 FORMAT_CMD="${BW_CODEX_FORMAT_CMD:-mix format}"
 VERIFY_CMD="${BW_CODEX_VERIFY_CMD:-mix quality}"
 CUSTOM_PROMPT_FILE=""
+CURRENT_PHASE="startup"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -485,6 +533,11 @@ while [[ $# -gt 0 ]]; do
     --loop-delay)
       LOOP_DELAY="${2:-}"
       [[ -n "${LOOP_DELAY}" ]] || die "--loop-delay requires a value"
+      shift 2
+      ;;
+    --log-file)
+      LOG_FILE="${2:-}"
+      [[ -n "${LOG_FILE}" ]] || die "--log-file requires a file"
       shift 2
       ;;
     --issue)
@@ -632,11 +685,26 @@ if [[ "${LOOP}" != "true" && "${LOOP_DELAY}" != "0" ]]; then
 fi
 
 trap cleanup_baseline EXIT
+trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 initialize_repo() {
+  set_phase "initialize"
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   BASE_REF="${BASE_REF:-HEAD}"
   WORKTREE_ROOT="${WORKTREE_ROOT:-$(dirname "${REPO_ROOT}")/jido_connect_worktrees}"
+
+  if [[ -z "${LOG_FILE}" ]]; then
+    LOG_FILE="$(git -C "${REPO_ROOT}" rev-parse --git-path bw_codex_issue.log)"
+  fi
+
+  mkdir -p "$(dirname "${LOG_FILE}")"
+  touch "${LOG_FILE}"
+
+  log "Log file: ${LOG_FILE}"
+  log "Repository: ${REPO_ROOT}"
+  log "Mode: $([[ "${LOOP}" == "true" ]] && printf 'loop' || printf 'single')"
+  log "Model: ${CODEX_MODEL_VALUE} (model_reasoning_effort=${CODEX_EFFORT_VALUE})"
+  log "Queue order: ${QUEUE_ORDER}"
 
   log "Priming Beadwork"
   bw prime >/dev/null
@@ -659,6 +727,7 @@ run_one_issue() {
 
   cleanup_baseline
   DIRTY_BASELINE_FILE=""
+  set_phase "load-issue:${selected_issue_id}"
 
   ISSUE_ID="${selected_issue_id}"
   ISSUE_JSON="$(bw show "${ISSUE_ID}" --json)"
@@ -704,6 +773,7 @@ run_one_issue() {
   fi
 
   if [[ "${USE_WORKTREE}" == "true" ]]; then
+    set_phase "worktree:${ISSUE_ID}"
     if [[ -e "${WORKDIR}" && "${FRESH_WORKTREE}" == "true" ]]; then
       die "worktree path already exists: ${WORKDIR}. Remove it or omit --fresh-worktree."
     fi
@@ -721,6 +791,7 @@ run_one_issue() {
       git_clean_or_allowed "${WORKDIR}"
     fi
   else
+    set_phase "checkout:${ISSUE_ID}"
     if [[ "${DRY_RUN}" == "true" && -n "$(git -C "${WORKDIR}" status --porcelain)" ]]; then
       log "Workdir is dirty; continuing because this is a dry run."
     else
@@ -745,6 +816,7 @@ run_one_issue() {
     fi
   fi
 
+  set_phase "start:${ISSUE_ID}"
   run_hook "prepare" "${BW_CODEX_PREPARE_SCRIPT:-}" "${BW_CODEX_PREPARE_CMD:-}" "${WORKDIR}"
 
   if ! start_issue_if_needed; then
@@ -771,10 +843,12 @@ run_one_issue() {
   run_hook "review" "${BW_CODEX_REVIEW_SCRIPT:-}" "${BW_CODEX_REVIEW_CMD:-}" "${WORKDIR}"
 
   if [[ "${FORMAT}" == "true" ]]; then
+    set_phase "format:${ISSUE_ID}"
     run_shell_hook "format" "${FORMAT_CMD}" "${WORKDIR}"
   fi
 
   if [[ "${VERIFY}" == "true" ]]; then
+    set_phase "verify:${ISSUE_ID}"
     run_shell_hook "verify" "${VERIFY_CMD}" "${WORKDIR}"
   fi
 
@@ -795,6 +869,7 @@ run_one_issue() {
     die "Codex produced no working-tree changes."
   fi
 
+  set_phase "commit:${ISSUE_ID}"
   stage_changes "${WORKDIR}"
   run git -C "${WORKDIR}" commit -m "${ISSUE_ID}: ${ISSUE_TITLE}" -m "Implemented from Beadwork issue ${ISSUE_ID}."
 
@@ -806,6 +881,7 @@ run_one_issue() {
 
   run_hook "post-commit" "${BW_CODEX_POST_COMMIT_SCRIPT:-}" "${BW_CODEX_POST_COMMIT_CMD:-}" "${WORKDIR}"
 
+  set_phase "finish:${ISSUE_ID}"
   finish_issue "${commit_sha}"
   cleanup_baseline
 
@@ -816,6 +892,7 @@ run_single_issue() {
   local selected_issue_id="${ISSUE_ID}"
 
   if [[ -z "${selected_issue_id}" ]]; then
+    set_phase "select"
     if ! selected_issue_id="$(select_issue)"; then
       die "no eligible Beadwork issue found"
     fi
@@ -840,6 +917,7 @@ run_issue_loop() {
       break
     fi
 
+    set_phase "select-loop"
     if ! selected_issue_id="$(select_issue)"; then
       log "No eligible Beadwork issues remain; stopping loop."
       break
