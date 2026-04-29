@@ -37,6 +37,79 @@ defmodule Jido.Connect.GitHub.ClientTest do
              Client.list_issues("org/repo", "open", "token")
   end
 
+  test "list repositories sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/installation/repositories"
+
+      assert %{"page" => "2", "per_page" => "50"} = URI.decode_query(conn.query_string)
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        total_count: 1,
+        repositories: [
+          %{
+            id: 10,
+            name: "repo",
+            full_name: "org/repo",
+            private: true,
+            default_branch: "main",
+            html_url: "https://github.test/org/repo",
+            owner: %{
+              login: "org",
+              id: 7,
+              type: "Organization",
+              html_url: "https://github.test/org"
+            }
+          }
+        ]
+      })
+    end)
+
+    assert {:ok,
+            %{
+              total_count: 1,
+              repositories: [
+                %{
+                  id: 10,
+                  full_name: "org/repo",
+                  owner: %{login: "org"},
+                  url: "https://github.test/org/repo"
+                }
+              ]
+            }} =
+             Client.list_repositories(
+               %{auth_profile: :installation, page: 2, per_page: 50},
+               "token"
+             )
+  end
+
+  test "list repositories uses user endpoint for OAuth connections" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/user/repos"
+      assert %{"page" => "1", "per_page" => "30"} = URI.decode_query(conn.query_string)
+
+      Req.Test.json(conn, [
+        %{
+          id: 11,
+          name: "repo",
+          full_name: "octo/repo",
+          private: false,
+          default_branch: "main",
+          html_url: "https://github.test/octo/repo",
+          owner: %{login: "octo", id: 8, type: "User", html_url: "https://github.test/octo"}
+        }
+      ])
+    end)
+
+    assert {:ok,
+            %{
+              total_count: 1,
+              repositories: [%{id: 11, full_name: "octo/repo", owner: %{login: "octo"}}]
+            }} = Client.list_repositories(%{page: 1, per_page: 30}, "token")
+  end
+
   test "create issue sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"
@@ -152,5 +225,22 @@ defmodule Jido.Connect.GitHub.ClientTest do
               reason: :invalid_response,
               details: %{body: %{"unexpected" => true}}
             }} = Client.list_issues("org/repo", "open", "token")
+  end
+
+  test "normalizes malformed repository list responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      Req.Test.json(conn, %{unexpected: true})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :invalid_response,
+              details: %{body: %{"unexpected" => true}}
+            }} =
+             Client.list_repositories(
+               %{auth_profile: :installation, page: 1, per_page: 30},
+               "token"
+             )
   end
 end

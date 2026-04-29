@@ -21,6 +21,18 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_list_response()
   end
 
+  def list_repositories(params, access_token) when is_map(params) and is_binary(access_token) do
+    {url, response_handler} = repository_list_request(params)
+
+    access_token
+    |> request()
+    |> Req.get(
+      url: url,
+      params: repository_list_params(params)
+    )
+    |> response_handler.()
+  end
+
   def create_issue(repo, attrs, access_token) when is_binary(access_token) do
     access_token
     |> request()
@@ -96,6 +108,44 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_list_response(response), do: handle_error_response(response)
 
+  defp handle_repository_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    case Data.get(body, "repositories") do
+      repositories when is_list(repositories) ->
+        {:ok,
+         %{
+           repositories: Enum.map(repositories, &normalize_repository/1),
+           total_count: Data.get(body, "total_count")
+         }}
+
+      _other ->
+        invalid_success_response("GitHub repository list response was invalid", body)
+    end
+  end
+
+  defp handle_repository_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub repository list response was invalid", body)
+  end
+
+  defp handle_repository_list_response(response), do: handle_error_response(response)
+
+  defp handle_user_repository_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_list(body) do
+    {:ok,
+     %{
+       repositories: Enum.map(body, &normalize_repository/1),
+       total_count: length(body)
+     }}
+  end
+
+  defp handle_user_repository_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub repository list response was invalid", body)
+  end
+
+  defp handle_user_repository_list_response(response), do: handle_error_response(response)
+
   defp handle_issue_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     {:ok, normalize_issue(body)}
@@ -130,6 +180,43 @@ defmodule Jido.Connect.GitHub.Client do
       updated_at: Data.get(issue, "updated_at")
     }
   end
+
+  defp normalize_repository(repository) when is_map(repository) do
+    %{
+      id: Data.get(repository, "id"),
+      name: Data.get(repository, "name"),
+      full_name: Data.get(repository, "full_name"),
+      owner: normalize_repository_owner(Data.get(repository, "owner")),
+      private: Data.get(repository, "private"),
+      default_branch: Data.get(repository, "default_branch"),
+      url: Data.get(repository, "html_url") || Data.get(repository, "url")
+    }
+  end
+
+  defp normalize_repository_owner(owner) when is_map(owner) do
+    %{
+      login: Data.get(owner, "login"),
+      id: Data.get(owner, "id"),
+      type: Data.get(owner, "type"),
+      url: Data.get(owner, "html_url") || Data.get(owner, "url")
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_repository_owner(_owner), do: nil
+
+  defp repository_list_params(params) do
+    [
+      per_page: Map.get(params, :per_page, 30),
+      page: Map.get(params, :page, 1)
+    ]
+  end
+
+  defp repository_list_request(%{auth_profile: :installation}),
+    do: {"/installation/repositories", &handle_repository_list_response/1}
+
+  defp repository_list_request(_params),
+    do: {"/user/repos", &handle_user_repository_list_response/1}
 
   defp invalid_success_response(message, body) do
     {:error,

@@ -3,6 +3,7 @@ defmodule Jido.Connect.GitHub.ScopeResolver do
 
   def required_scopes(operation, _input, %{profile: :installation}) do
     case operation_id(operation) do
+      "github.repo.list" -> ["metadata:read"]
       "github.issue.create" -> ["metadata:read", "issues:write"]
       "github.issue.list" -> ["metadata:read", "issues:read"]
       "github.issue.new" -> ["metadata:read", "issues:read"]

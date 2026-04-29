@@ -9,6 +9,7 @@ defmodule Jido.Connect.GitHub do
 
   use Jido.Connect,
     fragments: [
+      Jido.Connect.GitHub.Actions.Repositories,
       Jido.Connect.GitHub.Actions.Issues,
       Jido.Connect.GitHub.Triggers.Issues
     ]

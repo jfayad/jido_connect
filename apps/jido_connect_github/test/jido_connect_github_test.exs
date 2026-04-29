@@ -3,6 +3,24 @@ defmodule Jido.Connect.GitHubTest do
   alias Jido.Connect
 
   defmodule FakeGitHubClient do
+    def list_repositories(%{page: 2, per_page: 10}, "token") do
+      {:ok,
+       %{
+         total_count: 1,
+         repositories: [
+           %{
+             id: 10,
+             name: "repo",
+             full_name: "org/repo",
+             owner: %{login: "org", type: "Organization"},
+             private: true,
+             default_branch: "main",
+             url: "https://github.test/org/repo"
+           }
+         ]
+       }}
+    end
+
     def list_issues("org/repo", "open", "token") do
       {:ok, [%{number: 1, url: "https://github.test/1", title: "First", state: "open"}]}
     end
@@ -37,6 +55,17 @@ defmodule Jido.Connect.GitHubTest do
 
     assert Enum.find(spec.auth_profiles, &(&1.id == :installation)).setup ==
              :github_app_installation
+
+    assert {:ok,
+            %{
+              id: "github.repo.list",
+              resource: :repository,
+              verb: :list,
+              mutation?: false,
+              auth_profiles: [:user, :installation],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.repo.list")
 
     assert {:ok,
             %{
@@ -84,6 +113,7 @@ defmodule Jido.Connect.GitHubTest do
            ]
 
     assert Jido.Connect.GitHub.jido_action_modules() == [
+             Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue
            ]
@@ -99,6 +129,7 @@ defmodule Jido.Connect.GitHubTest do
              package: :jido_connect_github,
              generated_modules: %{
                actions: [
+                 Jido.Connect.GitHub.Actions.ListRepositories,
                  Jido.Connect.GitHub.Actions.ListIssues,
                  Jido.Connect.GitHub.Actions.CreateIssue
                ],
@@ -110,6 +141,9 @@ defmodule Jido.Connect.GitHubTest do
     assert {:module, Jido.Connect.GitHub.Actions.ListIssues} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListIssues)
 
+    assert {:module, Jido.Connect.GitHub.Actions.ListRepositories} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListRepositories)
+
     assert {:module, Jido.Connect.GitHub.Sensors.NewIssues} =
              Code.ensure_loaded(Jido.Connect.GitHub.Sensors.NewIssues)
 
@@ -117,6 +151,7 @@ defmodule Jido.Connect.GitHubTest do
              Code.ensure_loaded(Jido.Connect.GitHub.Plugin)
 
     assert function_exported?(Jido.Connect.GitHub.Actions.ListIssues, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Sensors.NewIssues, :init, 2)
     assert function_exported?(Jido.Connect.GitHub.Plugin, :plugin_spec, 1)
   end
@@ -149,6 +184,23 @@ defmodule Jido.Connect.GitHubTest do
                Jido.Connect.GitHub.integration(),
                "github.issue.list",
                %{repo: "org/repo"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes GitHub list repositories action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              total_count: 1,
+              repositories: [%{id: 10, full_name: "org/repo", owner: %{login: "org"}}]
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.repo.list",
+               %{page: 2, per_page: 10},
                context: context,
                credential_lease: lease
              )
@@ -203,6 +255,20 @@ defmodule Jido.Connect.GitHubTest do
              })
   end
 
+  test "generated repository action delegates to integration invoke runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              total_count: 1,
+              repositories: [%{id: 10, full_name: "org/repo", owner: %{login: "org"}}]
+            }} =
+             Jido.Connect.GitHub.Actions.ListRepositories.run(%{page: 2, per_page: 10}, %{
+               integration_context: context,
+               credential_lease: lease
+             })
+  end
+
   test "generated action rejects missing runtime context before provider execution" do
     assert {:error, %Connect.Error.AuthError{reason: :context_required}} =
              Jido.Connect.GitHub.Actions.ListIssues.run(%{repo: "org/repo"}, %{})
@@ -230,6 +296,7 @@ defmodule Jido.Connect.GitHubTest do
     spec = Jido.Connect.GitHub.Plugin.plugin_spec(%{})
 
     assert spec.actions == [
+             Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue
            ]
@@ -243,22 +310,24 @@ defmodule Jido.Connect.GitHubTest do
   end
 
   test "generated plugin reports basic tool availability" do
-    [list_available | _] =
+    available_tools =
       Jido.Connect.GitHub.Plugin.tool_availability(%{
         connection: elem(context_and_lease(), 0).connection
       })
 
+    list_available = availability_for(available_tools, "github.repo.list")
     assert list_available.state == :available
 
-    [missing_scopes | _] =
+    missing_scope_tools =
       Jido.Connect.GitHub.Plugin.tool_availability(%{
         connection: %{elem(context_and_lease(), 0).connection | scopes: []}
       })
 
+    missing_scopes = availability_for(missing_scope_tools, "github.issue.list")
     assert missing_scopes.state == :missing_scopes
     assert missing_scopes.missing_scopes == ["repo"]
 
-    [installation_missing_scopes | _] =
+    installation_tools =
       Jido.Connect.GitHub.Plugin.tool_availability(%{
         connection:
           elem(
@@ -267,6 +336,7 @@ defmodule Jido.Connect.GitHubTest do
           ).connection
       })
 
+    installation_missing_scopes = availability_for(installation_tools, "github.issue.list")
     assert installation_missing_scopes.state == :missing_scopes
     assert installation_missing_scopes.missing_scopes == ["issues:read"]
 
@@ -333,4 +403,8 @@ defmodule Jido.Connect.GitHubTest do
 
   defp owner_type(:installation), do: :installation
   defp owner_type(_profile), do: :user
+
+  defp availability_for(availability, tool) do
+    Enum.find(availability, &(&1.tool == tool)) || flunk("missing availability for #{tool}")
+  end
 end
