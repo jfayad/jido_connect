@@ -304,6 +304,63 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "update pull request sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "PATCH"
+      assert conn.request_path == "/repos/org/repo/pulls/5"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "base" => "release",
+               "body" => "Updated body",
+               "draft" => false,
+               "maintainer_can_modify" => true,
+               "state" => "open",
+               "title" => "Updated feature"
+             } = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        number: 5,
+        html_url: "https://github.test/pull/5",
+        title: "Updated feature",
+        state: "open",
+        body: "Updated body",
+        draft: false,
+        merged: false,
+        mergeable: true,
+        mergeable_state: "clean",
+        maintainer_can_modify: true,
+        head: %{label: "octo:feature", ref: "feature", sha: "abc"},
+        base: %{label: "org:release", ref: "release", sha: "def"}
+      })
+    end)
+
+    assert {:ok,
+            %{
+              number: 5,
+              url: "https://github.test/pull/5",
+              title: "Updated feature",
+              draft: false,
+              maintainer_can_modify: true,
+              head: %{ref: "feature"},
+              base: %{ref: "release"}
+            }} =
+             Client.update_pull_request(
+               "org/repo",
+               5,
+               %{
+                 title: "Updated feature",
+                 body: "Updated body",
+                 base: "release",
+                 state: "open",
+                 maintainer_can_modify: true,
+                 draft: false
+               },
+               "token"
+             )
+  end
+
   test "create issue sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"
@@ -471,6 +528,9 @@ defmodule Jido.Connect.GitHub.ClientTest do
 
     assert {:error, %Error.ProviderError{status: 422, details: %{message: "Validation Failed"}}} =
              Client.update_issue("org/repo", 2, %{title: ""}, "token")
+
+    assert {:error, %Error.ProviderError{status: 422, details: %{message: "Validation Failed"}}} =
+             Client.update_pull_request("org/repo", 5, %{title: ""}, "token")
   end
 
   test "normalizes issue comment mutation error responses" do

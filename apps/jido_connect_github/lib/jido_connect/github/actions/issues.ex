@@ -159,6 +159,41 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :update_pull_request do
+      id "github.pull_request.update"
+      resource :pull_request
+      verb :update
+      data_classification :workspace_content
+      label "Update pull request"
+      description "Update a GitHub pull request."
+      handler Jido.Connect.GitHub.Handlers.Actions.UpdatePullRequest
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :pull_number, :integer, required?: true
+        field :title, :string
+        field :body, :string
+        field :base, :string
+        field :state, :string, enum: ["open", "closed"]
+        field :maintainer_can_modify, :boolean
+        field :draft, :boolean
+      end
+
+      output do
+        field :number, :integer
+        field :url, :string
+        field :title, :string
+        field :state, :string
+      end
+    end
+
     action :update_issue do
       id "github.issue.update"
       resource :issue

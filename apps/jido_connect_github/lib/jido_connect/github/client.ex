@@ -67,6 +67,14 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_pull_request_response()
   end
 
+  def update_pull_request(repo, pull_number, attrs, access_token)
+      when is_integer(pull_number) and is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.patch(url: "/repos/#{repo}/pulls/#{pull_number}", json: attrs)
+    |> handle_pull_request_response()
+  end
+
   def create_issue(repo, attrs, access_token) when is_binary(access_token) do
     access_token
     |> request()
