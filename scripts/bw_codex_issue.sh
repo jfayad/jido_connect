@@ -31,6 +31,8 @@ Options:
   --commit-all-dirty        Allow committing all dirty changes when --allow-dirty is used.
   --no-sync                 Do not run bw sync after closing the issue.
   --no-close                Do not close the issue after committing.
+  --no-format               Skip the formatter phase.
+  --format-cmd CMD          Formatter command. Default: $BW_CODEX_FORMAT_CMD or mix format.
   --no-verify               Skip verification.
   --verify-cmd CMD          Verification command. Default: $BW_CODEX_VERIFY_CMD or mix quality.
   --prompt-file FILE        Optional operator note appended after Beadwork context.
@@ -58,6 +60,7 @@ Command customization:
   CODEX_EFFORT              Default reasoning effort when --effort is not provided.
   CODEX_REASONING_EFFORT    Alternate env name for default reasoning effort.
   BW_CODEX_ORDER            Default issue order when --order is not provided.
+  BW_CODEX_FORMAT_CMD       Default formatter command when --format-cmd is not provided.
   CODEX_EXTRA_ARGS          Extra shell words appended to the default codex exec command.
   CODEX_COMMAND_TEMPLATE    Full command template. If set, it is evaluated with the prompt
                             on stdin and these variables exported:
@@ -443,6 +446,8 @@ DIRTY_BASELINE_FILE=""
 SYNC_AFTER=true
 CLOSE_AFTER=true
 VERIFY=true
+FORMAT=true
+FORMAT_CMD="${BW_CODEX_FORMAT_CMD:-mix format}"
 VERIFY_CMD="${BW_CODEX_VERIFY_CMD:-mix quality}"
 CUSTOM_PROMPT_FILE=""
 
@@ -536,6 +541,15 @@ while [[ $# -gt 0 ]]; do
     --no-close)
       CLOSE_AFTER=false
       shift
+      ;;
+    --no-format)
+      FORMAT=false
+      shift
+      ;;
+    --format-cmd)
+      FORMAT_CMD="${2:-}"
+      [[ -n "${FORMAT_CMD}" ]] || die "--format-cmd requires a command"
+      shift 2
       ;;
     --no-verify)
       VERIFY=false
@@ -696,6 +710,10 @@ if [[ "${DRY_RUN}" != "true" ]]; then
 fi
 
 run_hook "review" "${BW_CODEX_REVIEW_SCRIPT:-}" "${BW_CODEX_REVIEW_CMD:-}" "${WORKDIR}"
+
+if [[ "${FORMAT}" == "true" ]]; then
+  run_shell_hook "format" "${FORMAT_CMD}" "${WORKDIR}"
+fi
 
 if [[ "${VERIFY}" == "true" ]]; then
   run_shell_hook "verify" "${VERIFY_CMD}" "${WORKDIR}"
