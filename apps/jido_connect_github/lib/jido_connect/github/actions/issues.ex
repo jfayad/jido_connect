@@ -123,6 +123,42 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :create_pull_request do
+      id "github.pull_request.create"
+      resource :pull_request
+      verb :create
+      data_classification :workspace_content
+      label "Create pull request"
+      description "Create a GitHub pull request."
+      handler Jido.Connect.GitHub.Handlers.Actions.CreatePullRequest
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :title, :string, required?: true
+        field :body, :string
+        field :head, :string, required?: true
+        field :base, :string, required?: true
+        field :draft, :boolean, default: false
+        field :maintainer_can_modify, :boolean, default: true
+        field :risk, :string
+        field :confirmation, :string
+      end
+
+      output do
+        field :number, :integer
+        field :url, :string
+        field :title, :string
+        field :state, :string
+      end
+    end
+
     action :update_issue do
       id "github.issue.update"
       resource :issue

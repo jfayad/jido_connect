@@ -248,6 +248,62 @@ defmodule Jido.Connect.GitHub.ClientTest do
     assert_received {:request, "GET", "/repos/org/repo/issues/4"}
   end
 
+  test "create pull request sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/pulls"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "base" => "main",
+               "body" => "Implements the feature",
+               "draft" => true,
+               "head" => "octo:feature",
+               "maintainer_can_modify" => false,
+               "title" => "Feature"
+             } = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        number: 5,
+        html_url: "https://github.test/pull/5",
+        title: "Feature",
+        state: "open",
+        body: "Implements the feature",
+        draft: true,
+        merged: false,
+        mergeable: nil,
+        mergeable_state: "unknown",
+        maintainer_can_modify: false,
+        head: %{label: "octo:feature", ref: "feature", sha: "abc"},
+        base: %{label: "org:main", ref: "main", sha: "def"}
+      })
+    end)
+
+    assert {:ok,
+            %{
+              number: 5,
+              url: "https://github.test/pull/5",
+              title: "Feature",
+              draft: true,
+              maintainer_can_modify: false,
+              head: %{ref: "feature"},
+              base: %{ref: "main"}
+            }} =
+             Client.create_pull_request(
+               "org/repo",
+               %{
+                 title: "Feature",
+                 body: "Implements the feature",
+                 head: "octo:feature",
+                 base: "main",
+                 draft: true,
+                 maintainer_can_modify: false
+               },
+               "token"
+             )
+  end
+
   test "create issue sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

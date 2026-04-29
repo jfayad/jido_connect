@@ -79,6 +79,31 @@ defmodule Jido.Connect.GitHubTest do
       {:ok, %{number: 2, url: "https://github.test/2", title: "Bug", state: "open"}}
     end
 
+    def create_pull_request(
+          "org/repo",
+          %{
+            title: "Feature",
+            body: "Implements the feature",
+            head: "octo:feature",
+            base: "main",
+            draft: true,
+            maintainer_can_modify: false
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         number: 5,
+         url: "https://github.test/pull/5",
+         title: "Feature",
+         state: "open",
+         draft: true,
+         maintainer_can_modify: false,
+         head: %{ref: "feature"},
+         base: %{ref: "main"}
+       }}
+    end
+
     def update_issue("org/repo", 2, %{title: "Bug", labels: ["bug"], type: "Bug"}, "token") do
       {:ok, %{number: 2, url: "https://github.test/2", title: "Bug", state: "open"}}
     end
@@ -166,6 +191,17 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.pull_request.create",
+              resource: :pull_request,
+              verb: :create,
+              mutation?: true,
+              confirmation: :required_for_ai,
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} = Connect.action(spec, "github.pull_request.create")
+
+    assert {:ok,
+            %{
               id: "github.issue.update",
               resource: :issue,
               verb: :update,
@@ -221,6 +257,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
              Jido.Connect.GitHub.Actions.GetPullRequest,
+             Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdateIssue,
              Jido.Connect.GitHub.Actions.CreateIssueComment
            ]
@@ -241,6 +278,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.CreateIssue,
                  Jido.Connect.GitHub.Actions.ListPullRequests,
                  Jido.Connect.GitHub.Actions.GetPullRequest,
+                 Jido.Connect.GitHub.Actions.CreatePullRequest,
                  Jido.Connect.GitHub.Actions.UpdateIssue,
                  Jido.Connect.GitHub.Actions.CreateIssueComment
                ],
@@ -264,6 +302,9 @@ defmodule Jido.Connect.GitHubTest do
     assert {:module, Jido.Connect.GitHub.Actions.GetPullRequest} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.GetPullRequest)
 
+    assert {:module, Jido.Connect.GitHub.Actions.CreatePullRequest} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.CreatePullRequest)
+
     assert {:module, Jido.Connect.GitHub.Actions.UpdateIssue} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.UpdateIssue)
 
@@ -277,6 +318,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListPullRequests, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.GetPullRequest, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.CreatePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdateIssue, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.CreateIssueComment, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Sensors.NewIssues, :init, 2)
@@ -393,6 +435,35 @@ defmodule Jido.Connect.GitHubTest do
     assert Jido.Connect.GitHub.Actions.GetPullRequest.name() == "github_pull_request_get"
   end
 
+  test "generated create pull request action metadata tracks creation fields" do
+    projection = Jido.Connect.GitHub.Actions.CreatePullRequest.jido_connect_projection()
+
+    assert projection.action_id == "github.pull_request.create"
+    assert projection.label == "Create pull request"
+
+    assert Enum.map(projection.input, & &1.name) == [
+             :repo,
+             :title,
+             :body,
+             :head,
+             :base,
+             :draft,
+             :maintainer_can_modify,
+             :risk,
+             :confirmation
+           ]
+
+    assert Enum.map(projection.output, & &1.name) == [:number, :url, :title, :state]
+    assert projection.risk == :write
+    assert projection.confirmation == :required_for_ai
+    assert projection.resource == :pull_request
+    assert projection.verb == :create
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.CreatePullRequest.name() == "github_pull_request_create"
+  end
+
   test "invokes GitHub list issue action through injected client and lease" do
     {context, lease} = context_and_lease()
 
@@ -491,6 +562,29 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "invokes GitHub create pull request action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{number: 5, title: "Feature", state: "open"}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request.create",
+               %{
+                 repo: "org/repo",
+                 title: "Feature",
+                 body: "Implements the feature",
+                 head: "octo:feature",
+                 base: "main",
+                 draft: true,
+                 maintainer_can_modify: false,
+                 risk: "low",
+                 confirmation: "approved"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   test "GitHub App installation connections use installation-specific scopes" do
     {context, lease} =
       context_and_lease(profile: :installation, scopes: ["metadata:read", "issues:read"])
@@ -512,6 +606,19 @@ defmodule Jido.Connect.GitHubTest do
                Jido.Connect.GitHub.integration(),
                "github.issue.create",
                %{repo: "org/repo", title: "Bug"},
+               context: missing_write,
+               credential_lease: lease
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["pull_requests:write"]
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request.create",
+               %{repo: "org/repo", title: "Feature", head: "octo:feature", base: "main"},
                context: missing_write,
                credential_lease: lease
              )
@@ -599,6 +706,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
              Jido.Connect.GitHub.Actions.GetPullRequest,
+             Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdateIssue,
              Jido.Connect.GitHub.Actions.CreateIssueComment
            ]

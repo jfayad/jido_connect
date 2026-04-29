@@ -7,6 +7,7 @@ defmodule Jido.Connect.GitHub.ScopeResolver do
       "github.issue_comment.create" -> ["metadata:read", "issues:write"]
       "github.issue.create" -> ["metadata:read", "issues:write"]
       "github.issue.list" -> ["metadata:read", "issues:read"]
+      "github.pull_request.create" -> ["metadata:read", "pull_requests:write"]
       "github.pull_request.list" -> ["metadata:read", "pull_requests:read"]
       "github.issue.new" -> ["metadata:read", "issues:read"]
       _other -> Map.get(operation, :scopes, [])

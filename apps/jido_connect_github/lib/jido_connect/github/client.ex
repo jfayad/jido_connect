@@ -60,6 +60,13 @@ defmodule Jido.Connect.GitHub.Client do
     end
   end
 
+  def create_pull_request(repo, attrs, access_token) when is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/repos/#{repo}/pulls", json: attrs)
+    |> handle_pull_request_response()
+  end
+
   def create_issue(repo, attrs, access_token) when is_binary(access_token) do
     access_token
     |> request()
@@ -303,6 +310,7 @@ defmodule Jido.Connect.GitHub.Client do
       state: Data.get(pull_request, "state"),
       body: Data.get(pull_request, "body"),
       draft: Data.get(pull_request, "draft"),
+      maintainer_can_modify: Data.get(pull_request, "maintainer_can_modify"),
       merged: Data.get(pull_request, "merged"),
       mergeable: Data.get(pull_request, "mergeable"),
       mergeable_state: Data.get(pull_request, "mergeable_state"),
