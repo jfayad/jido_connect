@@ -190,6 +190,18 @@ dirty_baseline_path() {
   mktemp "${TMPDIR:-/tmp}/bw-codex-${issue_id}-baseline.XXXXXX"
 }
 
+prompt_path() {
+  local issue_id="$1"
+
+  printf '%s/bw-codex-%s.md\n' "${TMPDIR:-/tmp}" "${issue_id}"
+}
+
+prompt_temp_path() {
+  local issue_id="$1"
+
+  mktemp "${TMPDIR:-/tmp}/bw-codex-${issue_id}.XXXXXX"
+}
+
 record_dirty_baseline() {
   local repo="$1"
 
@@ -670,10 +682,10 @@ start_issue_if_needed
 run_hook "pre-codex" "${BW_CODEX_PRE_CODEX_SCRIPT:-}" "${BW_CODEX_PRE_CODEX_CMD:-}" "${WORKDIR}"
 
 if [[ "${DRY_RUN}" == "true" ]]; then
-  PROMPT_FILE="${TMPDIR:-/tmp}/bw-codex-${ISSUE_ID}.md"
+  PROMPT_FILE="$(prompt_path "${ISSUE_ID}")"
   log "Prompt would be written to ${PROMPT_FILE}"
 else
-  PROMPT_FILE="$(mktemp "${TMPDIR:-/tmp}/bw-codex-${ISSUE_ID}.XXXXXX.md")"
+  PROMPT_FILE="$(prompt_temp_path "${ISSUE_ID}")"
   write_prompt "${PROMPT_FILE}" "${CUSTOM_PROMPT_FILE}"
 fi
 
