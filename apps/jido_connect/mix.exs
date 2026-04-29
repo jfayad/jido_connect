@@ -16,6 +16,7 @@ defmodule JidoConnectCore.MixProject do
       docs: docs(),
       source_url: "https://github.com/mikehostetler/jido_connect",
       test_coverage: test_coverage(),
+      test_ignore_filters: [~r/test\/support\//],
       deps: deps(),
       aliases: aliases()
     ]
@@ -24,8 +25,7 @@ defmodule JidoConnectCore.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
-      mod: {Jido.Connect.Application, []}
+      extra_applications: [:logger]
     ]
   end
 
@@ -92,7 +92,6 @@ defmodule JidoConnectCore.MixProject do
     [
       summary: [threshold: 80],
       ignore_modules: [
-        Jido.Connect.Application,
         ~r/^Jido\.Connect\.Dsl(\.|$)/,
         ~r/^Jido\.Connect\.Dev\./,
         ~r/^Jido\.Connect\.Error\.(Auth|Config|Execution|Internal|Invalid|Provider)$/,

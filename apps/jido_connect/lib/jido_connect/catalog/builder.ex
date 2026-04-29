@@ -1,0 +1,161 @@
+defmodule Jido.Connect.Catalog.Builder do
+  @moduledoc false
+
+  alias Jido.Connect.{
+    ActionSpec,
+    AuthProfile,
+    ConnectorCapability,
+    TriggerSpec
+  }
+
+  alias Jido.Connect.Catalog.{AuthProfileSummary, Entry, Tool, ToolEntry}
+
+  @spec entry(module(), keyword()) :: Entry.t()
+  def entry(integration_module, opts \\ []) when is_atom(integration_module) do
+    spec = integration_module.integration()
+    projection = projection(integration_module)
+
+    Entry.new!(%{
+      id: spec.id,
+      name: spec.name,
+      description: spec.description,
+      category: spec.category,
+      package: spec.package || Map.get(spec.metadata, :package),
+      module: integration_module,
+      status:
+        Keyword.get(opts, :status, spec.status || Map.get(spec.metadata, :status, :available)),
+      tags: spec.tags,
+      visibility: spec.visibility,
+      docs: spec.docs,
+      capabilities: ConnectorCapability.from_spec(spec, integration_module),
+      policies: spec.policies,
+      schemas: spec.schemas,
+      auth_profiles: Enum.map(spec.auth_profiles, &auth_summary/1),
+      actions: Enum.map(spec.actions, &action_tool(&1, projection)),
+      triggers: Enum.map(spec.triggers, &trigger_tool(&1, projection)),
+      metadata: spec.metadata
+    })
+  end
+
+  @spec tool_entries(Entry.t()) :: [ToolEntry.t()]
+  def tool_entries(%Entry{} = entry) do
+    Enum.map(entry.actions ++ entry.triggers, &tool_entry(entry, &1))
+  end
+
+  defp auth_summary(%AuthProfile{} = auth_profile) do
+    AuthProfileSummary.new!(%{
+      id: auth_profile.id,
+      kind: auth_profile.kind,
+      label: auth_profile.label,
+      owner: auth_profile.owner,
+      subject: auth_profile.subject,
+      setup: auth_profile.setup,
+      default?: auth_profile.default?,
+      scopes: auth_profile.scopes,
+      default_scopes: auth_profile.default_scopes,
+      optional_scopes: auth_profile.optional_scopes
+    })
+  end
+
+  defp action_tool(%ActionSpec{} = action, projection) do
+    Tool.new!(%{
+      type: :action,
+      id: action.id,
+      name: action.name,
+      label: action.label,
+      description: action.description,
+      module: projection_module(projection, :actions, action.id),
+      resource: action.resource,
+      verb: action.verb,
+      data_classification: action.data_classification,
+      auth_profile: action.auth_profile,
+      auth_profiles: operation_auth_profiles(action),
+      policies: action.policies,
+      scopes: action.scopes,
+      risk: action.risk,
+      confirmation: action.confirmation
+    })
+  end
+
+  defp trigger_tool(%TriggerSpec{} = trigger, projection) do
+    Tool.new!(%{
+      type: :trigger,
+      id: trigger.id,
+      name: trigger.name,
+      label: trigger.label,
+      description: trigger.description,
+      module: projection_module(projection, :sensors, trigger.id),
+      resource: trigger.resource,
+      verb: trigger.verb,
+      data_classification: trigger.data_classification,
+      auth_profile: trigger.auth_profile,
+      auth_profiles: operation_auth_profiles(trigger),
+      policies: trigger.policies,
+      scopes: trigger.scopes,
+      trigger_kind: trigger.kind
+    })
+  end
+
+  defp operation_auth_profiles(%{auth_profiles: []} = operation), do: [operation.auth_profile]
+  defp operation_auth_profiles(%{auth_profiles: profiles}), do: profiles
+
+  defp projection(integration_module) do
+    if function_exported?(integration_module, :jido_projection, 0) do
+      integration_module.jido_projection()
+    end
+  end
+
+  defp projection_module(nil, _key, _id), do: nil
+
+  defp projection_module(projection, :actions, id) do
+    projection.actions
+    |> Enum.find(&(&1.action_id == id))
+    |> case do
+      nil -> nil
+      action -> action.module
+    end
+  end
+
+  defp projection_module(projection, :sensors, id) do
+    projection.sensors
+    |> Enum.find(&(&1.trigger_id == id))
+    |> case do
+      nil -> nil
+      sensor -> sensor.module
+    end
+  end
+
+  defp tool_entry(%Entry{} = entry, %Tool{} = tool) do
+    ToolEntry.new!(%{
+      provider: entry.id,
+      provider_name: entry.name,
+      category: entry.category,
+      package: entry.package,
+      integration_module: entry.module,
+      type: tool.type,
+      id: tool.id,
+      name: tool.name,
+      label: tool.label,
+      description: tool.description,
+      module: tool.module,
+      resource: tool.resource,
+      verb: tool.verb,
+      data_classification: tool.data_classification,
+      auth_profile: tool.auth_profile,
+      auth_profiles: tool.auth_profiles,
+      auth_kinds: auth_kinds(entry, tool.auth_profiles),
+      policies: tool.policies,
+      scopes: tool.scopes,
+      risk: tool.risk,
+      confirmation: tool.confirmation,
+      trigger_kind: tool.trigger_kind
+    })
+  end
+
+  defp auth_kinds(%Entry{} = entry, auth_profiles) do
+    entry.auth_profiles
+    |> Enum.filter(&(&1.id in auth_profiles))
+    |> Enum.map(& &1.kind)
+    |> Enum.uniq()
+  end
+end
