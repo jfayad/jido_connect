@@ -11,7 +11,7 @@ defmodule Jido.Connect.GitHub.Connections do
   alias Jido.Connect.Data
 
   @default_oauth_scopes ["read:user"]
-  @default_installation_scopes ["metadata:read", "issues:read", "issues:write"]
+  @default_installation_scopes ["actions:read", "metadata:read", "issues:read", "issues:write"]
 
   @doc """
   Builds a user-level GitHub OAuth/manual-token connection.

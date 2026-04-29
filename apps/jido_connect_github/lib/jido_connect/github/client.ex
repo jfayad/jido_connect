@@ -44,6 +44,16 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_pull_request_list_response()
   end
 
+  def list_workflow_runs(%{repo: repo} = params, access_token)
+      when is_binary(repo) and is_binary(access_token) do
+    {url, request_params} = workflow_run_list_request(repo, params)
+
+    access_token
+    |> request()
+    |> Req.get(url: url, params: request_params)
+    |> handle_workflow_run_list_response()
+  end
+
   def get_pull_request(repo, pull_number, access_token)
       when is_binary(repo) and is_integer(pull_number) and is_binary(access_token) do
     with {:ok, pull_request} <-
@@ -236,6 +246,28 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_pull_request_response(response), do: handle_error_response(response)
 
+  defp handle_workflow_run_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    case Data.get(body, "workflow_runs") do
+      workflow_runs when is_list(workflow_runs) ->
+        {:ok,
+         %{
+           workflow_runs: Enum.map(workflow_runs, &normalize_workflow_run/1),
+           total_count: Data.get(body, "total_count")
+         }}
+
+      _other ->
+        invalid_success_response("GitHub workflow run list response was invalid", body)
+    end
+  end
+
+  defp handle_workflow_run_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub workflow run list response was invalid", body)
+  end
+
+  defp handle_workflow_run_list_response(response), do: handle_error_response(response)
+
   defp handle_pull_request_merge_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     {:ok, normalize_pull_request_merge(body)}
@@ -373,6 +405,24 @@ defmodule Jido.Connect.GitHub.Client do
     |> Data.compact()
   end
 
+  defp normalize_workflow_run(workflow_run) when is_map(workflow_run) do
+    %{
+      id: Data.get(workflow_run, "id"),
+      name: Data.get(workflow_run, "name"),
+      number: Data.get(workflow_run, "run_number"),
+      status: Data.get(workflow_run, "status"),
+      conclusion: Data.get(workflow_run, "conclusion"),
+      event: Data.get(workflow_run, "event"),
+      branch: Data.get(workflow_run, "head_branch"),
+      sha: Data.get(workflow_run, "head_sha"),
+      workflow_id: Data.get(workflow_run, "workflow_id"),
+      url: Data.get(workflow_run, "html_url") || Data.get(workflow_run, "url"),
+      created_at: Data.get(workflow_run, "created_at"),
+      updated_at: Data.get(workflow_run, "updated_at")
+    }
+    |> Data.compact()
+  end
+
   defp normalize_repository_owner(owner) when is_map(owner) do
     %{
       login: Data.get(owner, "login"),
@@ -483,11 +533,28 @@ defmodule Jido.Connect.GitHub.Client do
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end
 
+  defp workflow_run_list_params(params) do
+    [
+      branch: Map.get(params, :branch),
+      status: Map.get(params, :status),
+      event: Map.get(params, :event),
+      per_page: Map.get(params, :per_page, 30),
+      page: Map.get(params, :page, 1)
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
   defp repository_list_request(%{auth_profile: :installation}),
     do: {"/installation/repositories", &handle_repository_list_response/1}
 
   defp repository_list_request(_params),
     do: {"/user/repos", &handle_user_repository_list_response/1}
+
+  defp workflow_run_list_request(repo, %{workflow: workflow} = params) when is_binary(workflow),
+    do: {"/repos/#{repo}/actions/workflows/#{workflow}/runs", workflow_run_list_params(params)}
+
+  defp workflow_run_list_request(repo, params),
+    do: {"/repos/#{repo}/actions/runs", workflow_run_list_params(params)}
 
   defp invalid_success_response(message, body) do
     {:error,

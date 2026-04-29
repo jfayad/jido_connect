@@ -75,12 +75,13 @@ defmodule Jido.Connect.GitHub do
         "metadata:read",
         "issues:read",
         "issues:write",
+        "actions:read",
         "contents:write",
         "pull_requests:read",
         "pull_requests:write"
       ]
 
-      default_scopes ["metadata:read", "issues:read", "pull_requests:read"]
+      default_scopes ["metadata:read", "issues:read", "pull_requests:read", "actions:read"]
     end
   end
 

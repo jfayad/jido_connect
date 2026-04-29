@@ -75,6 +75,38 @@ defmodule Jido.Connect.GitHubTest do
        }}
     end
 
+    def list_workflow_runs(
+          %{
+            repo: "org/repo",
+            workflow: "ci.yml",
+            branch: "main",
+            status: "completed",
+            event: "push",
+            page: 2,
+            per_page: 10
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         total_count: 1,
+         workflow_runs: [
+           %{
+             id: 22,
+             name: "CI",
+             number: 17,
+             status: "completed",
+             conclusion: "success",
+             event: "push",
+             branch: "main",
+             sha: "abc123",
+             workflow_id: 9001,
+             url: "https://github.test/runs/22"
+           }
+         ]
+       }}
+    end
+
     def create_issue("org/repo", %{title: "Bug", body: nil, labels: []}, "token") do
       {:ok, %{number: 2, url: "https://github.test/2", title: "Bug", state: "open"}}
     end
@@ -224,6 +256,18 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.workflow_run.list",
+              resource: :workflow_run,
+              verb: :list,
+              mutation?: false,
+              auth_profiles: [:user, :installation],
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.workflow_run.list")
+
+    assert {:ok,
+            %{
               id: "github.pull_request.get",
               resource: :pull_request,
               verb: :get,
@@ -323,6 +367,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
+             Jido.Connect.GitHub.Actions.ListWorkflowRuns,
              Jido.Connect.GitHub.Actions.GetPullRequest,
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
@@ -346,6 +391,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.ListIssues,
                  Jido.Connect.GitHub.Actions.CreateIssue,
                  Jido.Connect.GitHub.Actions.ListPullRequests,
+                 Jido.Connect.GitHub.Actions.ListWorkflowRuns,
                  Jido.Connect.GitHub.Actions.GetPullRequest,
                  Jido.Connect.GitHub.Actions.CreatePullRequest,
                  Jido.Connect.GitHub.Actions.UpdatePullRequest,
@@ -369,6 +415,9 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:module, Jido.Connect.GitHub.Actions.ListPullRequests} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListPullRequests)
+
+    assert {:module, Jido.Connect.GitHub.Actions.ListWorkflowRuns} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListWorkflowRuns)
 
     assert {:module, Jido.Connect.GitHub.Actions.GetPullRequest} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.GetPullRequest)
@@ -394,6 +443,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListPullRequests, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.ListWorkflowRuns, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.GetPullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.CreatePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdatePullRequest, :run, 2)
@@ -496,6 +546,32 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.ListPullRequests.name() == "github_pull_request_list"
+  end
+
+  test "generated workflow run list action metadata tracks filter fields" do
+    projection = Jido.Connect.GitHub.Actions.ListWorkflowRuns.jido_connect_projection()
+
+    assert projection.action_id == "github.workflow_run.list"
+    assert projection.label == "List workflow runs"
+
+    assert Enum.map(projection.input, & &1.name) == [
+             :repo,
+             :workflow,
+             :branch,
+             :status,
+             :event,
+             :page,
+             :per_page
+           ]
+
+    assert Enum.map(projection.output, & &1.name) == [:workflow_runs, :total_count]
+    assert projection.risk == :read
+    assert projection.resource == :workflow_run
+    assert projection.verb == :list
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.ListWorkflowRuns.name() == "github_workflow_run_list"
   end
 
   test "generated get pull request action metadata tracks detail fields" do
@@ -875,6 +951,31 @@ defmodule Jido.Connect.GitHubTest do
              })
   end
 
+  test "generated workflow run action delegates to integration invoke runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              total_count: 1,
+              workflow_runs: [%{id: 22, name: "CI", status: "completed"}]
+            }} =
+             Jido.Connect.GitHub.Actions.ListWorkflowRuns.run(
+               %{
+                 repo: "org/repo",
+                 workflow: "ci.yml",
+                 branch: "main",
+                 status: "completed",
+                 event: "push",
+                 page: 2,
+                 per_page: 10
+               },
+               %{
+                 integration_context: context,
+                 credential_lease: lease
+               }
+             )
+  end
+
   test "generated action rejects missing runtime context before provider execution" do
     assert {:error, %Connect.Error.AuthError{reason: :context_required}} =
              Jido.Connect.GitHub.Actions.ListIssues.run(%{repo: "org/repo"}, %{})
@@ -906,6 +1007,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
+             Jido.Connect.GitHub.Actions.ListWorkflowRuns,
              Jido.Connect.GitHub.Actions.GetPullRequest,
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
@@ -952,6 +1054,12 @@ defmodule Jido.Connect.GitHubTest do
     installation_missing_scopes = availability_for(installation_tools, "github.issue.list")
     assert installation_missing_scopes.state == :missing_scopes
     assert installation_missing_scopes.missing_scopes == ["issues:read"]
+
+    workflow_installation_missing_scopes =
+      availability_for(installation_tools, "github.workflow_run.list")
+
+    assert workflow_installation_missing_scopes.state == :missing_scopes
+    assert workflow_installation_missing_scopes.missing_scopes == ["actions:read"]
 
     [disabled | _] =
       Jido.Connect.GitHub.Plugin.tool_availability(%{
@@ -1012,7 +1120,14 @@ defmodule Jido.Connect.GitHubTest do
   end
 
   defp default_scopes(:installation),
-    do: ["metadata:read", "issues:read", "issues:write", "pull_requests:read", "contents:write"]
+    do: [
+      "actions:read",
+      "metadata:read",
+      "issues:read",
+      "issues:write",
+      "pull_requests:read",
+      "contents:write"
+    ]
 
   defp default_scopes(_profile), do: ["repo"]
 

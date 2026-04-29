@@ -173,6 +173,74 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "list workflow runs sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/repos/org/repo/actions/workflows/ci.yml/runs"
+
+      assert %{
+               "branch" => "main",
+               "event" => "push",
+               "page" => "2",
+               "per_page" => "10",
+               "status" => "completed"
+             } = URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        total_count: 1,
+        workflow_runs: [
+          %{
+            id: 22,
+            name: "CI",
+            run_number: 17,
+            status: "completed",
+            conclusion: "success",
+            event: "push",
+            head_branch: "main",
+            head_sha: "abc123",
+            workflow_id: 9001,
+            html_url: "https://github.test/runs/22",
+            created_at: "2026-04-29T10:00:00Z",
+            updated_at: "2026-04-29T10:05:00Z"
+          }
+        ]
+      })
+    end)
+
+    assert {:ok,
+            %{
+              total_count: 1,
+              workflow_runs: [
+                %{
+                  id: 22,
+                  name: "CI",
+                  number: 17,
+                  status: "completed",
+                  conclusion: "success",
+                  event: "push",
+                  branch: "main",
+                  sha: "abc123",
+                  workflow_id: 9001,
+                  url: "https://github.test/runs/22"
+                }
+              ]
+            }} =
+             Client.list_workflow_runs(
+               %{
+                 repo: "org/repo",
+                 workflow: "ci.yml",
+                 branch: "main",
+                 status: "completed",
+                 event: "push",
+                 page: 2,
+                 per_page: 10
+               },
+               "token"
+             )
+  end
+
   test "get pull request sends expected requests" do
     parent = self()
 
