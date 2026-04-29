@@ -129,6 +129,37 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :dispatch_workflow do
+      id "github.workflow.dispatch"
+      resource :workflow
+      verb :dispatch
+      data_classification :workspace_metadata
+      label "Dispatch workflow"
+      description "Dispatch a GitHub Actions workflow for a specific ref with typed inputs."
+      handler Jido.Connect.GitHub.Handlers.Actions.DispatchWorkflow
+      effect :write, confirmation: :always
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :workflow, :string, required?: true, example: "ci.yml"
+        field :ref, :string, required?: true, example: "main"
+        field :inputs, :map, default: %{}
+      end
+
+      output do
+        field :dispatched, :boolean
+        field :repo, :string
+        field :workflow, :string
+        field :ref, :string
+      end
+    end
+
     action :get_pull_request do
       id "github.pull_request.get"
       resource :pull_request

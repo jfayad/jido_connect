@@ -54,6 +54,14 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_workflow_run_list_response()
   end
 
+  def dispatch_workflow(repo, workflow, attrs, access_token)
+      when is_binary(repo) and is_binary(workflow) and is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/repos/#{repo}/actions/workflows/#{workflow}/dispatches", json: attrs)
+    |> handle_workflow_dispatch_response()
+  end
+
   def get_pull_request(repo, pull_number, access_token)
       when is_binary(repo) and is_integer(pull_number) and is_binary(access_token) do
     with {:ok, pull_request} <-
@@ -267,6 +275,15 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_workflow_run_list_response(response), do: handle_error_response(response)
+
+  defp handle_workflow_dispatch_response({:ok, %{status: 204}}), do: {:ok, %{dispatched: true}}
+
+  defp handle_workflow_dispatch_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub workflow dispatch response was invalid", body)
+  end
+
+  defp handle_workflow_dispatch_response(response), do: handle_error_response(response)
 
   defp handle_pull_request_merge_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do

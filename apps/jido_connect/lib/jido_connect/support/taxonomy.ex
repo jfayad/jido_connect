@@ -40,6 +40,7 @@ defmodule Jido.Connect.Taxonomy do
     :cancel,
     :create,
     :delete,
+    :dispatch,
     :download,
     :get,
     :list,

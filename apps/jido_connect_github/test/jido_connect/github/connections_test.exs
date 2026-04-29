@@ -69,7 +69,14 @@ defmodule Jido.Connect.GitHub.ConnectionsTest do
     assert connection.subject.account_type == "User"
     assert connection.subject.account_login == "octocat"
     assert connection.metadata.repository_selection == "selected"
-    assert connection.scopes == ["actions:read", "metadata:read", "issues:read", "issues:write"]
+
+    assert connection.scopes == [
+             "actions:read",
+             "actions:write",
+             "metadata:read",
+             "issues:read",
+             "issues:write"
+           ]
   end
 
   test "lets hosts override installation ownership and ids" do

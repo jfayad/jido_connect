@@ -241,6 +241,30 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "dispatch workflow sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/actions/workflows/ci.yml/dispatches"
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+      assert {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "ref" => "main",
+               "inputs" => %{"environment" => "staging", "deploy" => true}
+             }
+
+      Plug.Conn.send_resp(conn, 204, "")
+    end)
+
+    assert {:ok, %{dispatched: true}} =
+             Client.dispatch_workflow(
+               "org/repo",
+               "ci.yml",
+               %{ref: "main", inputs: %{"environment" => "staging", "deploy" => true}},
+               "token"
+             )
+  end
+
   test "get pull request sends expected requests" do
     parent = self()
 

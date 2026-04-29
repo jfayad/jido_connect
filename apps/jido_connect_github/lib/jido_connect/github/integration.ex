@@ -76,6 +76,7 @@ defmodule Jido.Connect.GitHub do
         "issues:read",
         "issues:write",
         "actions:read",
+        "actions:write",
         "contents:write",
         "pull_requests:read",
         "pull_requests:write"

@@ -75,6 +75,15 @@ defmodule Jido.Connect.GitHubTest do
        }}
     end
 
+    def dispatch_workflow(
+          "org/repo",
+          "ci.yml",
+          %{ref: "main", inputs: %{"environment" => "staging", "deploy" => true}},
+          "token"
+        ) do
+      {:ok, %{dispatched: true}}
+    end
+
     def list_workflow_runs(
           %{
             repo: "org/repo",
@@ -268,6 +277,19 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.workflow.dispatch",
+              resource: :workflow,
+              verb: :dispatch,
+              mutation?: true,
+              confirmation: :always,
+              auth_profiles: [:user, :installation],
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.workflow.dispatch")
+
+    assert {:ok,
+            %{
               id: "github.pull_request.get",
               resource: :pull_request,
               verb: :get,
@@ -368,6 +390,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
+             Jido.Connect.GitHub.Actions.DispatchWorkflow,
              Jido.Connect.GitHub.Actions.GetPullRequest,
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
@@ -392,6 +415,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.CreateIssue,
                  Jido.Connect.GitHub.Actions.ListPullRequests,
                  Jido.Connect.GitHub.Actions.ListWorkflowRuns,
+                 Jido.Connect.GitHub.Actions.DispatchWorkflow,
                  Jido.Connect.GitHub.Actions.GetPullRequest,
                  Jido.Connect.GitHub.Actions.CreatePullRequest,
                  Jido.Connect.GitHub.Actions.UpdatePullRequest,
@@ -419,6 +443,9 @@ defmodule Jido.Connect.GitHubTest do
     assert {:module, Jido.Connect.GitHub.Actions.ListWorkflowRuns} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListWorkflowRuns)
 
+    assert {:module, Jido.Connect.GitHub.Actions.DispatchWorkflow} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.DispatchWorkflow)
+
     assert {:module, Jido.Connect.GitHub.Actions.GetPullRequest} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.GetPullRequest)
 
@@ -444,6 +471,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListPullRequests, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListWorkflowRuns, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.DispatchWorkflow, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.GetPullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.CreatePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdatePullRequest, :run, 2)
@@ -572,6 +600,23 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.ListWorkflowRuns.name() == "github_workflow_run_list"
+  end
+
+  test "generated workflow dispatch action metadata tracks ref and typed inputs" do
+    projection = Jido.Connect.GitHub.Actions.DispatchWorkflow.jido_connect_projection()
+
+    assert projection.action_id == "github.workflow.dispatch"
+    assert projection.label == "Dispatch workflow"
+    assert Enum.map(projection.input, & &1.name) == [:repo, :workflow, :ref, :inputs]
+    assert Enum.map(projection.output, & &1.name) == [:dispatched, :repo, :workflow, :ref]
+    assert projection.risk == :write
+    assert projection.confirmation == :always
+    assert projection.resource == :workflow
+    assert projection.verb == :dispatch
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.DispatchWorkflow.name() == "github_workflow_dispatch"
   end
 
   test "generated get pull request action metadata tracks detail fields" do
@@ -976,6 +1021,30 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "generated workflow dispatch action delegates to integration invoke runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              dispatched: true,
+              repo: "org/repo",
+              workflow: "ci.yml",
+              ref: "main"
+            }} =
+             Jido.Connect.GitHub.Actions.DispatchWorkflow.run(
+               %{
+                 repo: "org/repo",
+                 workflow: "ci.yml",
+                 ref: "main",
+                 inputs: %{"environment" => "staging", "deploy" => true}
+               },
+               %{
+                 integration_context: context,
+                 credential_lease: lease
+               }
+             )
+  end
+
   test "generated action rejects missing runtime context before provider execution" do
     assert {:error, %Connect.Error.AuthError{reason: :context_required}} =
              Jido.Connect.GitHub.Actions.ListIssues.run(%{repo: "org/repo"}, %{})
@@ -1008,6 +1077,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
+             Jido.Connect.GitHub.Actions.DispatchWorkflow,
              Jido.Connect.GitHub.Actions.GetPullRequest,
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
@@ -1060,6 +1130,12 @@ defmodule Jido.Connect.GitHubTest do
 
     assert workflow_installation_missing_scopes.state == :missing_scopes
     assert workflow_installation_missing_scopes.missing_scopes == ["actions:read"]
+
+    workflow_dispatch_installation_missing_scopes =
+      availability_for(installation_tools, "github.workflow.dispatch")
+
+    assert workflow_dispatch_installation_missing_scopes.state == :missing_scopes
+    assert workflow_dispatch_installation_missing_scopes.missing_scopes == ["actions:write"]
 
     [disabled | _] =
       Jido.Connect.GitHub.Plugin.tool_availability(%{
@@ -1122,6 +1198,7 @@ defmodule Jido.Connect.GitHubTest do
   defp default_scopes(:installation),
     do: [
       "actions:read",
+      "actions:write",
       "metadata:read",
       "issues:read",
       "issues:write",
