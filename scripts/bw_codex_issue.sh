@@ -11,6 +11,10 @@ By default this uses the current checkout. Worktrees/branches are opt-in.
 
 Options:
   --dry-run                 Print the selected issue and planned commands only.
+  --loop                    Keep selecting and running issues until the queue is empty.
+                            Stops on the first failure so the checkout can be inspected.
+  --max-issues N            Maximum issues to process in --loop mode. Default: unlimited.
+  --loop-delay SECONDS      Sleep between loop iterations. Default: 0.
   --issue ID                Run a specific Beadwork issue instead of selecting one.
   --model MODEL             Codex model to use. Default: $CODEX_MODEL or gpt-5.5.
   --effort EFFORT           Codex reasoning effort: low, medium, high, xhigh.
@@ -69,6 +73,8 @@ Command customization:
 
 Examples:
   scripts/bw_codex_issue.sh --dry-run
+  scripts/bw_codex_issue.sh --loop --model gpt-5.4 --effort low --order priority
+  scripts/bw_codex_issue.sh --loop --max-issues 5 --model gpt-5.4 --effort low
   scripts/bw_codex_issue.sh --model gpt-5.5 --effort low --issue jido_con-qgc.1
   scripts/bw_codex_issue.sh --worktree --model gpt-5.5 --effort high --issue jido_con-qgc.1
   BW_CODEX_REVIEW_CMD='codex exec review --model gpt-5.5 --cd "$WORKDIR"' \
@@ -110,6 +116,13 @@ validate_order() {
       die "invalid --order '$1'. Expected one of: priority, oldest, newest."
       ;;
   esac
+}
+
+validate_non_negative_integer() {
+  local label="$1"
+  local value="$2"
+
+  [[ "${value}" =~ ^[0-9]+$ ]] || die "${label} must be a non-negative integer"
 }
 
 run() {
@@ -267,7 +280,7 @@ select_issue() {
     )"
   fi
 
-  [[ -n "${selected}" ]] || die "no eligible Beadwork issue found"
+  [[ -n "${selected}" ]] || return 1
   printf '%s\n' "${selected}"
 }
 
@@ -295,7 +308,7 @@ start_issue_if_needed() {
       ;;
     closed)
       log "${ISSUE_ID} is already closed; nothing to do."
-      exit 0
+      return 1
       ;;
     *)
       die "${ISSUE_ID} has status '${status}', not open/in_progress."
@@ -427,6 +440,9 @@ run_codex() {
 }
 
 DRY_RUN=false
+LOOP=false
+MAX_ISSUES=0
+LOOP_DELAY=0
 ISSUE_ID=""
 CODEX_MODEL_VALUE="${CODEX_MODEL:-gpt-5.5}"
 CODEX_EFFORT_VALUE="${CODEX_EFFORT:-${CODEX_REASONING_EFFORT:-low}}"
@@ -456,6 +472,20 @@ while [[ $# -gt 0 ]]; do
     --dry-run)
       DRY_RUN=true
       shift
+      ;;
+    --loop)
+      LOOP=true
+      shift
+      ;;
+    --max-issues)
+      MAX_ISSUES="${2:-}"
+      [[ -n "${MAX_ISSUES}" ]] || die "--max-issues requires a value"
+      shift 2
+      ;;
+    --loop-delay)
+      LOOP_DELAY="${2:-}"
+      [[ -n "${LOOP_DELAY}" ]] || die "--loop-delay requires a value"
+      shift 2
       ;;
     --issue)
       ISSUE_ID="${2:-}"
@@ -582,170 +612,255 @@ require_command jq
 
 validate_effort "${CODEX_EFFORT_VALUE}"
 validate_order "${QUEUE_ORDER}"
+validate_non_negative_integer "--max-issues" "${MAX_ISSUES}"
+validate_non_negative_integer "--loop-delay" "${LOOP_DELAY}"
 
 if [[ "${COMMIT_ALL_DIRTY}" == "true" && "${ALLOW_DIRTY}" != "true" ]]; then
   die "--commit-all-dirty requires --allow-dirty"
 fi
 
+if [[ "${LOOP}" == "true" && -n "${ISSUE_ID}" ]]; then
+  die "--loop cannot be combined with --issue"
+fi
+
+if [[ "${LOOP}" != "true" && "${MAX_ISSUES}" != "0" ]]; then
+  die "--max-issues requires --loop"
+fi
+
+if [[ "${LOOP}" != "true" && "${LOOP_DELAY}" != "0" ]]; then
+  die "--loop-delay requires --loop"
+fi
+
 trap cleanup_baseline EXIT
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-BASE_REF="${BASE_REF:-HEAD}"
-WORKTREE_ROOT="${WORKTREE_ROOT:-$(dirname "${REPO_ROOT}")/jido_connect_worktrees}"
+initialize_repo() {
+  REPO_ROOT="$(git rev-parse --show-toplevel)"
+  BASE_REF="${BASE_REF:-HEAD}"
+  WORKTREE_ROOT="${WORKTREE_ROOT:-$(dirname "${REPO_ROOT}")/jido_connect_worktrees}"
 
-log "Priming Beadwork"
-bw prime >/dev/null
+  log "Priming Beadwork"
+  bw prime >/dev/null
 
-if [[ "${DRY_RUN}" == "true" && -n "$(git -C "${REPO_ROOT}" status --porcelain)" ]]; then
-  log "Working tree is dirty; continuing because this is a dry run."
-else
-  git_clean_or_allowed "${REPO_ROOT}"
-fi
-
-if [[ -z "${ISSUE_ID}" ]]; then
-  ISSUE_ID="$(select_issue)"
-fi
-
-ISSUE_JSON="$(bw show "${ISSUE_ID}" --json)"
-ISSUE_TITLE="$(jq -r '.title' <<<"${ISSUE_JSON}")"
-ISSUE_TYPE="$(jq -r '.type' <<<"${ISSUE_JSON}")"
-ISSUE_STATUS="$(jq -r '.status' <<<"${ISSUE_JSON}")"
-ISSUE_DESCRIPTION="$(jq -r '.description // ""' <<<"${ISSUE_JSON}")"
-
-if [[ "${ISSUE_TYPE}" == "epic" && "${ALLOW_EPIC}" != "true" ]]; then
-  die "${ISSUE_ID} is an epic. Pass --allow-epic if you really want to run it."
-fi
-
-if [[ "${ISSUE_STATUS}" == "closed" ]]; then
-  log "${ISSUE_ID} is already closed; nothing to do."
-  exit 0
-fi
-
-ISSUE_SLUG="$(printf '%s' "${ISSUE_TITLE}" | slugify)"
-BRANCH_NAME="${BRANCH_NAME:-bw/${ISSUE_ID}-${ISSUE_SLUG}}"
-
-if [[ "${USE_WORKTREE}" == "true" ]]; then
-  WORKDIR="${WORKTREE_ROOT}/${ISSUE_ID}-${ISSUE_SLUG}"
-else
-  WORKDIR="${REPO_ROOT}"
-  if [[ -n "${BRANCH_NAME}" && "${BRANCH_NAME}" != "bw/${ISSUE_ID}-${ISSUE_SLUG}" ]]; then
-    die "--branch only applies with --worktree"
-  fi
-fi
-
-export ISSUE_ID ISSUE_TITLE ISSUE_TYPE ISSUE_DESCRIPTION ISSUE_JSON WORKDIR REPO_ROOT
-
-log "Selected ${ISSUE_ID}: ${ISSUE_TITLE}"
-log "Workdir: ${WORKDIR}"
-
-if [[ "${USE_WORKTREE}" == "true" ]]; then
-  log "Branch: ${BRANCH_NAME}"
-else
-  log "Mode: current checkout"
-fi
-
-if [[ "${DRY_RUN}" == "true" ]]; then
-  log "Dry run enabled; no mutation will be performed."
-fi
-
-if [[ "${USE_WORKTREE}" == "true" ]]; then
-  if [[ -e "${WORKDIR}" && "${FRESH_WORKTREE}" == "true" ]]; then
-    die "worktree path already exists: ${WORKDIR}. Remove it or omit --fresh-worktree."
-  fi
-
-  if [[ ! -e "${WORKDIR}" ]]; then
-    run mkdir -p "${WORKTREE_ROOT}"
-    run git -C "${REPO_ROOT}" worktree add -b "${BRANCH_NAME}" "${WORKDIR}" "${BASE_REF}"
+  if [[ "${DRY_RUN}" == "true" && -n "$(git -C "${REPO_ROOT}" status --porcelain)" ]]; then
+    log "Working tree is dirty; continuing because this is a dry run."
   else
-    log "Reusing existing worktree: ${WORKDIR}"
+    git_clean_or_allowed "${REPO_ROOT}"
+  fi
+}
+
+run_one_issue() {
+  local selected_issue_id="$1"
+  local issue_slug
+  local branch_name
+  local existing_commit
+  local short_commit
+  local prompt_file
+  local commit_sha
+
+  cleanup_baseline
+  DIRTY_BASELINE_FILE=""
+
+  ISSUE_ID="${selected_issue_id}"
+  ISSUE_JSON="$(bw show "${ISSUE_ID}" --json)"
+  ISSUE_TITLE="$(jq -r '.title' <<<"${ISSUE_JSON}")"
+  ISSUE_TYPE="$(jq -r '.type' <<<"${ISSUE_JSON}")"
+  ISSUE_STATUS="$(jq -r '.status' <<<"${ISSUE_JSON}")"
+  ISSUE_DESCRIPTION="$(jq -r '.description // ""' <<<"${ISSUE_JSON}")"
+
+  if [[ "${ISSUE_TYPE}" == "epic" && "${ALLOW_EPIC}" != "true" ]]; then
+    die "${ISSUE_ID} is an epic. Pass --allow-epic if you really want to run it."
   fi
 
-  if [[ "${DRY_RUN}" == "true" && ! -d "${WORKDIR}/.git" ]]; then
-    log "Worktree does not exist yet; skipping clean check because this is a dry run."
+  if [[ "${ISSUE_STATUS}" == "closed" ]]; then
+    log "${ISSUE_ID} is already closed; nothing to do."
+    return 0
+  fi
+
+  issue_slug="$(printf '%s' "${ISSUE_TITLE}" | slugify)"
+  branch_name="${BRANCH_NAME:-bw/${ISSUE_ID}-${issue_slug}}"
+
+  if [[ "${USE_WORKTREE}" == "true" ]]; then
+    WORKDIR="${WORKTREE_ROOT}/${ISSUE_ID}-${issue_slug}"
   else
-    git_clean_or_allowed "${WORKDIR}"
+    WORKDIR="${REPO_ROOT}"
+    if [[ -n "${BRANCH_NAME}" ]]; then
+      die "--branch only applies with --worktree"
+    fi
   fi
-else
-  if [[ "${DRY_RUN}" == "true" && -n "$(git -C "${WORKDIR}" status --porcelain)" ]]; then
-    log "Workdir is dirty; continuing because this is a dry run."
+
+  export ISSUE_ID ISSUE_TITLE ISSUE_TYPE ISSUE_DESCRIPTION ISSUE_JSON WORKDIR REPO_ROOT
+
+  log "Selected ${ISSUE_ID}: ${ISSUE_TITLE}"
+  log "Workdir: ${WORKDIR}"
+
+  if [[ "${USE_WORKTREE}" == "true" ]]; then
+    log "Branch: ${branch_name}"
   else
-    git_clean_or_allowed "${WORKDIR}"
+    log "Mode: current checkout"
   fi
-fi
 
-if [[ "${ALLOW_DIRTY}" == "true" && "${DRY_RUN}" != "true" ]]; then
-  record_dirty_baseline "${WORKDIR}"
-fi
-
-EXISTING_COMMIT="$(issue_commit_sha "${WORKDIR}")"
-
-if [[ -n "${EXISTING_COMMIT}" ]]; then
-  if [[ -z "$(git -C "${WORKDIR}" status --porcelain)" ]]; then
-    SHORT_COMMIT="$(git -C "${WORKDIR}" rev-parse --short "${EXISTING_COMMIT}")"
-    log "Found existing commit for ${ISSUE_ID}: ${SHORT_COMMIT}; skipping Codex."
-    finish_issue "${SHORT_COMMIT}"
-    log "Done: ${ISSUE_ID}"
-    exit 0
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    log "Dry run enabled; no mutation will be performed."
   fi
-fi
 
-run_hook "prepare" "${BW_CODEX_PREPARE_SCRIPT:-}" "${BW_CODEX_PREPARE_CMD:-}" "${WORKDIR}"
+  if [[ "${USE_WORKTREE}" == "true" ]]; then
+    if [[ -e "${WORKDIR}" && "${FRESH_WORKTREE}" == "true" ]]; then
+      die "worktree path already exists: ${WORKDIR}. Remove it or omit --fresh-worktree."
+    fi
 
-start_issue_if_needed
+    if [[ ! -e "${WORKDIR}" ]]; then
+      run mkdir -p "${WORKTREE_ROOT}"
+      run git -C "${REPO_ROOT}" worktree add -b "${branch_name}" "${WORKDIR}" "${BASE_REF}"
+    else
+      log "Reusing existing worktree: ${WORKDIR}"
+    fi
 
-run_hook "pre-codex" "${BW_CODEX_PRE_CODEX_SCRIPT:-}" "${BW_CODEX_PRE_CODEX_CMD:-}" "${WORKDIR}"
+    if [[ "${DRY_RUN}" == "true" && ! -d "${WORKDIR}/.git" ]]; then
+      log "Worktree does not exist yet; skipping clean check because this is a dry run."
+    else
+      git_clean_or_allowed "${WORKDIR}"
+    fi
+  else
+    if [[ "${DRY_RUN}" == "true" && -n "$(git -C "${WORKDIR}" status --porcelain)" ]]; then
+      log "Workdir is dirty; continuing because this is a dry run."
+    else
+      git_clean_or_allowed "${WORKDIR}"
+    fi
+  fi
 
-if [[ "${DRY_RUN}" == "true" ]]; then
-  PROMPT_FILE="$(prompt_path "${ISSUE_ID}")"
-  log "Prompt would be written to ${PROMPT_FILE}"
+  if [[ "${ALLOW_DIRTY}" == "true" && "${DRY_RUN}" != "true" ]]; then
+    record_dirty_baseline "${WORKDIR}"
+  fi
+
+  existing_commit="$(issue_commit_sha "${WORKDIR}")"
+
+  if [[ -n "${existing_commit}" ]]; then
+    if [[ -z "$(git -C "${WORKDIR}" status --porcelain)" ]]; then
+      short_commit="$(git -C "${WORKDIR}" rev-parse --short "${existing_commit}")"
+      log "Found existing commit for ${ISSUE_ID}: ${short_commit}; skipping Codex."
+      finish_issue "${short_commit}"
+      cleanup_baseline
+      log "Done: ${ISSUE_ID}"
+      return 0
+    fi
+  fi
+
+  run_hook "prepare" "${BW_CODEX_PREPARE_SCRIPT:-}" "${BW_CODEX_PREPARE_CMD:-}" "${WORKDIR}"
+
+  if ! start_issue_if_needed; then
+    cleanup_baseline
+    return 0
+  fi
+
+  run_hook "pre-codex" "${BW_CODEX_PRE_CODEX_SCRIPT:-}" "${BW_CODEX_PRE_CODEX_CMD:-}" "${WORKDIR}"
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    prompt_file="$(prompt_path "${ISSUE_ID}")"
+    log "Prompt would be written to ${prompt_file}"
+  else
+    prompt_file="$(prompt_temp_path "${ISSUE_ID}")"
+    write_prompt "${prompt_file}" "${CUSTOM_PROMPT_FILE}"
+  fi
+
+  run_codex "${prompt_file}" "${WORKDIR}"
+
+  if [[ "${DRY_RUN}" != "true" ]]; then
+    rm -f "${prompt_file}"
+  fi
+
+  run_hook "review" "${BW_CODEX_REVIEW_SCRIPT:-}" "${BW_CODEX_REVIEW_CMD:-}" "${WORKDIR}"
+
+  if [[ "${FORMAT}" == "true" ]]; then
+    run_shell_hook "format" "${FORMAT_CMD}" "${WORKDIR}"
+  fi
+
+  if [[ "${VERIFY}" == "true" ]]; then
+    run_shell_hook "verify" "${VERIFY_CMD}" "${WORKDIR}"
+  fi
+
+  run_hook "pre-commit" "${BW_CODEX_PRE_COMMIT_SCRIPT:-}" "${BW_CODEX_PRE_COMMIT_CMD:-}" "${WORKDIR}"
+
+  if [[ "${DRY_RUN}" != "true" && -z "$(git -C "${WORKDIR}" status --porcelain)" ]]; then
+    existing_commit="$(issue_commit_sha "${WORKDIR}")"
+
+    if [[ -n "${existing_commit}" ]]; then
+      short_commit="$(git -C "${WORKDIR}" rev-parse --short "${existing_commit}")"
+      log "No working-tree changes, but ${ISSUE_ID} is already committed as ${short_commit}."
+      finish_issue "${short_commit}"
+      cleanup_baseline
+      log "Done: ${ISSUE_ID}"
+      return 0
+    fi
+
+    die "Codex produced no working-tree changes."
+  fi
+
+  stage_changes "${WORKDIR}"
+  run git -C "${WORKDIR}" commit -m "${ISSUE_ID}: ${ISSUE_TITLE}" -m "Implemented from Beadwork issue ${ISSUE_ID}."
+
+  if [[ "${DRY_RUN}" == "true" ]]; then
+    commit_sha="dry-run"
+  else
+    commit_sha="$(git -C "${WORKDIR}" rev-parse --short HEAD)"
+  fi
+
+  run_hook "post-commit" "${BW_CODEX_POST_COMMIT_SCRIPT:-}" "${BW_CODEX_POST_COMMIT_CMD:-}" "${WORKDIR}"
+
+  finish_issue "${commit_sha}"
+  cleanup_baseline
+
+  log "Done: ${ISSUE_ID}"
+}
+
+run_single_issue() {
+  local selected_issue_id="${ISSUE_ID}"
+
+  if [[ -z "${selected_issue_id}" ]]; then
+    if ! selected_issue_id="$(select_issue)"; then
+      die "no eligible Beadwork issue found"
+    fi
+  fi
+
+  run_one_issue "${selected_issue_id}"
+}
+
+run_issue_loop() {
+  local processed=0
+  local selected_issue_id
+  local effective_max="${MAX_ISSUES}"
+
+  if [[ "${DRY_RUN}" == "true" && "${effective_max}" == "0" ]]; then
+    effective_max=1
+    log "Dry-run loop defaults to one iteration because the queue is not mutated."
+  fi
+
+  while true; do
+    if (( effective_max != 0 && processed >= effective_max )); then
+      log "Reached --max-issues ${effective_max}; stopping loop."
+      break
+    fi
+
+    if ! selected_issue_id="$(select_issue)"; then
+      log "No eligible Beadwork issues remain; stopping loop."
+      break
+    fi
+
+    processed=$((processed + 1))
+    log "Loop iteration ${processed}: ${selected_issue_id}"
+    run_one_issue "${selected_issue_id}"
+
+    if [[ "${LOOP_DELAY}" != "0" ]]; then
+      run sleep "${LOOP_DELAY}"
+    fi
+  done
+
+  log "Loop complete; processed ${processed} issue(s)."
+}
+
+initialize_repo
+
+if [[ "${LOOP}" == "true" ]]; then
+  run_issue_loop
 else
-  PROMPT_FILE="$(prompt_temp_path "${ISSUE_ID}")"
-  write_prompt "${PROMPT_FILE}" "${CUSTOM_PROMPT_FILE}"
+  run_single_issue
 fi
-
-run_codex "${PROMPT_FILE}" "${WORKDIR}"
-
-if [[ "${DRY_RUN}" != "true" ]]; then
-  rm -f "${PROMPT_FILE}"
-fi
-
-run_hook "review" "${BW_CODEX_REVIEW_SCRIPT:-}" "${BW_CODEX_REVIEW_CMD:-}" "${WORKDIR}"
-
-if [[ "${FORMAT}" == "true" ]]; then
-  run_shell_hook "format" "${FORMAT_CMD}" "${WORKDIR}"
-fi
-
-if [[ "${VERIFY}" == "true" ]]; then
-  run_shell_hook "verify" "${VERIFY_CMD}" "${WORKDIR}"
-fi
-
-run_hook "pre-commit" "${BW_CODEX_PRE_COMMIT_SCRIPT:-}" "${BW_CODEX_PRE_COMMIT_CMD:-}" "${WORKDIR}"
-
-if [[ "${DRY_RUN}" != "true" && -z "$(git -C "${WORKDIR}" status --porcelain)" ]]; then
-  EXISTING_COMMIT="$(issue_commit_sha "${WORKDIR}")"
-
-  if [[ -n "${EXISTING_COMMIT}" ]]; then
-    SHORT_COMMIT="$(git -C "${WORKDIR}" rev-parse --short "${EXISTING_COMMIT}")"
-    log "No working-tree changes, but ${ISSUE_ID} is already committed as ${SHORT_COMMIT}."
-    finish_issue "${SHORT_COMMIT}"
-    log "Done: ${ISSUE_ID}"
-    exit 0
-  fi
-
-  die "Codex produced no working-tree changes."
-fi
-
-stage_changes "${WORKDIR}"
-run git -C "${WORKDIR}" commit -m "${ISSUE_ID}: ${ISSUE_TITLE}" -m "Implemented from Beadwork issue ${ISSUE_ID}."
-
-if [[ "${DRY_RUN}" == "true" ]]; then
-  COMMIT_SHA="dry-run"
-else
-  COMMIT_SHA="$(git -C "${WORKDIR}" rev-parse --short HEAD)"
-fi
-
-run_hook "post-commit" "${BW_CODEX_POST_COMMIT_SCRIPT:-}" "${BW_CODEX_POST_COMMIT_CMD:-}" "${WORKDIR}"
-
-finish_issue "${COMMIT_SHA}"
-
-log "Done: ${ISSUE_ID}"
