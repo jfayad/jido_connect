@@ -60,5 +60,34 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
         field :state, :string
       end
     end
+
+    action :create_issue_comment do
+      id "github.issue_comment.create"
+      resource :comment
+      verb :create
+      data_classification :message_content
+      label "Create issue comment"
+      description "Create a comment on a GitHub issue or pull request."
+      handler Jido.Connect.GitHub.Handlers.Actions.CreateIssueComment
+      effect :external_write, confirmation: :required_for_ai
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :issue_number, :integer, required?: true
+        field :body, :string, required?: true
+      end
+
+      output do
+        field :id, :integer
+        field :url, :string
+        field :body, :string
+      end
+    end
   end
 end

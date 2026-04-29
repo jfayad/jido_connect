@@ -29,6 +29,10 @@ defmodule Jido.Connect.GitHubTest do
       {:ok, %{number: 2, url: "https://github.test/2", title: "Bug", state: "open"}}
     end
 
+    def create_issue_comment("org/repo", 2, "Ship it", "token") do
+      {:ok, %{id: 3, url: "https://github.test/comments/3", body: "Ship it"}}
+    end
+
     def list_new_issues("org/repo", nil, "token") do
       {:ok,
        [
@@ -84,6 +88,16 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.issue_comment.create",
+              resource: :comment,
+              verb: :create,
+              mutation?: true,
+              confirmation: :required_for_ai,
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} = Connect.action(spec, "github.issue_comment.create")
+
+    assert {:ok,
+            %{
               id: "github.issue.new",
               kind: :poll,
               checkpoint: :updated_at,
@@ -115,7 +129,8 @@ defmodule Jido.Connect.GitHubTest do
     assert Jido.Connect.GitHub.jido_action_modules() == [
              Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListIssues,
-             Jido.Connect.GitHub.Actions.CreateIssue
+             Jido.Connect.GitHub.Actions.CreateIssue,
+             Jido.Connect.GitHub.Actions.CreateIssueComment
            ]
 
     assert Jido.Connect.GitHub.jido_sensor_modules() == [
@@ -131,7 +146,8 @@ defmodule Jido.Connect.GitHubTest do
                actions: [
                  Jido.Connect.GitHub.Actions.ListRepositories,
                  Jido.Connect.GitHub.Actions.ListIssues,
-                 Jido.Connect.GitHub.Actions.CreateIssue
+                 Jido.Connect.GitHub.Actions.CreateIssue,
+                 Jido.Connect.GitHub.Actions.CreateIssueComment
                ],
                sensors: [Jido.Connect.GitHub.Sensors.NewIssues],
                plugin: Jido.Connect.GitHub.Plugin
@@ -144,6 +160,9 @@ defmodule Jido.Connect.GitHubTest do
     assert {:module, Jido.Connect.GitHub.Actions.ListRepositories} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListRepositories)
 
+    assert {:module, Jido.Connect.GitHub.Actions.CreateIssueComment} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.CreateIssueComment)
+
     assert {:module, Jido.Connect.GitHub.Sensors.NewIssues} =
              Code.ensure_loaded(Jido.Connect.GitHub.Sensors.NewIssues)
 
@@ -152,6 +171,7 @@ defmodule Jido.Connect.GitHubTest do
 
     assert function_exported?(Jido.Connect.GitHub.Actions.ListIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.CreateIssueComment, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Sensors.NewIssues, :init, 2)
     assert function_exported?(Jido.Connect.GitHub.Plugin, :plugin_spec, 1)
   end
@@ -174,6 +194,24 @@ defmodule Jido.Connect.GitHubTest do
 
     assert Jido.Connect.GitHub.Actions.CreateIssue.description() ==
              "Create a GitHub issue."
+  end
+
+  test "generated issue comment action metadata tracks high-risk DSL fields" do
+    projection = Jido.Connect.GitHub.Actions.CreateIssueComment.jido_connect_projection()
+
+    assert projection.action_id == "github.issue_comment.create"
+    assert projection.label == "Create issue comment"
+    assert Enum.map(projection.input, & &1.name) == [:repo, :issue_number, :body]
+    assert Enum.map(projection.output, & &1.name) == [:id, :url, :body]
+    assert projection.data_classification == :message_content
+    assert projection.risk == :external_write
+    assert projection.confirmation == :required_for_ai
+    assert projection.resource == :comment
+    assert projection.verb == :create
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.CreateIssueComment.name() == "github_issue_comment_create"
   end
 
   test "invokes GitHub list issue action through injected client and lease" do
@@ -245,6 +283,19 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "invokes GitHub create issue comment action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{id: 3, body: "Ship it"}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.issue_comment.create",
+               %{repo: "org/repo", issue_number: 2, body: "Ship it"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   test "generated action delegates to integration invoke runtime" do
     {context, lease} = context_and_lease()
 
@@ -298,7 +349,8 @@ defmodule Jido.Connect.GitHubTest do
     assert spec.actions == [
              Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListIssues,
-             Jido.Connect.GitHub.Actions.CreateIssue
+             Jido.Connect.GitHub.Actions.CreateIssue,
+             Jido.Connect.GitHub.Actions.CreateIssueComment
            ]
 
     filtered =

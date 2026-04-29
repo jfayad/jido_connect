@@ -40,6 +40,14 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_issue_response()
   end
 
+  def create_issue_comment(repo, issue_number, body, access_token)
+      when is_integer(issue_number) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/repos/#{repo}/issues/#{issue_number}/comments", json: %{body: body})
+    |> handle_comment_response()
+  end
+
   def close_issue(repo, number, access_token)
       when is_integer(number) and is_binary(access_token) do
     access_token
@@ -157,6 +165,17 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_issue_response(response), do: handle_error_response(response)
 
+  defp handle_comment_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_comment(body)}
+  end
+
+  defp handle_comment_response({:ok, %{status: status, body: body}}) when status in 200..299 do
+    invalid_success_response("GitHub comment response was invalid", body)
+  end
+
+  defp handle_comment_response(response), do: handle_error_response(response)
+
   defp handle_map_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     {:ok, body}
@@ -190,6 +209,14 @@ defmodule Jido.Connect.GitHub.Client do
       private: Data.get(repository, "private"),
       default_branch: Data.get(repository, "default_branch"),
       url: Data.get(repository, "html_url") || Data.get(repository, "url")
+    }
+  end
+
+  defp normalize_comment(comment) when is_map(comment) do
+    %{
+      id: Data.get(comment, "id"),
+      url: Data.get(comment, "html_url") || Data.get(comment, "url"),
+      body: Data.get(comment, "body")
     }
   end
 

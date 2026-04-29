@@ -127,6 +127,25 @@ defmodule Jido.Connect.GitHub.ClientTest do
              Client.create_issue("org/repo", %{title: "Bug"}, "token")
   end
 
+  test "create issue comment sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/issues/2/comments"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"body" => "Ship it"} = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        id: 3,
+        html_url: "https://github.test/comments/3",
+        body: "Ship it"
+      })
+    end)
+
+    assert {:ok, %{id: 3, body: "Ship it"}} =
+             Client.create_issue_comment("org/repo", 2, "Ship it", "token")
+  end
+
   test "close issue sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "PATCH"
@@ -212,6 +231,17 @@ defmodule Jido.Connect.GitHub.ClientTest do
 
     assert {:error, %Error.ProviderError{status: 422, details: %{message: "Validation Failed"}}} =
              Client.create_issue("org/repo", %{title: ""}, "token")
+  end
+
+  test "normalizes issue comment mutation error responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      conn
+      |> Plug.Conn.put_status(422)
+      |> Req.Test.json(%{message: "Validation Failed"})
+    end)
+
+    assert {:error, %Error.ProviderError{status: 422, details: %{message: "Validation Failed"}}} =
+             Client.create_issue_comment("org/repo", 2, "", "token")
   end
 
   test "normalizes malformed successful responses" do
