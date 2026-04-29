@@ -88,7 +88,10 @@ defmodule Jido.Connect.GitHub.WebhookTest do
               repo: "org/repo",
               issue_number: 10,
               title: "Bug",
-              url: "https://github.com/org/repo/issues/10"
+              url: "https://github.com/org/repo/issues/10",
+              action: "opened",
+              repository: %{full_name: "org/repo"},
+              issue: %{number: 10, title: "Bug", url: "https://github.com/org/repo/issues/10"}
             }} = Webhook.normalize_signal("issues", payload)
 
     assert {:ok, %{repo: "org/repo", issue_number: 10}} =
@@ -97,6 +100,46 @@ defmodule Jido.Connect.GitHub.WebhookTest do
                repository: %{"full_name" => "org/repo"},
                issue: %{"number" => 10, "title" => "Bug", "html_url" => "url"}
              })
+  end
+
+  test "normalizes GitHub issue lifecycle actions" do
+    assert {:ok, %{action: "edited", changes: %{"title" => %{from: "Old title"}}}} =
+             Webhook.normalize_signal(
+               "issues",
+               issue_payload("edited", %{
+                 "changes" => %{"title" => %{"from" => "Old title"}}
+               })
+             )
+
+    assert {:ok, %{action: "closed", issue: %{state: "closed", state_reason: "completed"}}} =
+             Webhook.normalize_signal("issues", issue_payload("closed"))
+
+    assert {:ok, %{action: "reopened", issue: %{state: "open"}}} =
+             Webhook.normalize_signal("issues", issue_payload("reopened"))
+
+    assert {:ok, %{action: "assigned", assignee: %{login: "octocat"}}} =
+             Webhook.normalize_signal(
+               "issues",
+               issue_payload("assigned", %{
+                 "assignee" => %{"login" => "octocat", "id" => 1}
+               })
+             )
+
+    assert {:ok, %{action: "labeled", label: %{name: "bug", color: "d73a4a"}}} =
+             Webhook.normalize_signal(
+               "issues",
+               issue_payload("labeled", %{
+                 "label" => %{"name" => "bug", "color" => "d73a4a"}
+               })
+             )
+
+    assert {:ok, %{action: "unlabeled", label: %{name: "bug", color: "d73a4a"}}} =
+             Webhook.normalize_signal(
+               "issues",
+               issue_payload("unlabeled", %{
+                 "label" => %{"name" => "bug", "color" => "d73a4a"}
+               })
+             )
   end
 
   test "normalizes GitHub push event into stable signal shape" do
@@ -175,14 +218,14 @@ defmodule Jido.Connect.GitHub.WebhookTest do
              )
   end
 
-  test "does not normalize non-opened issue events into new issue signals" do
+  test "does not normalize unsupported issue events" do
     assert {:error,
             %Error.ProviderError{
               provider: :github,
               reason: :unsupported_issue_action,
-              details: %{action: "closed"}
+              details: %{action: "transferred"}
             }} =
-             Webhook.normalize_signal("issues", %{"action" => "closed"})
+             Webhook.normalize_signal("issues", %{"action" => "transferred"})
 
     assert {:error, %Error.ProviderError{provider: :github, reason: :unsupported_event}} =
              Webhook.normalize_signal("ping", %{})
@@ -206,6 +249,41 @@ defmodule Jido.Connect.GitHub.WebhookTest do
     |> :crypto.mac(:sha256, secret, body)
     |> Base.encode16(case: :lower)
   end
+
+  defp issue_payload(action, extra \\ %{}) do
+    Map.merge(
+      %{
+        "action" => action,
+        "repository" => %{
+          "id" => 123,
+          "name" => "repo",
+          "full_name" => "org/repo",
+          "html_url" => "https://github.com/org/repo",
+          "owner" => %{"login" => "org"}
+        },
+        "issue" => %{
+          "id" => 456,
+          "number" => 10,
+          "title" => "Bug",
+          "body" => "Details",
+          "state" => issue_state(action),
+          "state_reason" => issue_state_reason(action),
+          "html_url" => "https://github.com/org/repo/issues/10",
+          "user" => %{"login" => "author"},
+          "labels" => [%{"name" => "existing"}],
+          "assignees" => [%{"login" => "assignee"}]
+        },
+        "sender" => %{"login" => "sender"}
+      },
+      extra
+    )
+  end
+
+  defp issue_state("closed"), do: "closed"
+  defp issue_state(_action), do: "open"
+
+  defp issue_state_reason("closed"), do: "completed"
+  defp issue_state_reason(_action), do: nil
 
   defp push_payload do
     %{

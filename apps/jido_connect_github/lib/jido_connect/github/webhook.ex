@@ -6,6 +6,8 @@ defmodule Jido.Connect.GitHub.Webhook do
   alias Jido.Connect.{Data, Error, WebhookDelivery}
   alias Jido.Connect.Webhook, as: CoreWebhook
 
+  @issue_actions ~w(opened edited closed reopened assigned labeled unlabeled)
+
   def parse_headers(headers) when is_map(headers) do
     %{
       delivery_id: header(headers, "x-github-delivery"),
@@ -94,30 +96,19 @@ defmodule Jido.Connect.GitHub.Webhook do
      }}
   end
 
-  def normalize_signal("issues", %{"action" => "opened"} = payload) do
-    issue = Data.get(payload, "issue") || %{}
-    repo = Data.get(payload, "repository") || %{}
-
-    {:ok,
-     %{
-       repo: Data.get(repo, "full_name"),
-       issue_number: Data.get(issue, "number"),
-       title: Data.get(issue, "title"),
-       url: Data.get(issue, "html_url") || Data.get(issue, "url")
-     }}
-  end
-
-  def normalize_signal("issues", %{action: "opened"} = payload) do
-    normalize_signal("issues", stringify_keys(payload))
-  end
-
   def normalize_signal("issues", payload) when is_map(payload) do
-    {:error,
-     Error.provider("Unsupported GitHub issue webhook action",
-       provider: :github,
-       reason: :unsupported_issue_action,
-       details: %{action: Data.get(payload, "action")}
-     )}
+    action = Data.get(payload, "action")
+
+    if action in @issue_actions do
+      normalize_issue_signal(action, payload)
+    else
+      {:error,
+       Error.provider("Unsupported GitHub issue webhook action",
+         provider: :github,
+         reason: :unsupported_issue_action,
+         details: %{action: action}
+       )}
+    end
   end
 
   def normalize_signal(event, _payload) do
@@ -131,6 +122,27 @@ defmodule Jido.Connect.GitHub.Webhook do
 
   def duplicate?(delivery_id, seen_delivery_ids) do
     CoreWebhook.duplicate?(delivery_id, seen_delivery_ids)
+  end
+
+  defp normalize_issue_signal(action, payload) do
+    issue = Data.get(payload, "issue") || %{}
+    repo = Data.get(payload, "repository") || %{}
+    sender = Data.get(payload, "sender") || %{}
+
+    {:ok,
+     Data.compact(%{
+       action: action,
+       repo: Data.get(repo, "full_name"),
+       issue_number: Data.get(issue, "number"),
+       title: Data.get(issue, "title"),
+       url: Data.get(issue, "html_url") || Data.get(issue, "url"),
+       repository: normalize_repository(repo),
+       issue: normalize_issue(issue),
+       sender: normalize_actor(sender),
+       changes: normalize_changes(Data.get(payload, "changes")),
+       assignee: normalize_optional_actor(Data.get(payload, "assignee")),
+       label: normalize_label(Data.get(payload, "label"))
+     })}
   end
 
   defp maybe_put_normalized_signal(%WebhookDelivery{} = delivery) do
@@ -154,6 +166,69 @@ defmodule Jido.Connect.GitHub.Webhook do
       url: Data.get(repository, "html_url") || Data.get(repository, "url")
     })
   end
+
+  defp normalize_issue(issue) when is_map(issue) do
+    Data.compact(%{
+      id: Data.get(issue, "id"),
+      node_id: Data.get(issue, "node_id"),
+      number: Data.get(issue, "number"),
+      title: Data.get(issue, "title"),
+      body: Data.get(issue, "body"),
+      state: Data.get(issue, "state"),
+      state_reason: Data.get(issue, "state_reason"),
+      locked?: Data.get(issue, "locked"),
+      comments: Data.get(issue, "comments"),
+      url: Data.get(issue, "html_url") || Data.get(issue, "url"),
+      api_url: Data.get(issue, "url"),
+      created_at: Data.get(issue, "created_at"),
+      updated_at: Data.get(issue, "updated_at"),
+      closed_at: Data.get(issue, "closed_at"),
+      author: normalize_actor(Data.get(issue, "user") || %{}),
+      assignees: normalize_actors(Data.get(issue, "assignees", [])),
+      labels: normalize_labels(Data.get(issue, "labels", []))
+    })
+  end
+
+  defp normalize_issue(_issue), do: %{}
+
+  defp normalize_actors(actors) when is_list(actors), do: Enum.map(actors, &normalize_actor/1)
+  defp normalize_actors(_actors), do: []
+
+  defp normalize_optional_actor(actor) when is_map(actor), do: normalize_actor(actor)
+  defp normalize_optional_actor(_actor), do: nil
+
+  defp normalize_labels(labels) when is_list(labels), do: Enum.map(labels, &normalize_label/1)
+  defp normalize_labels(_labels), do: []
+
+  defp normalize_label(label) when is_map(label) do
+    Data.compact(%{
+      id: Data.get(label, "id"),
+      node_id: Data.get(label, "node_id"),
+      name: Data.get(label, "name"),
+      description: Data.get(label, "description"),
+      color: Data.get(label, "color"),
+      default?: Data.get(label, "default"),
+      url: Data.get(label, "url")
+    })
+  end
+
+  defp normalize_label(_label), do: nil
+
+  defp normalize_changes(changes) when is_map(changes) do
+    changes
+    |> Enum.map(fn {field, value} -> {field, normalize_change(value)} end)
+    |> Map.new()
+  end
+
+  defp normalize_changes(_changes), do: nil
+
+  defp normalize_change(change) when is_map(change) do
+    Data.compact(%{
+      from: Data.get(change, "from")
+    })
+  end
+
+  defp normalize_change(change), do: change
 
   defp normalize_ref("refs/heads/" <> branch) do
     %{full: "refs/heads/" <> branch, name: branch, type: "branch"}
@@ -227,9 +302,5 @@ defmodule Jido.Connect.GitHub.Webhook do
 
   defp header(headers, key) do
     CoreWebhook.header(headers, key)
-  end
-
-  defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn {key, value} -> {to_string(key), value} end)
   end
 end
