@@ -249,6 +249,32 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def invite_conversation(%{channel: "C999", users: ["U123", "U456"], force: false}, "token") do
+      {:ok,
+       %{
+         channel: %{
+           id: "C999",
+           name: "project-updates",
+           is_archived: false,
+           is_private: false,
+           is_member: true
+         },
+         invited_users: ["U123", "U456"],
+         failed_users: [],
+         partial_failure: false
+       }}
+    end
+
+    def invite_conversation(%{channel: "C999", users: ["U123", "U404"], force: true}, "token") do
+      {:ok,
+       %{
+         channel: %{id: "C999"},
+         invited_users: ["U123"],
+         failed_users: [%{user: "U404", error: "user_not_found", ok: false}],
+         partial_failure: true
+       }}
+    end
+
     def open_conversation(%{users: ["U123"]}, "token") do
       {:ok,
        %{
@@ -687,6 +713,18 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok,
             %{
+              id: "slack.conversation.invite",
+              resource: :conversation_member,
+              verb: :create,
+              policies: [:workspace_access],
+              scopes: ["channels:manage"],
+              mutation?: true,
+              confirmation: :required_for_ai
+            }} =
+             Connect.action(spec, "slack.conversation.invite")
+
+    assert {:ok,
+            %{
               id: "slack.conversation.open",
               resource: :conversation,
               verb: :create,
@@ -1103,6 +1141,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ArchiveChannel,
              Jido.Connect.Slack.Actions.UnarchiveChannel,
              Jido.Connect.Slack.Actions.RenameChannel,
+             Jido.Connect.Slack.Actions.InviteUsers,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
@@ -1149,6 +1188,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.ArchiveChannel,
                  Jido.Connect.Slack.Actions.UnarchiveChannel,
                  Jido.Connect.Slack.Actions.RenameChannel,
+                 Jido.Connect.Slack.Actions.InviteUsers,
                  Jido.Connect.Slack.Actions.OpenConversation,
                  Jido.Connect.Slack.Actions.ListConversationMembers,
                  Jido.Connect.Slack.Actions.UploadFile,
@@ -1783,6 +1823,34 @@ defmodule Jido.Connect.SlackTest do
     assert rename_channel_projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.RenameChannel.name() == "slack_channel_rename"
 
+    invite_users_projection =
+      Jido.Connect.Slack.Actions.InviteUsers.jido_connect_projection()
+
+    assert invite_users_projection.action_id == "slack.conversation.invite"
+    assert invite_users_projection.label == "Invite users to channel"
+    assert invite_users_projection.resource == :conversation_member
+    assert invite_users_projection.verb == :create
+    assert invite_users_projection.scopes == ["channels:manage"]
+    assert invite_users_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
+
+    assert Enum.map(invite_users_projection.input, & &1.name) == [
+             :channel,
+             :users,
+             :force,
+             :conversation_type
+           ]
+
+    assert Enum.map(invite_users_projection.output, & &1.name) == [
+             :channel,
+             :invited_users,
+             :failed_users,
+             :partial_failure
+           ]
+
+    assert invite_users_projection.risk == :write
+    assert invite_users_projection.confirmation == :required_for_ai
+    assert Jido.Connect.Slack.Actions.InviteUsers.name() == "slack_conversation_invite"
+
     open_conversation_projection =
       Jido.Connect.Slack.Actions.OpenConversation.jido_connect_projection()
 
@@ -2265,6 +2333,68 @@ defmodule Jido.Connect.SlackTest do
             }} =
              Jido.Connect.Slack.Actions.RenameChannel.run(
                %{channel: "C999", name: "Invalid Name"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "generated invite users action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: %{
+                id: "C999",
+                name: "project-updates",
+                is_archived: false,
+                is_private: false,
+                is_member: true
+              },
+              invited_users: ["U123", "U456"],
+              failed_users: [],
+              partial_failure: false
+            }} =
+             Jido.Connect.Slack.Actions.InviteUsers.run(
+               %{channel: "C999", users: ["U123", "U456"], force: false},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "invite users validates Slack user lists" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              details: %{field: :users}
+            }} =
+             Jido.Connect.Slack.Actions.InviteUsers.run(
+               %{channel: "C999", users: []},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              details: %{field: :users}
+            }} =
+             Jido.Connect.Slack.Actions.InviteUsers.run(
+               %{channel: "C999", users: ["not-a-user"]},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "invite users returns partial failures when Slack continues valid users" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: %{id: "C999"},
+              invited_users: ["U123"],
+              failed_users: [%{user: "U404", error: "user_not_found", ok: false}],
+              partial_failure: true
+            }} =
+             Jido.Connect.Slack.Actions.InviteUsers.run(
+               %{channel: "C999", users: ["U123", "U404"], force: true},
                %{integration_context: context, credential_lease: lease}
              )
   end
@@ -2978,6 +3108,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ArchiveChannel,
              Jido.Connect.Slack.Actions.UnarchiveChannel,
              Jido.Connect.Slack.Actions.RenameChannel,
+             Jido.Connect.Slack.Actions.InviteUsers,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,

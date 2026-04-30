@@ -184,8 +184,7 @@ defmodule Jido.Connect.Slack.Actions.Conversations do
         field :channel, :string, required?: true, example: "C012AB3CD"
 
         field :conversation_type, :string,
-          description:
-            "Optional Slack conversation type: public_channel, private_channel, im, or mpim."
+          description: "Optional Slack conversation type: public_channel or private_channel."
       end
 
       output do
@@ -220,6 +219,40 @@ defmodule Jido.Connect.Slack.Actions.Conversations do
 
       output do
         field :channel, :map
+      end
+    end
+
+    action :invite_users do
+      id "slack.conversation.invite"
+      resource :conversation_member
+      verb :create
+      data_classification :workspace_metadata
+      label "Invite users to channel"
+      description "Invite one or more Slack users to a public or private channel."
+      handler Jido.Connect.Slack.Handlers.Actions.InviteUsers
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["channels:manage"], resolver: Jido.Connect.Slack.ScopeResolver
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+        field :users, {:array, :string}, required?: true, description: "Slack user IDs to invite."
+        field :force, :boolean, default: false
+
+        field :conversation_type, :string,
+          description:
+            "Optional Slack conversation type: public_channel, private_channel, im, or mpim."
+      end
+
+      output do
+        field :channel, :map
+        field :invited_users, {:array, :string}
+        field :failed_users, {:array, :map}
+        field :partial_failure, :boolean
       end
     end
 

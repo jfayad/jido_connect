@@ -66,6 +66,14 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_rename_conversation_response()
   end
 
+  def invite_conversation(params, access_token)
+      when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/conversations.invite", json: invite_conversation_params(params))
+    |> handle_invite_conversation_response(params)
+  end
+
   def open_conversation(params, access_token)
       when is_map(params) and is_binary(access_token) do
     access_token
@@ -268,6 +276,13 @@ defmodule Jido.Connect.Slack.Client do
   defp rename_conversation_params(params) do
     params
     |> Map.take([:channel, :name])
+    |> Data.compact()
+  end
+
+  defp invite_conversation_params(params) do
+    params
+    |> Map.take([:channel, :users, :force])
+    |> maybe_join_users()
     |> Data.compact()
   end
 
@@ -529,6 +544,54 @@ defmodule Jido.Connect.Slack.Client do
 
   defp handle_rename_conversation_response(response), do: handle_error_response(response)
 
+  defp handle_invite_conversation_response(
+         {:ok, %{status: status, body: %{"ok" => true} = body}},
+         params
+       )
+       when status in 200..299 do
+    case Data.get(body, "channel") do
+      channel when is_map(channel) ->
+        {:ok,
+         %{
+           channel: normalize_channel(channel),
+           invited_users: invited_users(params, []),
+           failed_users: [],
+           partial_failure: false
+         }}
+
+      _other ->
+        invalid_success_response("Slack conversation invite response was invalid", body)
+    end
+  end
+
+  defp handle_invite_conversation_response(
+         {:ok, %{status: status, body: %{"ok" => false, "errors" => errors} = body}},
+         params
+       )
+       when status in 200..299 and is_list(errors) do
+    failed_users = normalize_invite_errors(errors)
+
+    if Data.get(params, :force, false) do
+      {:ok,
+       %{
+         channel: %{id: Data.get(params, :channel)},
+         invited_users: invited_users(params, failed_users),
+         failed_users: failed_users,
+         partial_failure: true
+       }}
+    else
+      {:error,
+       Error.provider("Slack conversation invite partially failed",
+         provider: :slack,
+         status: status,
+         reason: Data.get(body, "error"),
+         details: %{body: body, failed_users: failed_users}
+       )}
+    end
+  end
+
+  defp handle_invite_conversation_response(response, _params), do: handle_error_response(response)
+
   defp handle_open_conversation_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do
     case Data.get(body, "channel") do
@@ -745,6 +808,28 @@ defmodule Jido.Connect.Slack.Client do
 
   defp target_reactions(%{file: file}), do: Data.get(file, "reactions", [])
   defp target_reactions(_target), do: []
+
+  defp invited_users(params, failed_users) do
+    failed_user_ids = MapSet.new(failed_users, &Data.get(&1, :user))
+
+    params
+    |> Data.get(:users, [])
+    |> List.wrap()
+    |> Enum.reject(&MapSet.member?(failed_user_ids, &1))
+  end
+
+  defp normalize_invite_errors(errors) do
+    errors
+    |> Enum.filter(&is_map/1)
+    |> Enum.map(fn error ->
+      %{
+        user: Data.get(error, "user"),
+        error: Data.get(error, "error"),
+        ok: Data.get(error, "ok")
+      }
+      |> Data.compact()
+    end)
+  end
 
   defp normalize_post_at(post_at) when is_integer(post_at), do: post_at
 

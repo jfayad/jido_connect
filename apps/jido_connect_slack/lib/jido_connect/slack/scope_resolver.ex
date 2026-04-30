@@ -105,6 +105,17 @@ defmodule Jido.Connect.Slack.ScopeResolver do
     required_scopes(%{id: "slack.channel.rename"}, input, connection)
   end
 
+  def required_scopes(%{id: "slack.conversation.invite"}, input, _connection) do
+    input
+    |> requested_conversation_type()
+    |> then(&Map.get(@conversation_archive_scopes, &1, "channels:manage"))
+    |> List.wrap()
+  end
+
+  def required_scopes(%{action_id: "slack.conversation.invite"}, input, connection) do
+    required_scopes(%{id: "slack.conversation.invite"}, input, connection)
+  end
+
   def required_scopes(%{id: "slack.conversation.open"}, input, _connection) do
     input
     |> requested_open_conversation_type()

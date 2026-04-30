@@ -373,6 +373,99 @@ defmodule Jido.Connect.Slack.ClientTest do
              Client.rename_conversation(%{channel: "C123", name: "renamed-channel"}, "token")
   end
 
+  test "invite conversation sends expected request and normalizes output" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/conversations.invite"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{"channel" => "C123", "users" => "U123,U456", "force" => true} =
+               Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        ok: true,
+        channel: %{
+          id: "C123",
+          name: "project-updates",
+          is_archived: false,
+          is_private: false,
+          is_member: true
+        }
+      })
+    end)
+
+    assert {:ok,
+            %{
+              channel: %{
+                id: "C123",
+                name: "project-updates",
+                is_archived: false,
+                is_private: false,
+                is_member: true
+              },
+              invited_users: ["U123", "U456"],
+              failed_users: [],
+              partial_failure: false
+            }} =
+             Client.invite_conversation(
+               %{channel: "C123", users: ["U123", "U456"], force: true},
+               "token"
+             )
+  end
+
+  test "invite conversation normalizes partial failures when force is enabled" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/conversations.invite"
+
+      Req.Test.json(conn, %{
+        ok: false,
+        error: "user_not_found",
+        errors: [
+          %{user: "U404", ok: false, error: "user_not_found"}
+        ]
+      })
+    end)
+
+    assert {:ok,
+            %{
+              channel: %{id: "C123"},
+              invited_users: ["U123"],
+              failed_users: [%{user: "U404", ok: false, error: "user_not_found"}],
+              partial_failure: true
+            }} =
+             Client.invite_conversation(
+               %{channel: "C123", users: ["U123", "U404"], force: true},
+               "token"
+             )
+  end
+
+  test "invite conversation returns provider error for partial failures without force" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/conversations.invite"
+
+      Req.Test.json(conn, %{
+        ok: false,
+        error: "user_not_found",
+        errors: [
+          %{user: "U404", ok: false, error: "user_not_found"}
+        ]
+      })
+    end)
+
+    assert {:error,
+            %Jido.Connect.Error.ProviderError{
+              reason: "user_not_found",
+              details: %{failed_users: [%{user: "U404", ok: false, error: "user_not_found"}]}
+            }} =
+             Client.invite_conversation(
+               %{channel: "C123", users: ["U123", "U404"], force: false},
+               "token"
+             )
+  end
+
   test "open conversation sends expected request and normalizes output" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"
