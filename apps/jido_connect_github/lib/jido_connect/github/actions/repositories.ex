@@ -154,6 +154,35 @@ defmodule Jido.Connect.GitHub.Actions.Repositories do
       end
     end
 
+    action :list_commits do
+      id "github.commit.list"
+      resource :commit
+      verb :list
+      data_classification :workspace_content
+      label "List commits"
+      description "List GitHub repository commits for an optional ref and path with pagination."
+      handler Jido.Connect.GitHub.Handlers.Actions.ListCommits
+      effect :read
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :ref, :string, example: "main"
+        field :path, :string, example: "lib/example.ex"
+        field :page, :integer, default: 1
+        field :per_page, :integer, default: 30
+      end
+
+      output do
+        field :commits, {:array, :map}
+      end
+    end
+
     action :read_file do
       id "github.file.read"
       resource :file

@@ -52,6 +52,17 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_branch_list_response()
   end
 
+  def list_commits(%{repo: repo} = params, access_token)
+      when is_binary(repo) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(
+      url: "/repos/#{repo}/commits",
+      params: commit_list_params(params)
+    )
+    |> handle_commit_list_response()
+  end
+
   def read_file(repo, path, ref, access_token)
       when is_binary(repo) and is_binary(path) and is_binary(access_token) do
     access_token
@@ -442,6 +453,18 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_branch_list_response(response), do: handle_error_response(response)
+
+  defp handle_commit_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_list(body) do
+    {:ok, Enum.map(body, &normalize_commit/1)}
+  end
+
+  defp handle_commit_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub commit list response was invalid", body)
+  end
+
+  defp handle_commit_list_response(response), do: handle_error_response(response)
 
   defp handle_file_content_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
@@ -845,6 +868,54 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp normalize_branch_commit(_commit), do: nil
+
+  defp normalize_commit(commit) when is_map(commit) do
+    details = Data.get(commit, "commit") || %{}
+    author = Data.get(details, "author") || %{}
+    committer = Data.get(details, "committer") || %{}
+
+    %{
+      sha: Data.get(commit, "sha"),
+      url: Data.get(commit, "html_url") || Data.get(commit, "url"),
+      message: Data.get(details, "message"),
+      author: normalize_commit_actor(Data.get(commit, "author"), author),
+      committer: normalize_commit_actor(Data.get(commit, "committer"), committer),
+      authored_at: Data.get(author, "date"),
+      committed_at: Data.get(committer, "date"),
+      parents: normalize_commit_parents(Data.get(commit, "parents"))
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_commit_actor(user, commit_actor) do
+    actor =
+      user
+      |> normalize_user()
+      |> case do
+        nil -> %{}
+        normalized -> normalized
+      end
+      |> Map.merge(%{
+        name: Data.get(commit_actor, "name"),
+        email: Data.get(commit_actor, "email"),
+        date: Data.get(commit_actor, "date")
+      })
+      |> Data.compact()
+
+    if actor == %{}, do: nil, else: actor
+  end
+
+  defp normalize_commit_parents(parents) when is_list(parents) do
+    Enum.map(parents, fn parent ->
+      %{
+        sha: Data.get(parent, "sha"),
+        url: Data.get(parent, "html_url") || Data.get(parent, "url")
+      }
+      |> Data.compact()
+    end)
+  end
+
+  defp normalize_commit_parents(_parents), do: []
 
   defp normalize_pull_request(pull_request) when is_map(pull_request) do
     %{
@@ -1280,6 +1351,16 @@ defmodule Jido.Connect.GitHub.Client do
       per_page: Map.get(params, :per_page, 30),
       page: Map.get(params, :page, 1)
     ]
+  end
+
+  defp commit_list_params(params) do
+    [
+      sha: Map.get(params, :ref),
+      path: Map.get(params, :path),
+      per_page: Map.get(params, :per_page, 30),
+      page: Map.get(params, :page, 1)
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end
 
   defp file_content_params(ref) when is_binary(ref), do: [ref: ref]

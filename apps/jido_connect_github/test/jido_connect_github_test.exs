@@ -104,6 +104,25 @@ defmodule Jido.Connect.GitHubTest do
        ]}
     end
 
+    def list_commits(
+          %{repo: "org/repo", ref: "main", path: "lib/example.ex", page: 2, per_page: 10},
+          "token"
+        ) do
+      {:ok,
+       [
+         %{
+           sha: "abc123",
+           url: "https://github.test/org/repo/commit/abc123",
+           message: "Add example",
+           author: %{login: "octocat", name: "Octo Cat"},
+           committer: %{login: "mona", name: "Mona"},
+           authored_at: "2026-04-29T10:00:00Z",
+           committed_at: "2026-04-29T10:05:00Z",
+           parents: [%{sha: "def456"}]
+         }
+       ]}
+    end
+
     def list_issues("org/repo", "open", "token") do
       {:ok, [%{number: 1, url: "https://github.test/1", title: "First", state: "open"}]}
     end
@@ -1023,6 +1042,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.GetRepository,
              Jido.Connect.GitHub.Actions.ListBranches,
+             Jido.Connect.GitHub.Actions.ListCommits,
              Jido.Connect.GitHub.Actions.ReadFile,
              Jido.Connect.GitHub.Actions.UpdateFile,
              Jido.Connect.GitHub.Actions.ListIssues,
@@ -1067,6 +1087,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.ListInstallationRepositories,
                  Jido.Connect.GitHub.Actions.GetRepository,
                  Jido.Connect.GitHub.Actions.ListBranches,
+                 Jido.Connect.GitHub.Actions.ListCommits,
                  Jido.Connect.GitHub.Actions.ReadFile,
                  Jido.Connect.GitHub.Actions.UpdateFile,
                  Jido.Connect.GitHub.Actions.ListIssues,
@@ -1116,6 +1137,9 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:module, Jido.Connect.GitHub.Actions.ListBranches} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListBranches)
+
+    assert {:module, Jido.Connect.GitHub.Actions.ListCommits} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListCommits)
 
     assert {:module, Jido.Connect.GitHub.Actions.ReadFile} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ReadFile)
@@ -1192,6 +1216,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListInstallationRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.GetRepository, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListBranches, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.ListCommits, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ReadFile, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdateFile, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.AddIssueLabels, :run, 2)
@@ -1384,6 +1409,22 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.ListBranches.name() == "github_branch_list"
+  end
+
+  test "generated commit list action metadata tracks ref, path, and pagination fields" do
+    projection = Jido.Connect.GitHub.Actions.ListCommits.jido_connect_projection()
+
+    assert projection.action_id == "github.commit.list"
+    assert projection.label == "List commits"
+    assert Enum.map(projection.input, & &1.name) == [:repo, :ref, :path, :page, :per_page]
+    assert Enum.map(projection.output, & &1.name) == [:commits]
+    assert projection.risk == :read
+    assert projection.resource == :commit
+    assert projection.verb == :list
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.ListCommits.name() == "github_commit_list"
   end
 
   test "generated file read action metadata tracks path, ref, and content metadata fields" do
@@ -2797,6 +2838,30 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "generated commit list action delegates to integration invoke runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              commits: [
+                %{
+                  sha: "abc123",
+                  message: "Add example",
+                  author: %{login: "octocat"},
+                  committer: %{login: "mona"},
+                  parents: [%{sha: "def456"}]
+                }
+              ]
+            }} =
+             Jido.Connect.GitHub.Actions.ListCommits.run(
+               %{repo: "org/repo", ref: "main", path: "lib/example.ex", page: 2, per_page: 10},
+               %{
+                 integration_context: context,
+                 credential_lease: lease
+               }
+             )
+  end
+
   test "generated installation repository action delegates to integration invoke runtime" do
     {context, lease} =
       context_and_lease(
@@ -3084,6 +3149,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.GetRepository,
              Jido.Connect.GitHub.Actions.ListBranches,
+             Jido.Connect.GitHub.Actions.ListCommits,
              Jido.Connect.GitHub.Actions.ReadFile,
              Jido.Connect.GitHub.Actions.UpdateFile,
              Jido.Connect.GitHub.Actions.ListIssues,
