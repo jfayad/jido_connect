@@ -193,5 +193,46 @@ defmodule Jido.Connect.Slack.Triggers.Events do
         field :conversation, :map
       end
     end
+
+    webhook :thread_reply do
+      id "slack.event.message.thread_reply"
+      resource :message
+      verb :watch
+      data_classification :workspace_content
+      label "Thread reply"
+
+      description "Receive Slack Events API message callbacks for plain thread replies, excluding thread root messages."
+
+      verification %{
+        kind: :slack_signed_request,
+        signature_header: "x-slack-signature",
+        timestamp_header: "x-slack-request-timestamp"
+      }
+
+      dedupe %{key: [:team_id, :channel, :thread_ts, :ts]}
+      handler Jido.Connect.Slack.Handlers.Triggers.ThreadReplyEvent
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["channels:history", "groups:history", "im:history", "mpim:history"]
+      end
+
+      signal do
+        field :team_id, :string
+        field :event_id, :string
+        field :channel, :string
+        field :channel_type, :string
+        field :user, :string
+        field :user_team, :string
+        field :source_team, :string
+        field :text, :string
+        field :ts, :string
+        field :thread_ts, :string
+        field :event_ts, :string
+        field :sender, :map
+        field :conversation, :map
+      end
+    end
   end
 end

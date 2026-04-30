@@ -335,6 +335,47 @@ defmodule Jido.Connect.Slack.WebhookTest do
              Webhook.normalize_signal("message.mpim", im_payload)
   end
 
+  test "normalizes thread reply message events and rejects thread roots" do
+    payload = %{
+      "type" => "event_callback",
+      "team_id" => "T123",
+      "event_id" => "Ev903",
+      "event" => %{
+        "type" => "message",
+        "channel" => "C123",
+        "channel_type" => "channel",
+        "user" => "U123",
+        "text" => "thread reply",
+        "ts" => "1700000000.000600",
+        "thread_ts" => "1700000000.000100",
+        "event_ts" => "1700000000.000600"
+      }
+    }
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev903",
+              channel: "C123",
+              channel_type: "channel",
+              user: "U123",
+              text: "thread reply",
+              ts: "1700000000.000600",
+              thread_ts: "1700000000.000100",
+              event_ts: "1700000000.000600"
+            }} = Webhook.normalize_signal("message.thread_reply", payload)
+
+    root_payload = put_in(payload, ["event", "ts"], "1700000000.000100")
+
+    assert {:error, %Error.ProviderError{provider: :slack, reason: :thread_root_message}} =
+             Webhook.normalize_signal("message.thread_reply", root_payload)
+
+    unthreaded_payload = update_in(payload, ["event"], &Map.delete(&1, "thread_ts"))
+
+    assert {:error, %Error.ProviderError{provider: :slack, reason: :not_thread_reply}} =
+             Webhook.normalize_signal("message.thread_reply", unthreaded_payload)
+  end
+
   test "invalid JSON payloads are provider errors" do
     body = "not json"
     timestamp = "1700000000"

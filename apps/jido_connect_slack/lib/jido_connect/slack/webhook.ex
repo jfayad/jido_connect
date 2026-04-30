@@ -132,6 +132,10 @@ defmodule Jido.Connect.Slack.Webhook do
     normalize_message_signal(payload, ["mpim"])
   end
 
+  def normalize_signal("message.thread_reply", payload) do
+    normalize_thread_reply_signal(payload)
+  end
+
   def normalize_signal(event, _payload) do
     {:error,
      Error.provider("Unsupported Slack event",
@@ -215,6 +219,24 @@ defmodule Jido.Connect.Slack.Webhook do
      )}
   end
 
+  defp normalize_thread_reply_signal(
+         %{"type" => "event_callback", "event" => %{"type" => "message"} = event} = payload
+       ) do
+    with :ok <- reject_message_subtype(event),
+         :ok <- require_message_channel_type(event, [nil, "channel", "group", "im", "mpim"]),
+         :ok <- require_thread_reply(event) do
+      {:ok, message_signal(payload, event)}
+    end
+  end
+
+  defp normalize_thread_reply_signal(_payload) do
+    {:error,
+     Error.provider("Unsupported Slack event",
+       provider: :slack,
+       reason: :unsupported_event
+     )}
+  end
+
   defp message_signal(payload, event) do
     signal =
       Data.compact(%{
@@ -235,6 +257,30 @@ defmodule Jido.Connect.Slack.Webhook do
 
       _other ->
         signal
+    end
+  end
+
+  defp require_thread_reply(event) do
+    thread_ts = Data.get(event, "thread_ts")
+    ts = Data.get(event, "ts")
+
+    cond do
+      thread_ts in [nil, ""] ->
+        {:error,
+         Error.provider("Slack message is not a thread reply",
+           provider: :slack,
+           reason: :not_thread_reply
+         )}
+
+      thread_ts == ts ->
+        {:error,
+         Error.provider("Slack message is a thread root",
+           provider: :slack,
+           reason: :thread_root_message
+         )}
+
+      true ->
+        :ok
     end
   end
 

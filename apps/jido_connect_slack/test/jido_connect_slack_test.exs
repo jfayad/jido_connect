@@ -542,6 +542,38 @@ defmodule Jido.Connect.SlackTest do
              :sender,
              :conversation
            ]
+
+    assert {:ok,
+            %{
+              id: "slack.event.message.thread_reply",
+              kind: :webhook,
+              resource: :message,
+              verb: :watch,
+              policies: [:workspace_access],
+              scopes: ["channels:history", "groups:history", "im:history", "mpim:history"],
+              dedupe: %{key: [:team_id, :channel, :thread_ts, :ts]},
+              verification: %{
+                kind: :slack_signed_request,
+                signature_header: "x-slack-signature",
+                timestamp_header: "x-slack-request-timestamp"
+              }
+            } = trigger} = Connect.trigger(spec, "slack.event.message.thread_reply")
+
+    assert Enum.map(trigger.signal, & &1.name) == [
+             :team_id,
+             :event_id,
+             :channel,
+             :channel_type,
+             :user,
+             :user_team,
+             :source_team,
+             :text,
+             :ts,
+             :thread_ts,
+             :event_ts,
+             :sender,
+             :conversation
+           ]
   end
 
   test "Slack catalog entry exposes setup, auth, and runtime capabilities" do
@@ -580,7 +612,8 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Sensors.PublicChannelMessage,
              Jido.Connect.Slack.Sensors.PrivateChannelMessage,
              Jido.Connect.Slack.Sensors.DirectMessage,
-             Jido.Connect.Slack.Sensors.MultiPersonDirectMessage
+             Jido.Connect.Slack.Sensors.MultiPersonDirectMessage,
+             Jido.Connect.Slack.Sensors.ThreadReply
            ]
 
     assert Jido.Connect.Slack.jido_plugin_module() == Jido.Connect.Slack.Plugin
@@ -608,7 +641,8 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Sensors.PublicChannelMessage,
                  Jido.Connect.Slack.Sensors.PrivateChannelMessage,
                  Jido.Connect.Slack.Sensors.DirectMessage,
-                 Jido.Connect.Slack.Sensors.MultiPersonDirectMessage
+                 Jido.Connect.Slack.Sensors.MultiPersonDirectMessage,
+                 Jido.Connect.Slack.Sensors.ThreadReply
                ],
                plugin: Jido.Connect.Slack.Plugin
              }
@@ -665,6 +699,9 @@ defmodule Jido.Connect.SlackTest do
     assert {:module, Jido.Connect.Slack.Sensors.MultiPersonDirectMessage} =
              Code.ensure_loaded(Jido.Connect.Slack.Sensors.MultiPersonDirectMessage)
 
+    assert {:module, Jido.Connect.Slack.Sensors.ThreadReply} =
+             Code.ensure_loaded(Jido.Connect.Slack.Sensors.ThreadReply)
+
     assert function_exported?(Jido.Connect.Slack.Actions.ListChannels, :run, 2)
     assert function_exported?(Jido.Connect.Slack.Sensors.AppMention, :handle_event, 2)
     assert function_exported?(Jido.Connect.Slack.Sensors.PublicChannelMessage, :handle_event, 2)
@@ -676,6 +713,8 @@ defmodule Jido.Connect.SlackTest do
              :handle_event,
              2
            )
+
+    assert function_exported?(Jido.Connect.Slack.Sensors.ThreadReply, :handle_event, 2)
 
     assert function_exported?(Jido.Connect.Slack.Plugin, :plugin_spec, 1)
   end
@@ -1390,6 +1429,20 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok, ^state} =
              Jido.Connect.Slack.Sensors.MultiPersonDirectMessage.handle_event(:anything, state)
+  end
+
+  test "generated thread reply sensor exposes trigger metadata and ignores direct events" do
+    assert Jido.Connect.Slack.Sensors.ThreadReply.trigger_id() ==
+             "slack.event.message.thread_reply"
+
+    assert Jido.Connect.Slack.Sensors.ThreadReply.signal_type() ==
+             "slack.event.message.thread_reply"
+
+    assert Jido.Connect.Slack.Sensors.ThreadReply.signal_source() ==
+             "/jido/connect/slack"
+
+    assert {:ok, state} = Jido.Connect.Slack.Sensors.ThreadReply.init(%{}, %{})
+    assert {:ok, ^state} = Jido.Connect.Slack.Sensors.ThreadReply.handle_event(:anything, state)
   end
 
   defp context_and_lease(opts \\ []) do
