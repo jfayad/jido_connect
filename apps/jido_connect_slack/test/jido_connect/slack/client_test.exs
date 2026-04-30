@@ -232,6 +232,28 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "delete scheduled message sends expected request and normalizes output" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/chat.deleteScheduledMessage"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "channel" => "C123",
+               "scheduled_message_id" => "Q123"
+             } = Jason.decode!(body)
+
+      Req.Test.json(conn, %{ok: true})
+    end)
+
+    assert {:ok, %{channel: "C123", scheduled_message_id: "Q123"}} =
+             Client.delete_scheduled_message(
+               %{channel: "C123", scheduled_message_id: "Q123"},
+               "token"
+             )
+  end
+
   test "update message sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

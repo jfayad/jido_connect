@@ -136,6 +136,17 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def delete_scheduled_message(
+          %{channel: "C123", scheduled_message_id: "Q123"},
+          "token"
+        ) do
+      {:ok,
+       %{
+         channel: "C123",
+         scheduled_message_id: "Q123"
+       }}
+    end
+
     def update_message(
           %{channel: "C123", ts: "1700000000.000100", text: "Updated"},
           "token"
@@ -389,6 +400,17 @@ defmodule Jido.Connect.SlackTest do
               confirmation: :required_for_ai
             }} =
              Connect.action(spec, "slack.message.schedule")
+
+    assert {:ok,
+            %{
+              id: "slack.message.unschedule",
+              resource: :message,
+              verb: :cancel,
+              mutation?: true,
+              confirmation: :always,
+              risk: :destructive
+            }} =
+             Connect.action(spec, "slack.message.unschedule")
 
     assert {:ok, %{id: "slack.message.update", mutation?: true, confirmation: :required_for_ai}} =
              Connect.action(spec, "slack.message.update")
@@ -708,6 +730,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.PostMessage,
              Jido.Connect.Slack.Actions.PostEphemeral,
              Jido.Connect.Slack.Actions.ScheduleMessage,
+             Jido.Connect.Slack.Actions.UnscheduleMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
              Jido.Connect.Slack.Actions.AddReaction,
@@ -742,6 +765,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.PostMessage,
                  Jido.Connect.Slack.Actions.PostEphemeral,
                  Jido.Connect.Slack.Actions.ScheduleMessage,
+                 Jido.Connect.Slack.Actions.UnscheduleMessage,
                  Jido.Connect.Slack.Actions.UpdateMessage,
                  Jido.Connect.Slack.Actions.DeleteMessage,
                  Jido.Connect.Slack.Actions.AddReaction,
@@ -797,6 +821,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.ScheduleMessage} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.ScheduleMessage)
+
+    assert {:module, Jido.Connect.Slack.Actions.UnscheduleMessage} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.UnscheduleMessage)
 
     assert {:module, Jido.Connect.Slack.Actions.DeleteMessage} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.DeleteMessage)
@@ -919,6 +946,28 @@ defmodule Jido.Connect.SlackTest do
     assert schedule_projection.risk == :write
     assert schedule_projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.ScheduleMessage.name() == "slack_message_schedule"
+
+    unschedule_projection = Jido.Connect.Slack.Actions.UnscheduleMessage.jido_connect_projection()
+
+    assert unschedule_projection.action_id == "slack.message.unschedule"
+    assert unschedule_projection.label == "Unschedule message"
+    assert unschedule_projection.resource == :message
+    assert unschedule_projection.verb == :cancel
+    assert unschedule_projection.scopes == ["chat:write"]
+
+    assert Enum.map(unschedule_projection.input, & &1.name) == [
+             :channel,
+             :scheduled_message_id
+           ]
+
+    assert Enum.map(unschedule_projection.output, & &1.name) == [
+             :channel,
+             :scheduled_message_id
+           ]
+
+    assert unschedule_projection.risk == :destructive
+    assert unschedule_projection.confirmation == :always
+    assert Jido.Connect.Slack.Actions.UnscheduleMessage.name() == "slack_message_unschedule"
 
     update_projection = Jido.Connect.Slack.Actions.UpdateMessage.jido_connect_projection()
 
@@ -1375,6 +1424,20 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated unschedule message action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              scheduled_message_id: "Q123"
+            }} =
+             Jido.Connect.Slack.Actions.UnscheduleMessage.run(
+               %{channel: "C123", scheduled_message_id: "Q123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated update message action delegates through integration runtime" do
     {context, lease} = context_and_lease()
 
@@ -1679,6 +1742,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.PostMessage,
              Jido.Connect.Slack.Actions.PostEphemeral,
              Jido.Connect.Slack.Actions.ScheduleMessage,
+             Jido.Connect.Slack.Actions.UnscheduleMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
              Jido.Connect.Slack.Actions.AddReaction,

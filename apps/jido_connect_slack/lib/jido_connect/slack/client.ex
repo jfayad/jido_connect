@@ -48,6 +48,14 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_scheduled_message_response()
   end
 
+  def delete_scheduled_message(attrs, access_token)
+      when is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/chat.deleteScheduledMessage", json: delete_scheduled_message_params(attrs))
+    |> handle_delete_scheduled_message_response(attrs)
+  end
+
   def update_message(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
     access_token
     |> request()
@@ -156,6 +164,12 @@ defmodule Jido.Connect.Slack.Client do
   defp scheduled_message_params(params) do
     params
     |> Map.take([:channel, :text, :post_at, :thread_ts, :reply_broadcast, :blocks])
+    |> Data.compact()
+  end
+
+  defp delete_scheduled_message_params(params) do
+    params
+    |> Map.take([:channel, :scheduled_message_id])
     |> Data.compact()
   end
 
@@ -346,6 +360,21 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_scheduled_message_response(response), do: handle_error_response(response)
+
+  defp handle_delete_scheduled_message_response(
+         {:ok, %{status: status, body: %{"ok" => true}}},
+         attrs
+       )
+       when status in 200..299 do
+    {:ok,
+     %{
+       channel: Data.get(attrs, :channel),
+       scheduled_message_id: Data.get(attrs, :scheduled_message_id)
+     }}
+  end
+
+  defp handle_delete_scheduled_message_response(response, _attrs),
+    do: handle_error_response(response)
 
   defp handle_delete_message_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do

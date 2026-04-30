@@ -102,6 +102,36 @@ defmodule Jido.Connect.Slack.Actions.Messages do
       end
     end
 
+    action :unschedule_message do
+      id "slack.message.unschedule"
+      resource :message
+      verb :cancel
+      data_classification :message_content
+      label "Unschedule message"
+      description "Cancel a Slack scheduled message before it posts."
+      handler Jido.Connect.Slack.Handlers.Actions.UnscheduleMessage
+      effect :destructive, confirmation: :always
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["chat:write"]
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+
+        field :scheduled_message_id, :string,
+          required?: true,
+          description: "Slack scheduled message ID returned by chat.scheduleMessage."
+      end
+
+      output do
+        field :channel, :string
+        field :scheduled_message_id, :string
+      end
+    end
+
     action :update_message do
       id "slack.message.update"
       resource :message
