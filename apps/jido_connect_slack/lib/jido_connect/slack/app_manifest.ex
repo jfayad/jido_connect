@@ -22,6 +22,7 @@ defmodule Jido.Connect.Slack.AppManifest do
   ]
   @event_scopes [
     "app_mentions:read",
+    "channels:read",
     "channels:history",
     "groups:history",
     "im:history",
@@ -128,6 +129,10 @@ defmodule Jido.Connect.Slack.AppManifest do
         "message.groups",
         "message.im",
         "message.mpim",
+        "channel_created",
+        "channel_rename",
+        "channel_archive",
+        "channel_unarchive",
         "file_created",
         "file_shared",
         "file_public",

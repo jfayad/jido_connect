@@ -1359,6 +1359,10 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Sensors.ThreadReply,
              Jido.Connect.Slack.Sensors.ReactionAdded,
              Jido.Connect.Slack.Sensors.ReactionRemoved,
+             Jido.Connect.Slack.Sensors.ChannelCreated,
+             Jido.Connect.Slack.Sensors.ChannelRename,
+             Jido.Connect.Slack.Sensors.ChannelArchive,
+             Jido.Connect.Slack.Sensors.ChannelUnarchive,
              Jido.Connect.Slack.Sensors.FileCreated,
              Jido.Connect.Slack.Sensors.FileShared,
              Jido.Connect.Slack.Sensors.FilePublic,
@@ -1416,6 +1420,10 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Sensors.ThreadReply,
                  Jido.Connect.Slack.Sensors.ReactionAdded,
                  Jido.Connect.Slack.Sensors.ReactionRemoved,
+                 Jido.Connect.Slack.Sensors.ChannelCreated,
+                 Jido.Connect.Slack.Sensors.ChannelRename,
+                 Jido.Connect.Slack.Sensors.ChannelArchive,
+                 Jido.Connect.Slack.Sensors.ChannelUnarchive,
                  Jido.Connect.Slack.Sensors.FileCreated,
                  Jido.Connect.Slack.Sensors.FileShared,
                  Jido.Connect.Slack.Sensors.FilePublic,
@@ -3844,6 +3852,24 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok, ^state} =
              Jido.Connect.Slack.Sensors.ReactionRemoved.handle_event(:anything, state)
+  end
+
+  test "generated channel lifecycle sensors expose trigger metadata and ignore direct events" do
+    sensors = [
+      {Jido.Connect.Slack.Sensors.ChannelCreated, "slack.event.channel_created"},
+      {Jido.Connect.Slack.Sensors.ChannelRename, "slack.event.channel_rename"},
+      {Jido.Connect.Slack.Sensors.ChannelArchive, "slack.event.channel_archive"},
+      {Jido.Connect.Slack.Sensors.ChannelUnarchive, "slack.event.channel_unarchive"}
+    ]
+
+    for {sensor, trigger_id} <- sensors do
+      assert sensor.trigger_id() == trigger_id
+      assert sensor.signal_type() == trigger_id
+      assert sensor.signal_source() == "/jido/connect/slack"
+
+      assert {:ok, state} = sensor.init(%{}, %{})
+      assert {:ok, ^state} = sensor.handle_event(:anything, state)
+    end
   end
 
   defp context_and_lease(opts \\ []) do

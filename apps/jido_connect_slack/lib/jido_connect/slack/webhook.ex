@@ -159,13 +159,17 @@ defmodule Jido.Connect.Slack.Webhook do
       )
       when event_type == payload_event_type and
              event_type in [
+               "channel_created",
+               "channel_rename",
+               "channel_archive",
+               "channel_unarchive",
                "file_created",
                "file_shared",
                "file_public",
                "file_deleted",
                "file_change"
              ] do
-    {:ok, file_signal(payload, event)}
+    {:ok, lifecycle_signal(payload, event)}
   end
 
   def normalize_signal(event, _payload) do
@@ -377,6 +381,50 @@ defmodule Jido.Connect.Slack.Webhook do
   defp reaction_item_owner(payload, event) do
     Data.compact(%{
       id: Data.get(event, "item_user"),
+      team_id: Data.get(payload, "team_id")
+    })
+  end
+
+  defp lifecycle_signal(payload, %{"type" => event_type} = event)
+       when event_type in [
+              "channel_created",
+              "channel_rename",
+              "channel_archive",
+              "channel_unarchive"
+            ] do
+    Data.compact(%{
+      team_id: Data.get(payload, "team_id"),
+      event_id: Data.get(payload, "event_id"),
+      channel_id: channel_id(event),
+      channel: channel_metadata(event),
+      user: Data.get(event, "user"),
+      event_ts: Data.get(event, "event_ts"),
+      actor: channel_actor(payload, event)
+    })
+  end
+
+  defp lifecycle_signal(payload, event), do: file_signal(payload, event)
+
+  defp channel_id(event) do
+    case Data.get(event, "channel") do
+      channel_id when is_binary(channel_id) -> channel_id
+      channel when is_map(channel) -> Data.get(channel, "id")
+      _other -> nil
+    end
+  end
+
+  defp channel_metadata(event) do
+    case Data.get(event, "channel") do
+      channel when is_map(channel) -> Data.compact(channel)
+      _other -> nil
+    end
+  end
+
+  defp channel_actor(payload, event) do
+    channel = channel_metadata(event) || %{}
+
+    Data.compact(%{
+      id: Data.get(event, "user") || Data.get(channel, "creator"),
       team_id: Data.get(payload, "team_id")
     })
   end

@@ -476,6 +476,90 @@ defmodule Jido.Connect.Slack.WebhookTest do
              Webhook.normalize_event(payload)
   end
 
+  test "normalizes channel created events with channel metadata" do
+    payload =
+      channel_event_payload("channel_created", "Ev906", %{
+        "channel" => %{
+          "id" => "C123",
+          "name" => "project",
+          "created" => 1_700_000_000,
+          "creator" => "U123"
+        }
+      })
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev906",
+              channel_id: "C123",
+              channel: %{
+                "id" => "C123",
+                "name" => "project",
+                "created" => 1_700_000_000,
+                "creator" => "U123"
+              },
+              actor: %{id: "U123", team_id: "T123"}
+            }} = Webhook.normalize_signal("channel_created", payload)
+
+    assert {:ok, %{channel_id: "C123"}} = Webhook.normalize_event(payload)
+  end
+
+  test "normalizes channel rename events with channel metadata" do
+    payload =
+      channel_event_payload("channel_rename", "Ev907", %{
+        "channel" => %{"id" => "C123", "name" => "project-renamed", "created" => 1_700_000_000},
+        "event_ts" => "1700000000.001000"
+      })
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev907",
+              channel_id: "C123",
+              channel: %{"id" => "C123", "name" => "project-renamed", "created" => 1_700_000_000},
+              event_ts: "1700000000.001000"
+            }} = Webhook.normalize_signal("channel_rename", payload)
+  end
+
+  test "normalizes channel archive and unarchive events with actor metadata" do
+    archive_payload =
+      channel_event_payload("channel_archive", "Ev908", %{
+        "channel" => "C123",
+        "user" => "U123",
+        "event_ts" => "1700000000.001100"
+      })
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev908",
+              channel_id: "C123",
+              user: "U123",
+              event_ts: "1700000000.001100",
+              actor: %{id: "U123", team_id: "T123"}
+            }} = Webhook.normalize_signal("channel_archive", archive_payload)
+
+    assert {:ok, signal} = Webhook.normalize_event(archive_payload)
+    refute Map.has_key?(signal, :channel)
+
+    unarchive_payload =
+      channel_event_payload("channel_unarchive", "Ev909", %{
+        "channel" => "C123",
+        "user" => "U456",
+        "event_ts" => "1700000000.001200"
+      })
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev909",
+              channel_id: "C123",
+              user: "U456",
+              event_ts: "1700000000.001200",
+              actor: %{id: "U456", team_id: "T123"}
+            }} = Webhook.normalize_signal("channel_unarchive", unarchive_payload)
+  end
+
   test "normalizes file created events with file metadata" do
     payload = file_event_payload("file_created", "Ev906", %{"user_id" => "U123"})
 
@@ -603,6 +687,15 @@ defmodule Jido.Connect.Slack.WebhookTest do
           },
           event_attrs
         )
+    }
+  end
+
+  defp channel_event_payload(type, event_id, event_attrs) do
+    %{
+      "type" => "event_callback",
+      "team_id" => "T123",
+      "event_id" => event_id,
+      "event" => Map.put(event_attrs, "type", type)
     }
   end
 end
