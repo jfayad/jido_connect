@@ -169,6 +169,86 @@ defmodule Jido.Connect.Slack.ClientTest do
             }} = Client.user_info(%{user: "B123", include_locale: true}, "token")
   end
 
+  test "lookup user by email sends expected request and normalizes profile" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/users.lookupByEmail"
+      assert %{"email" => "ada@example.com"} = URI.decode_query(conn.query_string)
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        ok: true,
+        user: %{
+          id: "U123",
+          team_id: "T123",
+          name: "ada",
+          real_name: "Ada Lovelace",
+          deleted: false,
+          is_bot: false,
+          is_app_user: false,
+          profile: %{
+            email: "ada@example.com",
+            display_name: "ada",
+            real_name: "Ada Lovelace",
+            unknown_profile_field: "ignored"
+          },
+          unknown_user_field: "ignored"
+        }
+      })
+    end)
+
+    assert {:ok,
+            %{
+              user: %{
+                id: "U123",
+                team_id: "T123",
+                name: "ada",
+                real_name: "Ada Lovelace",
+                deleted: false,
+                is_bot: false,
+                is_app_user: false,
+                profile: %{
+                  email: "ada@example.com",
+                  display_name: "ada",
+                  real_name: "Ada Lovelace"
+                }
+              }
+            }} = Client.lookup_user_by_email(%{email: "ada@example.com"}, "token")
+  end
+
+  test "lookup user by email normalizes Slack users_not_found" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/users.lookupByEmail"
+
+      Req.Test.json(conn, %{ok: false, error: "users_not_found"})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :slack,
+              status: 404,
+              reason: :not_found,
+              message: "Slack user was not found"
+            }} = Client.lookup_user_by_email(%{email: "missing@example.com"}, "token")
+  end
+
+  test "lookup user by email normalizes malformed successful responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/users.lookupByEmail"
+
+      Req.Test.json(conn, %{ok: true, user: nil})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :slack,
+              reason: :invalid_response,
+              details: %{body: %{"ok" => true, "user" => nil}}
+            }} = Client.lookup_user_by_email(%{email: "ada@example.com"}, "token")
+  end
+
   test "auth test returns successful response maps" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

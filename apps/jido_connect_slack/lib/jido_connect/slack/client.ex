@@ -33,6 +33,14 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_user_info_response()
   end
 
+  def lookup_user_by_email(params, access_token)
+      when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/users.lookupByEmail", params: lookup_user_by_email_params(params))
+    |> handle_lookup_user_by_email_response()
+  end
+
   def auth_test(access_token) when is_binary(access_token) do
     access_token
     |> request()
@@ -62,6 +70,12 @@ defmodule Jido.Connect.Slack.Client do
   defp user_info_params(params) do
     params
     |> Map.take([:user, :include_locale])
+    |> Data.compact()
+  end
+
+  defp lookup_user_by_email_params(params) do
+    params
+    |> Map.take([:email])
     |> Data.compact()
   end
 
@@ -137,6 +151,30 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_user_info_response(response), do: handle_error_response(response)
+
+  defp handle_lookup_user_by_email_response(
+         {:ok, %{body: %{"ok" => false, "error" => "users_not_found"} = body}}
+       ) do
+    {:error,
+     Error.provider("Slack user was not found",
+       provider: :slack,
+       status: 404,
+       reason: :not_found,
+       details: %{body: body}
+     )}
+  end
+
+  defp handle_lookup_user_by_email_response(
+         {:ok, %{status: status, body: %{"ok" => true} = body}}
+       )
+       when status in 200..299 do
+    case Data.get(body, "user") do
+      user when is_map(user) -> {:ok, %{user: normalize_user_info(user)}}
+      _other -> invalid_success_response("Slack user lookup by email response was invalid", body)
+    end
+  end
+
+  defp handle_lookup_user_by_email_response(response), do: handle_error_response(response)
 
   defp handle_map_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do

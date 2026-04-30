@@ -1,0 +1,81 @@
+defmodule Jido.Connect.Slack.Handlers.Actions.LookupUserByEmail do
+  @moduledoc false
+
+  alias Jido.Connect.{Data, Error}
+
+  def run(input, %{credentials: credentials}) do
+    with {:ok, client} <- fetch_client(credentials),
+         {:ok, result} <- client.lookup_user_by_email(input, Map.get(credentials, :access_token)) do
+      user = Data.get(result, :user, %{})
+
+      {:ok, normalize_user(user)}
+    end
+  end
+
+  defp fetch_client(%{slack_client: client}) when is_atom(client), do: {:ok, client}
+
+  defp fetch_client(_credentials) do
+    {:error, Error.config("Slack client module is required", key: :slack_client)}
+  end
+
+  defp normalize_user(user) do
+    profile = normalize_profile(Data.get(user, "profile"))
+
+    %{
+      user_id: Data.get(user, "id"),
+      team_id: Data.get(user, "team_id"),
+      name: Data.get(user, "name"),
+      real_name: Data.get(user, "real_name"),
+      tz: Data.get(user, "tz"),
+      deleted: Data.get(user, "deleted"),
+      is_bot: Data.get(user, "is_bot"),
+      is_app_user: Data.get(user, "is_app_user"),
+      user_type: user_type(user),
+      bot_id: Data.get(user, "bot_id") || Data.get(profile, "bot_id"),
+      updated: Data.get(user, "updated"),
+      profile: profile,
+      user: user
+    }
+    |> Data.compact()
+  end
+
+  defp user_type(user) do
+    case {Data.get(user, "is_bot"), Data.get(user, "is_app_user")} do
+      {true, _is_app_user} -> "bot"
+      {_is_bot, true} -> "app_user"
+      _other -> "user"
+    end
+  end
+
+  defp normalize_profile(profile) when is_map(profile) do
+    normalized =
+      %{
+        avatar_hash: Data.get(profile, "avatar_hash"),
+        bot_id: Data.get(profile, "bot_id"),
+        display_name: Data.get(profile, "display_name"),
+        display_name_normalized: Data.get(profile, "display_name_normalized"),
+        email: Data.get(profile, "email"),
+        first_name: Data.get(profile, "first_name"),
+        image_24: Data.get(profile, "image_24"),
+        image_32: Data.get(profile, "image_32"),
+        image_48: Data.get(profile, "image_48"),
+        image_72: Data.get(profile, "image_72"),
+        image_192: Data.get(profile, "image_192"),
+        image_512: Data.get(profile, "image_512"),
+        last_name: Data.get(profile, "last_name"),
+        phone: Data.get(profile, "phone"),
+        real_name: Data.get(profile, "real_name"),
+        real_name_normalized: Data.get(profile, "real_name_normalized"),
+        skype: Data.get(profile, "skype"),
+        status_emoji: Data.get(profile, "status_emoji"),
+        status_text: Data.get(profile, "status_text"),
+        team: Data.get(profile, "team"),
+        title: Data.get(profile, "title")
+      }
+      |> Data.compact()
+
+    if map_size(normalized) == 0, do: nil, else: normalized
+  end
+
+  defp normalize_profile(_profile), do: nil
+end

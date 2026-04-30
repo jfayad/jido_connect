@@ -121,6 +121,58 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def lookup_user_by_email(%{email: "ada@example.com"}, "token") do
+      {:ok,
+       %{
+         user: %{
+           id: "U123",
+           team_id: "T123",
+           name: "ada",
+           real_name: "Ada Lovelace",
+           deleted: false,
+           is_bot: false,
+           is_app_user: false,
+           profile: %{
+             email: "ada@example.com",
+             display_name: "ada",
+             real_name: "Ada Lovelace"
+           }
+         }
+       }}
+    end
+
+    def lookup_user_by_email(%{email: "app@example.com"}, "token") do
+      {:ok,
+       %{
+         user: %{
+           id: "UAPP",
+           team_id: "T123",
+           name: "workflow-app",
+           real_name: "Workflow App",
+           deleted: false,
+           is_bot: false,
+           is_app_user: true,
+           profile: %{}
+         }
+       }}
+    end
+
+    def lookup_user_by_email(%{email: "bot@example.com"}, "token") do
+      {:ok,
+       %{
+         user: %{
+           id: "B123",
+           team_id: "T123",
+           name: "build-bot",
+           real_name: "Build Bot",
+           deleted: false,
+           is_bot: true,
+           is_app_user: false,
+           profile: nil
+         }
+       }}
+    end
+
     def team_info(%{team_id: "T123"}, "token") do
       {:ok,
        %{
@@ -199,6 +251,17 @@ defmodule Jido.Connect.SlackTest do
               mutation?: false
             }} =
              Connect.action(spec, "slack.user.info")
+
+    assert {:ok,
+            %{
+              id: "slack.user.lookup_by_email",
+              resource: :user,
+              verb: :read,
+              policies: [:workspace_access],
+              scopes: ["users:read.email"],
+              mutation?: false
+            }} =
+             Connect.action(spec, "slack.user.lookup_by_email")
   end
 
   test "Slack catalog entry exposes setup, auth, and runtime capabilities" do
@@ -223,7 +286,8 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
              Jido.Connect.Slack.Actions.ListUsers,
-             Jido.Connect.Slack.Actions.UserInfo
+             Jido.Connect.Slack.Actions.UserInfo,
+             Jido.Connect.Slack.Actions.LookupUserByEmail
            ]
 
     assert Jido.Connect.Slack.jido_sensor_modules() == []
@@ -239,7 +303,8 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.TeamInfo,
                  Jido.Connect.Slack.Actions.PostMessage,
                  Jido.Connect.Slack.Actions.ListUsers,
-                 Jido.Connect.Slack.Actions.UserInfo
+                 Jido.Connect.Slack.Actions.UserInfo,
+                 Jido.Connect.Slack.Actions.LookupUserByEmail
                ],
                sensors: [],
                plugin: Jido.Connect.Slack.Plugin
@@ -260,6 +325,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.UserInfo} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.UserInfo)
+
+    assert {:module, Jido.Connect.Slack.Actions.LookupUserByEmail} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.LookupUserByEmail)
 
     assert {:module, Jido.Connect.Slack.Plugin} =
              Code.ensure_loaded(Jido.Connect.Slack.Plugin)
@@ -334,6 +402,34 @@ defmodule Jido.Connect.SlackTest do
            ]
 
     assert Enum.map(user_info_projection.output, & &1.name) == [
+             :user_id,
+             :team_id,
+             :name,
+             :real_name,
+             :tz,
+             :deleted,
+             :is_bot,
+             :is_app_user,
+             :user_type,
+             :bot_id,
+             :updated,
+             :profile,
+             :user
+           ]
+
+    lookup_user_projection =
+      Jido.Connect.Slack.Actions.LookupUserByEmail.jido_connect_projection()
+
+    assert lookup_user_projection.action_id == "slack.user.lookup_by_email"
+    assert lookup_user_projection.resource == :user
+    assert lookup_user_projection.verb == :read
+    assert lookup_user_projection.scopes == ["users:read.email"]
+
+    assert Enum.map(lookup_user_projection.input, & &1.name) == [
+             :email
+           ]
+
+    assert Enum.map(lookup_user_projection.output, & &1.name) == [
              :user_id,
              :team_id,
              :name,
@@ -480,6 +576,83 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated lookup user by email action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              user_id: "U123",
+              team_id: "T123",
+              name: "ada",
+              real_name: "Ada Lovelace",
+              user_type: "user",
+              profile: %{
+                email: "ada@example.com",
+                display_name: "ada",
+                real_name: "Ada Lovelace"
+              },
+              user: %{id: "U123"}
+            }} =
+             Jido.Connect.Slack.Actions.LookupUserByEmail.run(
+               %{email: "ada@example.com"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:ok, %{user_id: "UAPP", user_type: "app_user"} = app_user} =
+             Jido.Connect.Slack.Actions.LookupUserByEmail.run(
+               %{email: "app@example.com"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    refute Map.has_key?(app_user, :profile)
+
+    assert {:ok, %{user_id: "B123", user_type: "bot"} = bot_user} =
+             Jido.Connect.Slack.Actions.LookupUserByEmail.run(
+               %{email: "bot@example.com"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    refute Map.has_key?(bot_user, :profile)
+  end
+
+  test "lookup user by email returns config errors from missing client" do
+    {context, lease} = context_and_lease()
+
+    lease = %{lease | fields: %{access_token: "token"}}
+
+    assert {:error,
+            %Connect.Error.ConfigError{
+              key: :slack_client,
+              message: "Slack client module is required"
+            }} =
+             Jido.Connect.Slack.Actions.LookupUserByEmail.run(
+               %{email: "ada@example.com"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "lookup user by email requires Slack email scope" do
+    {context, lease} = context_and_lease()
+
+    context = %{
+      context
+      | connection: %{
+          context.connection
+          | scopes: ["channels:read", "chat:write", "team:read", "users:read"]
+        }
+    }
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["users:read.email"]
+            }} =
+             Jido.Connect.Slack.Actions.LookupUserByEmail.run(
+               %{email: "ada@example.com"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated team info action delegates through integration runtime" do
     {context, lease} = context_and_lease()
 
@@ -508,7 +681,8 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
              Jido.Connect.Slack.Actions.ListUsers,
-             Jido.Connect.Slack.Actions.UserInfo
+             Jido.Connect.Slack.Actions.UserInfo,
+             Jido.Connect.Slack.Actions.LookupUserByEmail
            ]
 
     filtered =
@@ -544,7 +718,7 @@ defmodule Jido.Connect.SlackTest do
         owner_type: :tenant,
         owner_id: "T123",
         status: :connected,
-        scopes: ["channels:read", "chat:write", "team:read", "users:read"]
+        scopes: ["channels:read", "chat:write", "team:read", "users:read", "users:read.email"]
       })
 
     context =

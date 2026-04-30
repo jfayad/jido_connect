@@ -70,5 +70,44 @@ defmodule Jido.Connect.Slack.Actions.Users do
         field :user, :map
       end
     end
+
+    action :lookup_user_by_email do
+      id "slack.user.lookup_by_email"
+      resource :user
+      verb :read
+      data_classification :identity
+      label "Lookup user by email"
+
+      description "Return normalized Slack user identity and profile details for an email address."
+
+      handler Jido.Connect.Slack.Handlers.Actions.LookupUserByEmail
+      effect :read
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["users:read.email"]
+      end
+
+      input do
+        field :email, :string
+      end
+
+      output do
+        field :user_id, :string
+        field :team_id, :string
+        field :name, :string
+        field :real_name, :string
+        field :tz, :string
+        field :deleted, :boolean
+        field :is_bot, :boolean
+        field :is_app_user, :boolean
+        field :user_type, :string
+        field :bot_id, :string
+        field :updated, :integer
+        field :profile, :map
+        field :user, :map
+      end
+    end
   end
 end
