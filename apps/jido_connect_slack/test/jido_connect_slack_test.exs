@@ -98,6 +98,56 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def get_conversation_info(%{channel: "C123"}, "token") do
+      {:ok,
+       %{
+         channel: "C123",
+         conversation: %{
+           "id" => "C123",
+           "name" => "general",
+           "is_channel" => true,
+           "is_private" => false
+         }
+       }}
+    end
+
+    def get_conversation_info(%{channel: "G123"}, "token") do
+      {:ok,
+       %{
+         channel: "G123",
+         conversation: %{
+           "id" => "G123",
+           "name" => "private",
+           "is_group" => true,
+           "is_private" => true
+         }
+       }}
+    end
+
+    def get_conversation_info(%{channel: "D123"}, "token") do
+      {:ok,
+       %{
+         channel: "D123",
+         conversation: %{
+           "id" => "D123",
+           "is_im" => true,
+           "user" => "U123"
+         }
+       }}
+    end
+
+    def get_conversation_info(%{channel: "GMP123"}, "token") do
+      {:ok,
+       %{
+         channel: "GMP123",
+         conversation: %{
+           "id" => "GMP123",
+           "is_mpim" => true,
+           "name" => "mpdm-user-1--user-2-1"
+         }
+       }}
+    end
+
     def post_message(
           %{channel: "C123", text: "Hello", reply_broadcast: false},
           "token"
@@ -368,6 +418,17 @@ defmodule Jido.Connect.SlackTest do
               mutation?: false
             }} =
              Connect.action(spec, "slack.thread.replies")
+
+    assert {:ok,
+            %{
+              id: "slack.conversation.info",
+              resource: :conversation,
+              verb: :read,
+              policies: [:workspace_access],
+              scopes: ["channels:read"],
+              mutation?: false
+            }} =
+             Connect.action(spec, "slack.conversation.info")
 
     assert {:ok,
             %{
@@ -723,6 +784,7 @@ defmodule Jido.Connect.SlackTest do
     assert Jido.Connect.Slack.jido_action_modules() == [
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.GetThreadReplies,
+             Jido.Connect.Slack.Actions.GetConversationInfo,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.AuthTest,
@@ -758,6 +820,7 @@ defmodule Jido.Connect.SlackTest do
                actions: [
                  Jido.Connect.Slack.Actions.ListChannels,
                  Jido.Connect.Slack.Actions.GetThreadReplies,
+                 Jido.Connect.Slack.Actions.GetConversationInfo,
                  Jido.Connect.Slack.Actions.ListConversationMembers,
                  Jido.Connect.Slack.Actions.UploadFile,
                  Jido.Connect.Slack.Actions.AuthTest,
@@ -1113,6 +1176,25 @@ defmodule Jido.Connect.SlackTest do
              :next_cursor
            ]
 
+    conversation_info_projection =
+      Jido.Connect.Slack.Actions.GetConversationInfo.jido_connect_projection()
+
+    assert conversation_info_projection.action_id == "slack.conversation.info"
+    assert conversation_info_projection.resource == :conversation
+    assert conversation_info_projection.verb == :read
+    assert conversation_info_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
+
+    assert Enum.map(conversation_info_projection.input, & &1.name) == [
+             :channel,
+             :conversation_type,
+             :include_locale
+           ]
+
+    assert Enum.map(conversation_info_projection.output, & &1.name) == [
+             :channel,
+             :conversation
+           ]
+
     auth_projection = Jido.Connect.Slack.Actions.AuthTest.jido_connect_projection()
     assert auth_projection.action_id == "slack.auth.test"
     assert auth_projection.resource == :auth
@@ -1270,6 +1352,84 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ListConversationMembers.run(
                %{channel: "G123"},
                %{integration_context: private_context, credential_lease: lease}
+             )
+  end
+
+  test "generated get conversation info action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              conversation: %{
+                "id" => "C123",
+                "name" => "general",
+                "is_channel" => true
+              }
+            }} =
+             Jido.Connect.Slack.Actions.GetConversationInfo.run(
+               %{channel: "C123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "get conversation info resolves scopes from conversation type" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["groups:read"]
+            }} =
+             Jido.Connect.Slack.Actions.GetConversationInfo.run(
+               %{channel: "G123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["im:read"]
+            }} =
+             Jido.Connect.Slack.Actions.GetConversationInfo.run(
+               %{channel: "D123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["mpim:read"]
+            }} =
+             Jido.Connect.Slack.Actions.GetConversationInfo.run(
+               %{channel: "GMP123", conversation_type: "mpim"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    expanded_context = %{
+      context
+      | connection: %{
+          context.connection
+          | scopes: context.connection.scopes ++ ["groups:read", "im:read", "mpim:read"]
+        }
+    }
+
+    assert {:ok, %{channel: "G123", conversation: %{"is_private" => true}}} =
+             Jido.Connect.Slack.Actions.GetConversationInfo.run(
+               %{channel: "G123"},
+               %{integration_context: expanded_context, credential_lease: lease}
+             )
+
+    assert {:ok, %{channel: "D123", conversation: %{"is_im" => true}}} =
+             Jido.Connect.Slack.Actions.GetConversationInfo.run(
+               %{channel: "D123"},
+               %{integration_context: expanded_context, credential_lease: lease}
+             )
+
+    assert {:ok, %{channel: "GMP123", conversation: %{"is_mpim" => true}}} =
+             Jido.Connect.Slack.Actions.GetConversationInfo.run(
+               %{channel: "GMP123", conversation_type: "mpim"},
+               %{integration_context: expanded_context, credential_lease: lease}
              )
   end
 
@@ -1735,6 +1895,7 @@ defmodule Jido.Connect.SlackTest do
     assert spec.actions == [
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.GetThreadReplies,
+             Jido.Connect.Slack.Actions.GetConversationInfo,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.AuthTest,

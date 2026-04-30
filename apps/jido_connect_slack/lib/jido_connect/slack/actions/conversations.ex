@@ -76,6 +76,38 @@ defmodule Jido.Connect.Slack.Actions.Conversations do
       end
     end
 
+    action :get_conversation_info do
+      id "slack.conversation.info"
+      resource :conversation
+      verb :read
+      data_classification :workspace_metadata
+      label "Get conversation info"
+      description "Get metadata for a Slack public channel, private channel, IM, or MPIM."
+      handler Jido.Connect.Slack.Handlers.Actions.GetConversationInfo
+      effect :read
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["channels:read"], resolver: Jido.Connect.Slack.ScopeResolver
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+
+        field :conversation_type, :string,
+          description:
+            "Optional Slack conversation type: public_channel, private_channel, im, or mpim."
+
+        field :include_locale, :boolean, default: false
+      end
+
+      output do
+        field :channel, :string
+        field :conversation, :map
+      end
+    end
+
     action :list_conversation_members do
       id "slack.conversation.members"
       resource :conversation_member

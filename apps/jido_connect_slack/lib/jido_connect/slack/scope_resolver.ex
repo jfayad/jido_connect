@@ -2,7 +2,7 @@ defmodule Jido.Connect.Slack.ScopeResolver do
   @moduledoc """
   Resolves Slack scopes whose requirements depend on action input.
 
-  Slack's `conversations.list` changes required scopes based on the requested
+  Slack's conversations endpoints change required scopes based on the requested
   conversation types, so the static DSL scopes represent the default public
   channel case and this resolver tightens checks for private channels, DMs, and
   multi-person DMs. Slack history reads use the same conversation distinctions.
@@ -33,10 +33,21 @@ defmodule Jido.Connect.Slack.ScopeResolver do
     required_scopes(%{id: "slack.channel.list"}, input, connection)
   end
 
+  def required_scopes(%{id: "slack.conversation.info"}, input, _connection) do
+    input
+    |> requested_conversation_type()
+    |> conversation_read_scope()
+    |> List.wrap()
+  end
+
+  def required_scopes(%{action_id: "slack.conversation.info"}, input, connection) do
+    required_scopes(%{id: "slack.conversation.info"}, input, connection)
+  end
+
   def required_scopes(%{id: "slack.conversation.members"}, input, _connection) do
     input
     |> requested_conversation_type()
-    |> then(&Map.get(@conversation_type_scopes, &1, "channels:read"))
+    |> conversation_read_scope()
     |> List.wrap()
   end
 
@@ -75,6 +86,10 @@ defmodule Jido.Connect.Slack.ScopeResolver do
       nil -> type_from_channel(Map.get(input, :channel, Map.get(input, "channel")))
       type -> type |> to_string() |> String.trim()
     end
+  end
+
+  defp conversation_read_scope(type) do
+    Map.get(@conversation_type_scopes, type, "channels:read")
   end
 
   defp type_from_channel("C" <> _rest), do: "public_channel"

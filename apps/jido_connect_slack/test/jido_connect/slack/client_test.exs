@@ -145,6 +145,44 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "get conversation info sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/conversations.info"
+
+      assert %{
+               "channel" => "C123",
+               "include_locale" => "true"
+             } = URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        ok: true,
+        channel: %{
+          id: "C123",
+          name: "general",
+          is_channel: true,
+          is_private: false
+        }
+      })
+    end)
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              conversation: %{
+                "id" => "C123",
+                "name" => "general",
+                "is_channel" => true
+              }
+            }} =
+             Client.get_conversation_info(
+               %{channel: "C123", include_locale: true},
+               "token"
+             )
+  end
+
   test "post message sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

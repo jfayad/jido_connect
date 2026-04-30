@@ -19,6 +19,14 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_thread_replies_response(params)
   end
 
+  def get_conversation_info(params, access_token)
+      when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/conversations.info", params: conversation_info_params(params))
+    |> handle_conversation_info_response(params)
+  end
+
   def list_conversation_members(params, access_token)
       when is_map(params) and is_binary(access_token) do
     access_token
@@ -146,6 +154,12 @@ defmodule Jido.Connect.Slack.Client do
   defp thread_replies_params(params) do
     params
     |> Map.take([:channel, :ts, :limit, :cursor, :oldest, :latest, :inclusive])
+    |> Data.compact()
+  end
+
+  defp conversation_info_params(params) do
+    params
+    |> Map.take([:channel, :include_locale])
     |> Data.compact()
   end
 
@@ -286,6 +300,26 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_thread_replies_response(response, _params), do: handle_error_response(response)
+
+  defp handle_conversation_info_response(
+         {:ok, %{status: status, body: %{"ok" => true} = body}},
+         params
+       )
+       when status in 200..299 do
+    case Map.get(body, "channel") do
+      conversation when is_map(conversation) ->
+        {:ok,
+         %{
+           channel: Data.get(conversation, "id", Data.get(params, :channel)),
+           conversation: conversation
+         }}
+
+      _other ->
+        invalid_success_response("Slack conversation info response was invalid", body)
+    end
+  end
+
+  defp handle_conversation_info_response(response, _params), do: handle_error_response(response)
 
   defp handle_conversation_members_response(
          {:ok, %{status: status, body: %{"ok" => true} = body}},
