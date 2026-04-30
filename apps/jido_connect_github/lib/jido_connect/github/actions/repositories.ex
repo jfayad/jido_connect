@@ -30,6 +30,42 @@ defmodule Jido.Connect.GitHub.Actions.Repositories do
       end
     end
 
+    action :search_repositories do
+      id "github.repo.search"
+      resource :repository
+      verb :search
+      data_classification :workspace_metadata
+      label "Search repositories"
+      description "Search GitHub repositories with query helpers and pagination."
+      handler Jido.Connect.GitHub.Handlers.Actions.SearchRepositories
+      effect :read
+
+      access do
+        auth [:user, :installation], default: :user
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :query, :string, required?: true, example: "jido"
+        field :user, :string, example: "octocat"
+        field :org, :string, example: "github"
+        field :language, :string, example: "elixir"
+        field :topic, :string, example: "agent"
+        field :visibility, :string, default: "all"
+        field :archived, :boolean
+        field :fork, :boolean
+        field :sort, :string, default: "updated"
+        field :direction, :string, default: "desc"
+        field :page, :integer, default: 1
+        field :per_page, :integer, default: 30
+      end
+
+      output do
+        field :repositories, {:array, :map}
+        field :total_count, :integer
+      end
+    end
+
     action :list_installation_repositories do
       id "github.installation_repository.list"
       resource :repository

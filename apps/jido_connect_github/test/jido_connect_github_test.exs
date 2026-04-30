@@ -39,6 +39,41 @@ defmodule Jido.Connect.GitHubTest do
        }}
     end
 
+    def search_repositories(
+          %{
+            q: "jido org:acme language:elixir topic:agent archived:false fork:false",
+            sort: "stars",
+            direction: "desc",
+            page: 2,
+            per_page: 10
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         total_count: 1,
+         repositories: [
+           %{
+             id: 10,
+             name: "repo",
+             full_name: "acme/repo",
+             owner: %{login: "acme", type: "Organization"},
+             private: false,
+             default_branch: "main",
+             url: "https://github.test/acme/repo",
+             description: "Jido connector",
+             language: "Elixir",
+             stargazers_count: 42,
+             forks_count: 7,
+             open_issues_count: 3,
+             archived: false,
+             fork: false,
+             updated_at: "2026-04-29T10:00:00Z"
+           }
+         ]
+       }}
+    end
+
     def get_repository("org", "repo", "token") do
       {:ok,
        %{
@@ -984,6 +1019,7 @@ defmodule Jido.Connect.GitHubTest do
 
     assert Jido.Connect.GitHub.jido_action_modules() == [
              Jido.Connect.GitHub.Actions.ListRepositories,
+             Jido.Connect.GitHub.Actions.SearchRepositories,
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.GetRepository,
              Jido.Connect.GitHub.Actions.ListBranches,
@@ -1027,6 +1063,7 @@ defmodule Jido.Connect.GitHubTest do
              generated_modules: %{
                actions: [
                  Jido.Connect.GitHub.Actions.ListRepositories,
+                 Jido.Connect.GitHub.Actions.SearchRepositories,
                  Jido.Connect.GitHub.Actions.ListInstallationRepositories,
                  Jido.Connect.GitHub.Actions.GetRepository,
                  Jido.Connect.GitHub.Actions.ListBranches,
@@ -1067,6 +1104,9 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:module, Jido.Connect.GitHub.Actions.ListRepositories} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListRepositories)
+
+    assert {:module, Jido.Connect.GitHub.Actions.SearchRepositories} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.SearchRepositories)
 
     assert {:module, Jido.Connect.GitHub.Actions.ListInstallationRepositories} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListInstallationRepositories)
@@ -1148,6 +1188,7 @@ defmodule Jido.Connect.GitHubTest do
 
     assert function_exported?(Jido.Connect.GitHub.Actions.ListIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.SearchRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListInstallationRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.GetRepository, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListBranches, :run, 2)
@@ -1412,6 +1453,36 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.UpdateFile.name() == "github_file_update"
+  end
+
+  test "generated repository search action metadata tracks query helpers and pagination fields" do
+    projection = Jido.Connect.GitHub.Actions.SearchRepositories.jido_connect_projection()
+
+    assert projection.action_id == "github.repo.search"
+    assert projection.label == "Search repositories"
+
+    assert Enum.map(projection.input, & &1.name) == [
+             :query,
+             :user,
+             :org,
+             :language,
+             :topic,
+             :visibility,
+             :archived,
+             :fork,
+             :sort,
+             :direction,
+             :page,
+             :per_page
+           ]
+
+    assert Enum.map(projection.output, & &1.name) == [:repositories, :total_count]
+    assert projection.risk == :read
+    assert projection.resource == :repository
+    assert projection.verb == :search
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.SearchRepositories.name() == "github_repo_search"
   end
 
   test "generated issue search action metadata tracks query helper and pagination fields" do
@@ -2663,6 +2734,40 @@ defmodule Jido.Connect.GitHubTest do
              })
   end
 
+  test "generated repository search action delegates with query helpers and pagination" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              total_count: 1,
+              repositories: [
+                %{
+                  id: 10,
+                  full_name: "acme/repo",
+                  owner: %{login: "acme"},
+                  stargazers_count: 42
+                }
+              ]
+            }} =
+             Jido.Connect.GitHub.Actions.SearchRepositories.run(
+               %{
+                 query: "jido",
+                 org: "acme",
+                 language: "elixir",
+                 topic: "agent",
+                 archived: false,
+                 fork: false,
+                 sort: "stars",
+                 page: 2,
+                 per_page: 10
+               },
+               %{
+                 integration_context: context,
+                 credential_lease: lease
+               }
+             )
+  end
+
   test "generated get repository action delegates to integration invoke runtime" do
     {context, lease} = context_and_lease()
 
@@ -2975,6 +3080,7 @@ defmodule Jido.Connect.GitHubTest do
 
     assert spec.actions == [
              Jido.Connect.GitHub.Actions.ListRepositories,
+             Jido.Connect.GitHub.Actions.SearchRepositories,
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.GetRepository,
              Jido.Connect.GitHub.Actions.ListBranches,
