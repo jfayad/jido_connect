@@ -574,6 +574,39 @@ defmodule Jido.Connect.SlackTest do
              :sender,
              :conversation
            ]
+
+    assert {:ok,
+            %{
+              id: "slack.event.reaction_added",
+              kind: :webhook,
+              resource: :reaction,
+              verb: :watch,
+              policies: [:workspace_access],
+              scopes: ["reactions:read"],
+              dedupe: %{key: [:team_id, :user, :reaction, :item_type, :channel, :ts, :event_ts]},
+              verification: %{
+                kind: :slack_signed_request,
+                signature_header: "x-slack-signature",
+                timestamp_header: "x-slack-request-timestamp"
+              }
+            } = trigger} = Connect.trigger(spec, "slack.event.reaction_added")
+
+    assert Enum.map(trigger.signal, & &1.name) == [
+             :team_id,
+             :event_id,
+             :user,
+             :reaction,
+             :item_user,
+             :item,
+             :item_type,
+             :channel,
+             :ts,
+             :file,
+             :file_comment,
+             :event_ts,
+             :actor,
+             :item_owner
+           ]
   end
 
   test "Slack catalog entry exposes setup, auth, and runtime capabilities" do
@@ -613,7 +646,8 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Sensors.PrivateChannelMessage,
              Jido.Connect.Slack.Sensors.DirectMessage,
              Jido.Connect.Slack.Sensors.MultiPersonDirectMessage,
-             Jido.Connect.Slack.Sensors.ThreadReply
+             Jido.Connect.Slack.Sensors.ThreadReply,
+             Jido.Connect.Slack.Sensors.ReactionAdded
            ]
 
     assert Jido.Connect.Slack.jido_plugin_module() == Jido.Connect.Slack.Plugin
@@ -642,7 +676,8 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Sensors.PrivateChannelMessage,
                  Jido.Connect.Slack.Sensors.DirectMessage,
                  Jido.Connect.Slack.Sensors.MultiPersonDirectMessage,
-                 Jido.Connect.Slack.Sensors.ThreadReply
+                 Jido.Connect.Slack.Sensors.ThreadReply,
+                 Jido.Connect.Slack.Sensors.ReactionAdded
                ],
                plugin: Jido.Connect.Slack.Plugin
              }
@@ -702,6 +737,9 @@ defmodule Jido.Connect.SlackTest do
     assert {:module, Jido.Connect.Slack.Sensors.ThreadReply} =
              Code.ensure_loaded(Jido.Connect.Slack.Sensors.ThreadReply)
 
+    assert {:module, Jido.Connect.Slack.Sensors.ReactionAdded} =
+             Code.ensure_loaded(Jido.Connect.Slack.Sensors.ReactionAdded)
+
     assert function_exported?(Jido.Connect.Slack.Actions.ListChannels, :run, 2)
     assert function_exported?(Jido.Connect.Slack.Sensors.AppMention, :handle_event, 2)
     assert function_exported?(Jido.Connect.Slack.Sensors.PublicChannelMessage, :handle_event, 2)
@@ -715,6 +753,7 @@ defmodule Jido.Connect.SlackTest do
            )
 
     assert function_exported?(Jido.Connect.Slack.Sensors.ThreadReply, :handle_event, 2)
+    assert function_exported?(Jido.Connect.Slack.Sensors.ReactionAdded, :handle_event, 2)
 
     assert function_exported?(Jido.Connect.Slack.Plugin, :plugin_spec, 1)
   end
@@ -1443,6 +1482,20 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok, state} = Jido.Connect.Slack.Sensors.ThreadReply.init(%{}, %{})
     assert {:ok, ^state} = Jido.Connect.Slack.Sensors.ThreadReply.handle_event(:anything, state)
+  end
+
+  test "generated reaction added sensor exposes trigger metadata and ignores direct events" do
+    assert Jido.Connect.Slack.Sensors.ReactionAdded.trigger_id() ==
+             "slack.event.reaction_added"
+
+    assert Jido.Connect.Slack.Sensors.ReactionAdded.signal_type() ==
+             "slack.event.reaction_added"
+
+    assert Jido.Connect.Slack.Sensors.ReactionAdded.signal_source() ==
+             "/jido/connect/slack"
+
+    assert {:ok, state} = Jido.Connect.Slack.Sensors.ReactionAdded.init(%{}, %{})
+    assert {:ok, ^state} = Jido.Connect.Slack.Sensors.ReactionAdded.handle_event(:anything, state)
   end
 
   defp context_and_lease(opts \\ []) do

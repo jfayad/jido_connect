@@ -20,7 +20,8 @@ defmodule Jido.Connect.Slack.AppManifest do
     "channels:history",
     "groups:history",
     "im:history",
-    "mpim:history"
+    "mpim:history",
+    "reactions:read"
   ]
 
   @type option ::
@@ -120,7 +121,8 @@ defmodule Jido.Connect.Slack.AppManifest do
         "message.channels",
         "message.groups",
         "message.im",
-        "message.mpim"
+        "message.mpim",
+        "reaction_added"
       ]
     })
   end

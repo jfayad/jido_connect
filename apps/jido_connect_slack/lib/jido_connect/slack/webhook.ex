@@ -136,6 +136,14 @@ defmodule Jido.Connect.Slack.Webhook do
     normalize_thread_reply_signal(payload)
   end
 
+  def normalize_signal(
+        "reaction_added",
+        %{"type" => "event_callback", "event" => %{"type" => "reaction_added"} = event} =
+          payload
+      ) do
+    {:ok, reaction_added_signal(payload, event)}
+  end
+
   def normalize_signal(event, _payload) do
     {:error,
      Error.provider("Unsupported Slack event",
@@ -304,6 +312,48 @@ defmodule Jido.Connect.Slack.Webhook do
     Data.compact(%{
       id: Data.get(event, "channel"),
       type: Data.get(event, "channel_type")
+    })
+  end
+
+  defp reaction_added_signal(payload, event) do
+    item = reaction_item(event)
+
+    Data.compact(%{
+      team_id: Data.get(payload, "team_id"),
+      event_id: Data.get(payload, "event_id"),
+      user: Data.get(event, "user"),
+      reaction: Data.get(event, "reaction"),
+      item_user: Data.get(event, "item_user"),
+      item: item,
+      item_type: Data.get(item, "type"),
+      channel: Data.get(item, "channel"),
+      ts: Data.get(item, "ts"),
+      file: Data.get(item, "file"),
+      file_comment: Data.get(item, "file_comment"),
+      event_ts: Data.get(event, "event_ts"),
+      actor: reaction_actor(payload, event),
+      item_owner: reaction_item_owner(payload, event)
+    })
+  end
+
+  defp reaction_item(event) do
+    case Data.get(event, "item") do
+      item when is_map(item) -> Data.compact(item)
+      _other -> %{}
+    end
+  end
+
+  defp reaction_actor(payload, event) do
+    Data.compact(%{
+      id: Data.get(event, "user"),
+      team_id: Data.get(payload, "team_id")
+    })
+  end
+
+  defp reaction_item_owner(payload, event) do
+    Data.compact(%{
+      id: Data.get(event, "item_user"),
+      team_id: Data.get(payload, "team_id")
     })
   end
 

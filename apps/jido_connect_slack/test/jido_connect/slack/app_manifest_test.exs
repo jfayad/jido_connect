@@ -40,7 +40,8 @@ defmodule Jido.Connect.Slack.AppManifestTest do
              "app_mentions:read",
              "groups:history",
              "im:history",
-             "mpim:history"
+             "mpim:history",
+             "reactions:read"
            ]
 
     assert get_in(manifest, [:settings, :event_subscriptions]) == %{
@@ -50,7 +51,8 @@ defmodule Jido.Connect.Slack.AppManifestTest do
                "message.channels",
                "message.groups",
                "message.im",
-               "message.mpim"
+               "message.mpim",
+               "reaction_added"
              ]
            }
 
