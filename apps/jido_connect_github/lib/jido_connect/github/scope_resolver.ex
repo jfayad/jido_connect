@@ -6,6 +6,7 @@ defmodule Jido.Connect.GitHub.ScopeResolver do
       "github.repo.list" -> ["metadata:read"]
       "github.repo.get" -> ["metadata:read"]
       "github.branch.list" -> ["metadata:read", "contents:read"]
+      "github.ref.compare" -> ["metadata:read", "contents:read"]
       "github.file.read" -> ["metadata:read", "contents:read"]
       "github.file.update" -> ["metadata:read", "contents:write"]
       "github.issue_comment.create" -> ["metadata:read", "issues:write"]

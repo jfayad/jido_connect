@@ -335,6 +335,88 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "compare refs sends expected request and normalizes status commits and files" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/repos/org/repo/compare/main...feature%2Fref"
+
+      assert %{"page" => "2", "per_page" => "50"} = URI.decode_query(conn.query_string)
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        status: "ahead",
+        ahead_by: 2,
+        behind_by: 0,
+        total_commits: 2,
+        commits: [
+          %{
+            sha: "abc123",
+            html_url: "https://github.test/org/repo/commit/abc123",
+            commit: %{
+              message: "Add example",
+              author: %{
+                name: "Octo Cat",
+                email: "octo@example.com",
+                date: "2026-04-29T10:00:00Z"
+              },
+              committer: %{
+                name: "Mona",
+                email: "mona@example.com",
+                date: "2026-04-29T10:05:00Z"
+              }
+            },
+            author: %{login: "octocat", id: 1, type: "User"},
+            committer: %{login: "mona", id: 2, type: "User"},
+            parents: [%{sha: "def456"}]
+          }
+        ],
+        files: [
+          %{
+            filename: "lib/example.ex",
+            status: "modified",
+            additions: 12,
+            deletions: 3,
+            changes: 15,
+            sha: "abc123",
+            patch: "@@ -1 +1 @@"
+          }
+        ]
+      })
+    end)
+
+    assert {:ok,
+            %{
+              status: "ahead",
+              ahead_by: 2,
+              behind_by: 0,
+              total_commits: 2,
+              commits: [
+                %{
+                  sha: "abc123",
+                  message: "Add example",
+                  author: %{login: "octocat", name: "Octo Cat"},
+                  committer: %{login: "mona", name: "Mona"},
+                  parents: [%{sha: "def456"}]
+                }
+              ],
+              files: [
+                %{
+                  filename: "lib/example.ex",
+                  status: "modified",
+                  additions: 12,
+                  deletions: 3,
+                  changes: 15,
+                  sha: "abc123",
+                  patch: "@@ -1 +1 @@"
+                }
+              ]
+            }} =
+             Client.compare_refs(
+               %{repo: "org/repo", base: "main", head: "feature/ref", page: 2, per_page: 50},
+               "token"
+             )
+  end
+
   test "read file sends expected request and decodes UTF-8 content" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

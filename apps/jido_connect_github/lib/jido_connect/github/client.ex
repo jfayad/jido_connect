@@ -63,6 +63,17 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_commit_list_response()
   end
 
+  def compare_refs(%{repo: repo, base: base, head: head} = params, access_token)
+      when is_binary(repo) and is_binary(base) and is_binary(head) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(
+      url: "/repos/#{repo}/compare/#{encode_ref(base)}...#{encode_ref(head)}",
+      params: compare_refs_params(params)
+    )
+    |> handle_compare_refs_response()
+  end
+
   def read_file(repo, path, ref, access_token)
       when is_binary(repo) and is_binary(path) and is_binary(access_token) do
     access_token
@@ -480,6 +491,18 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_commit_list_response(response), do: handle_error_response(response)
+
+  defp handle_compare_refs_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_comparison(body)}
+  end
+
+  defp handle_compare_refs_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub compare refs response was invalid", body)
+  end
+
+  defp handle_compare_refs_response(response), do: handle_error_response(response)
 
   defp handle_file_content_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
@@ -950,6 +973,29 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp normalize_commit_parents(_parents), do: []
 
+  defp normalize_comparison(comparison) when is_map(comparison) do
+    %{
+      status: Data.get(comparison, "status"),
+      ahead_by: Data.get(comparison, "ahead_by"),
+      behind_by: Data.get(comparison, "behind_by"),
+      total_commits: Data.get(comparison, "total_commits"),
+      commits: normalize_comparison_commits(Data.get(comparison, "commits")),
+      files: normalize_comparison_files(Data.get(comparison, "files"))
+    }
+  end
+
+  defp normalize_comparison_commits(commits) when is_list(commits) do
+    Enum.map(commits, &normalize_commit/1)
+  end
+
+  defp normalize_comparison_commits(_commits), do: []
+
+  defp normalize_comparison_files(files) when is_list(files) do
+    Enum.map(files, &normalize_pull_request_file/1)
+  end
+
+  defp normalize_comparison_files(_files), do: []
+
   defp normalize_pull_request(pull_request) when is_map(pull_request) do
     %{
       number: Data.get(pull_request, "number"),
@@ -1407,6 +1453,13 @@ defmodule Jido.Connect.GitHub.Client do
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end
 
+  defp compare_refs_params(params) do
+    [
+      per_page: Map.get(params, :per_page, 30),
+      page: Map.get(params, :page, 1)
+    ]
+  end
+
   defp file_content_params(ref) when is_binary(ref), do: [ref: ref]
   defp file_content_params(_ref), do: []
 
@@ -1422,6 +1475,8 @@ defmodule Jido.Connect.GitHub.Client do
     |> Enum.map(fn segment -> URI.encode(segment, &char_unreserved?/1) end)
     |> Enum.join("/")
   end
+
+  defp encode_ref(ref), do: URI.encode(ref, &char_unreserved?/1)
 
   defp char_unreserved?(character), do: URI.char_unreserved?(character)
 

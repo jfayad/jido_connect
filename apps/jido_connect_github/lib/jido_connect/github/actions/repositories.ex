@@ -183,6 +183,40 @@ defmodule Jido.Connect.GitHub.Actions.Repositories do
       end
     end
 
+    action :compare_refs do
+      id "github.ref.compare"
+      resource :ref
+      verb :get
+      data_classification :workspace_content
+      label "Compare refs"
+      description "Compare two GitHub repository refs and return status, commits, and file stats."
+      handler Jido.Connect.GitHub.Handlers.Actions.CompareRefs
+      effect :read
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :base, :string, required?: true, example: "main"
+        field :head, :string, required?: true, example: "feature/ref"
+        field :page, :integer, default: 1
+        field :per_page, :integer, default: 30
+      end
+
+      output do
+        field :status, :string
+        field :ahead_by, :integer
+        field :behind_by, :integer
+        field :total_commits, :integer
+        field :commits, {:array, :map}
+        field :files, {:array, :map}
+      end
+    end
+
     action :read_file do
       id "github.file.read"
       resource :file
