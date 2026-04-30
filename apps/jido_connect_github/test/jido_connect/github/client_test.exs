@@ -609,6 +609,32 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "rerun workflow run sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/actions/runs/22/rerun"
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Plug.Conn.send_resp(conn, 201, "")
+    end)
+
+    assert {:ok, %{rerun_requested: true}} =
+             Client.rerun_workflow_run("org/repo", 22, %{failed_only: false}, "token")
+  end
+
+  test "rerun workflow run can target failed jobs only" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/actions/runs/22/rerun-failed-jobs"
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Plug.Conn.send_resp(conn, 201, "")
+    end)
+
+    assert {:ok, %{rerun_requested: true}} =
+             Client.rerun_workflow_run("org/repo", 22, %{failed_only: true}, "token")
+  end
+
   test "dispatch workflow sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

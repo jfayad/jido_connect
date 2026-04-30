@@ -260,6 +260,38 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :rerun_workflow_run do
+      id "github.workflow_run.rerun"
+      resource :workflow_run
+      verb :dispatch
+      data_classification :workspace_metadata
+      label "Rerun workflow run"
+
+      description "Rerun all jobs or only failed jobs for a GitHub Actions workflow run."
+
+      handler Jido.Connect.GitHub.Handlers.Actions.RerunWorkflowRun
+      effect :write, confirmation: :always
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :run_id, :integer, required?: true
+        field :failed_only, :boolean, default: false
+      end
+
+      output do
+        field :rerun_requested, :boolean
+        field :repo, :string
+        field :run_id, :integer
+        field :failed_only, :boolean
+      end
+    end
+
     action :dispatch_workflow do
       id "github.workflow.dispatch"
       resource :workflow

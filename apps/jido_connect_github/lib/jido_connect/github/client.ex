@@ -103,6 +103,14 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_workflow_run_job_list_response()
   end
 
+  def rerun_workflow_run(repo, run_id, opts, access_token)
+      when is_binary(repo) and is_integer(run_id) and is_map(opts) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: workflow_run_rerun_url(repo, run_id, opts))
+    |> handle_workflow_run_rerun_response()
+  end
+
   def dispatch_workflow(repo, workflow, attrs, access_token)
       when is_binary(repo) and is_binary(workflow) and is_map(attrs) and is_binary(access_token) do
     access_token
@@ -486,6 +494,17 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_workflow_run_job_list_response(response), do: handle_error_response(response)
+
+  defp handle_workflow_run_rerun_response({:ok, %{status: 201}}) do
+    {:ok, %{rerun_requested: true}}
+  end
+
+  defp handle_workflow_run_rerun_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub workflow run rerun response was invalid", body)
+  end
+
+  defp handle_workflow_run_rerun_response(response), do: handle_error_response(response)
 
   defp handle_workflow_dispatch_response({:ok, %{status: 204}}), do: {:ok, %{dispatched: true}}
 
@@ -1097,6 +1116,14 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp workflow_run_list_request(repo, params),
     do: {"/repos/#{repo}/actions/runs", workflow_run_list_params(params)}
+
+  defp workflow_run_rerun_url(repo, run_id, %{failed_only: true}) do
+    "/repos/#{repo}/actions/runs/#{run_id}/rerun-failed-jobs"
+  end
+
+  defp workflow_run_rerun_url(repo, run_id, _opts) do
+    "/repos/#{repo}/actions/runs/#{run_id}/rerun"
+  end
 
   defp normalize_ci_status(_status, conclusion) when conclusion in ["success", "failure"] do
     conclusion
