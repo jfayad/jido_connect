@@ -338,6 +338,41 @@ defmodule Jido.Connect.Slack.ClientTest do
              Client.unarchive_conversation(%{channel: "C123"}, "token")
   end
 
+  test "rename conversation sends expected request and normalizes output" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/conversations.rename"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{"channel" => "C123", "name" => "renamed-channel"} = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        ok: true,
+        channel: %{
+          id: "C123",
+          name: "renamed-channel",
+          is_archived: false,
+          is_private: false,
+          is_member: true,
+          purpose: %{value: "raw value"}
+        }
+      })
+    end)
+
+    assert {:ok,
+            %{
+              channel: %{
+                id: "C123",
+                name: "renamed-channel",
+                is_archived: false,
+                is_private: false,
+                is_member: true
+              }
+            }} =
+             Client.rename_conversation(%{channel: "C123", name: "renamed-channel"}, "token")
+  end
+
   test "open conversation sends expected request and normalizes output" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

@@ -58,6 +58,14 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_unarchive_conversation_response(params)
   end
 
+  def rename_conversation(params, access_token)
+      when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/conversations.rename", json: rename_conversation_params(params))
+    |> handle_rename_conversation_response()
+  end
+
   def open_conversation(params, access_token)
       when is_map(params) and is_binary(access_token) do
     access_token
@@ -254,6 +262,12 @@ defmodule Jido.Connect.Slack.Client do
   defp unarchive_conversation_params(params) do
     params
     |> Map.take([:channel])
+    |> Data.compact()
+  end
+
+  defp rename_conversation_params(params) do
+    params
+    |> Map.take([:channel, :name])
     |> Data.compact()
   end
 
@@ -504,6 +518,16 @@ defmodule Jido.Connect.Slack.Client do
 
   defp handle_unarchive_conversation_response(response, _params),
     do: handle_error_response(response)
+
+  defp handle_rename_conversation_response({:ok, %{status: status, body: %{"ok" => true} = body}})
+       when status in 200..299 do
+    case Data.get(body, "channel") do
+      channel when is_map(channel) -> {:ok, %{channel: normalize_channel(channel)}}
+      _other -> invalid_success_response("Slack channel rename response was invalid", body)
+    end
+  end
+
+  defp handle_rename_conversation_response(response), do: handle_error_response(response)
 
   defp handle_open_conversation_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do

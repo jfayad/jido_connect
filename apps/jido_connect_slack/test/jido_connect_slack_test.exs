@@ -223,6 +223,32 @@ defmodule Jido.Connect.SlackTest do
       {:ok, %{channel: "G999"}}
     end
 
+    def rename_conversation(%{channel: "C999", name: "renamed-channel"}, "token") do
+      {:ok,
+       %{
+         channel: %{
+           id: "C999",
+           name: "renamed-channel",
+           is_archived: false,
+           is_private: false,
+           is_member: true
+         }
+       }}
+    end
+
+    def rename_conversation(%{channel: "G999", name: "renamed-private"}, "token") do
+      {:ok,
+       %{
+         channel: %{
+           id: "G999",
+           name: "renamed-private",
+           is_archived: false,
+           is_private: true,
+           is_member: true
+         }
+       }}
+    end
+
     def open_conversation(%{users: ["U123"]}, "token") do
       {:ok,
        %{
@@ -649,6 +675,18 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok,
             %{
+              id: "slack.channel.rename",
+              resource: :channel,
+              verb: :update,
+              policies: [:workspace_access],
+              scopes: ["channels:manage"],
+              mutation?: true,
+              confirmation: :required_for_ai
+            }} =
+             Connect.action(spec, "slack.channel.rename")
+
+    assert {:ok,
+            %{
               id: "slack.conversation.open",
               resource: :conversation,
               verb: :create,
@@ -1064,6 +1102,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.CreateChannel,
              Jido.Connect.Slack.Actions.ArchiveChannel,
              Jido.Connect.Slack.Actions.UnarchiveChannel,
+             Jido.Connect.Slack.Actions.RenameChannel,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
@@ -1109,6 +1148,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.CreateChannel,
                  Jido.Connect.Slack.Actions.ArchiveChannel,
                  Jido.Connect.Slack.Actions.UnarchiveChannel,
+                 Jido.Connect.Slack.Actions.RenameChannel,
                  Jido.Connect.Slack.Actions.OpenConversation,
                  Jido.Connect.Slack.Actions.ListConversationMembers,
                  Jido.Connect.Slack.Actions.UploadFile,
@@ -1157,6 +1197,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.UnarchiveChannel} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.UnarchiveChannel)
+
+    assert {:module, Jido.Connect.Slack.Actions.RenameChannel} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.RenameChannel)
 
     assert {:module, Jido.Connect.Slack.Actions.SearchMessages} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.SearchMessages)
@@ -1716,6 +1759,30 @@ defmodule Jido.Connect.SlackTest do
     assert unarchive_channel_projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.UnarchiveChannel.name() == "slack_channel_unarchive"
 
+    rename_channel_projection =
+      Jido.Connect.Slack.Actions.RenameChannel.jido_connect_projection()
+
+    assert rename_channel_projection.action_id == "slack.channel.rename"
+    assert rename_channel_projection.label == "Rename channel"
+    assert rename_channel_projection.resource == :channel
+    assert rename_channel_projection.verb == :update
+    assert rename_channel_projection.scopes == ["channels:manage"]
+    assert rename_channel_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
+
+    assert Enum.map(rename_channel_projection.input, & &1.name) == [
+             :channel,
+             :name,
+             :conversation_type
+           ]
+
+    assert Enum.map(rename_channel_projection.output, & &1.name) == [
+             :channel
+           ]
+
+    assert rename_channel_projection.risk == :write
+    assert rename_channel_projection.confirmation == :required_for_ai
+    assert Jido.Connect.Slack.Actions.RenameChannel.name() == "slack_channel_rename"
+
     open_conversation_projection =
       Jido.Connect.Slack.Actions.OpenConversation.jido_connect_projection()
 
@@ -2126,6 +2193,54 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated rename channel action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{channel: %{id: "C999", name: "renamed-channel"}}} =
+             Jido.Connect.Slack.Actions.RenameChannel.run(
+               %{channel: "C999", name: "renamed-channel"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "rename channel resolves scopes from conversation type" do
+    {context, lease} = context_and_lease()
+
+    no_manage_context = %{
+      context
+      | connection: %{
+          context.connection
+          | scopes: context.connection.scopes -- ["channels:manage", "groups:write"]
+        }
+    }
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["channels:manage"]
+            }} =
+             Jido.Connect.Slack.Actions.RenameChannel.run(
+               %{channel: "C999", name: "renamed-channel"},
+               %{integration_context: no_manage_context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["groups:write"]
+            }} =
+             Jido.Connect.Slack.Actions.RenameChannel.run(
+               %{channel: "G999", name: "renamed-private"},
+               %{integration_context: no_manage_context, credential_lease: lease}
+             )
+
+    assert {:ok, %{channel: %{id: "G999", name: "renamed-private"}}} =
+             Jido.Connect.Slack.Actions.RenameChannel.run(
+               %{channel: "G999", name: "renamed-private"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "create channel validates Slack channel names" do
     {context, lease} = context_and_lease()
 
@@ -2136,6 +2251,20 @@ defmodule Jido.Connect.SlackTest do
             }} =
              Jido.Connect.Slack.Actions.CreateChannel.run(
                %{name: "Invalid Name", is_private: false},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "rename channel validates Slack channel names" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              details: %{field: :name}
+            }} =
+             Jido.Connect.Slack.Actions.RenameChannel.run(
+               %{channel: "C999", name: "Invalid Name"},
                %{integration_context: context, credential_lease: lease}
              )
   end
@@ -2848,6 +2977,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.CreateChannel,
              Jido.Connect.Slack.Actions.ArchiveChannel,
              Jido.Connect.Slack.Actions.UnarchiveChannel,
+             Jido.Connect.Slack.Actions.RenameChannel,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
