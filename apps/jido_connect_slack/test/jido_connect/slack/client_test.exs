@@ -113,6 +113,70 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "search messages sends expected request and normalizes pagination" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/search.messages"
+
+      assert %{
+               "query" => "deploy in:#general",
+               "sort" => "timestamp",
+               "sort_dir" => "desc",
+               "count" => "10",
+               "page" => "2",
+               "highlight" => "true",
+               "cursor" => "page-1"
+             } = URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        ok: true,
+        query: "deploy in:#general",
+        messages: %{
+          matches: [
+            %{
+              type: "message",
+              user: "U123",
+              username: "ada",
+              text: "deploy finished",
+              ts: "1700000000.000100",
+              channel: %{id: "C123", name: "general", is_private: false},
+              permalink: "https://example.slack.com/archives/C123/p1700000000000100",
+              team: "T123"
+            }
+          ],
+          pagination: %{page: 2, per_page: 10, total_count: 1},
+          paging: %{page: 2, count: 10, total: 1},
+          total: 1
+        },
+        response_metadata: %{next_cursor: "page-2"}
+      })
+    end)
+
+    assert {:ok,
+            %{
+              query: "deploy in:#general",
+              messages: [%{"text" => "deploy finished"}],
+              total_count: 1,
+              pagination: %{"page" => 2, "per_page" => 10, "total_count" => 1},
+              paging: %{"page" => 2, "count" => 10, "total" => 1},
+              next_cursor: "page-2"
+            }} =
+             Client.search_messages(
+               %{
+                 query: "deploy in:#general",
+                 sort: "timestamp",
+                 sort_dir: "desc",
+                 count: 10,
+                 page: 2,
+                 highlight: true,
+                 cursor: "page-1"
+               },
+               "token"
+             )
+  end
+
   test "list conversation members sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

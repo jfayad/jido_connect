@@ -34,6 +34,56 @@ defmodule Jido.Connect.Slack.Actions.Messages do
       end
     end
 
+    action :search_messages do
+      id "slack.message.search"
+      resource :message
+      verb :search
+      data_classification :message_content
+      label "Search messages"
+      description "Search Slack messages with query helpers and pagination."
+      handler Jido.Connect.Slack.Handlers.Actions.SearchMessages
+      effect :read
+
+      access do
+        auth :user
+        policies [:workspace_access]
+        scopes ["search:read"]
+      end
+
+      input do
+        field :query, :string, required?: true
+
+        field :in, :string,
+          description:
+            "Optional Slack search in: qualifier value, such as #general, group_name, or <@U012AB3CD>."
+
+        field :from, :string,
+          description:
+            "Optional Slack search from: qualifier value, such as <@U012AB3CD> or botname."
+
+        field :before, :string, description: "Optional Slack search before: date qualifier."
+        field :after, :string, description: "Optional Slack search after: date qualifier."
+        field :on, :string, description: "Optional Slack search on: date qualifier."
+        field :has, :string, description: "Optional Slack search has: qualifier value."
+        field :sort, :string, enum: ["score", "timestamp"], default: "score"
+        field :sort_dir, :string, enum: ["asc", "desc"], default: "desc"
+        field :count, :integer, default: 20
+        field :page, :integer, default: 1
+        field :cursor, :string
+        field :highlight, :boolean, default: false
+        field :team_id, :string
+      end
+
+      output do
+        field :query, :string
+        field :messages, {:array, :map}
+        field :total_count, :integer
+        field :pagination, :map
+        field :paging, :map
+        field :next_cursor, :string
+      end
+    end
+
     action :post_ephemeral do
       id "slack.message.post_ephemeral"
       resource :message

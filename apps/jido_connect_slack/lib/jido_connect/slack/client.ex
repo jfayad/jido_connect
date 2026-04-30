@@ -19,6 +19,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_thread_replies_response(params)
   end
 
+  def search_messages(params, access_token) when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/search.messages", params: search_messages_params(params))
+    |> handle_search_messages_response()
+  end
+
   def get_conversation_info(params, access_token)
       when is_map(params) and is_binary(access_token) do
     access_token
@@ -185,6 +192,12 @@ defmodule Jido.Connect.Slack.Client do
   defp thread_replies_params(params) do
     params
     |> Map.take([:channel, :ts, :limit, :cursor, :oldest, :latest, :inclusive])
+    |> Data.compact()
+  end
+
+  defp search_messages_params(params) do
+    params
+    |> Map.take([:query, :sort, :sort_dir, :count, :page, :cursor, :highlight, :team_id])
     |> Data.compact()
   end
 
@@ -355,6 +368,27 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_thread_replies_response(response, _params), do: handle_error_response(response)
+
+  defp handle_search_messages_response({:ok, %{status: status, body: %{"ok" => true} = body}})
+       when status in 200..299 do
+    with messages when is_map(messages) <- Map.get(body, "messages", %{}),
+         matches when is_list(matches) <- Map.get(messages, "matches", []),
+         true <- Enum.all?(matches, &is_map/1) do
+      {:ok,
+       %{
+         query: Data.get(body, "query"),
+         messages: matches,
+         total_count: search_total_count(messages),
+         pagination: Data.get(messages, "pagination", %{}),
+         paging: Data.get(messages, "paging", %{}),
+         next_cursor: get_in(body, ["response_metadata", "next_cursor"]) || ""
+       }}
+    else
+      _other -> invalid_success_response("Slack message search response was invalid", body)
+    end
+  end
+
+  defp handle_search_messages_response(response), do: handle_error_response(response)
 
   defp handle_conversation_info_response(
          {:ok, %{status: status, body: %{"ok" => true} = body}},
@@ -584,6 +618,12 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp normalize_post_at(_post_at), do: nil
+
+  defp search_total_count(messages) do
+    messages
+    |> Data.get("pagination", %{})
+    |> Data.get("total_count", Data.get(messages, "total"))
+  end
 
   defp handle_upload_url_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do

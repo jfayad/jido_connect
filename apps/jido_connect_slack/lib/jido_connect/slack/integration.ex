@@ -107,10 +107,11 @@ defmodule Jido.Connect.Slack do
       lease_fields [:access_token]
 
       scopes [
-        "chat:write"
+        "chat:write",
+        "search:read"
       ]
 
-      default_scopes ["chat:write"]
+      default_scopes ["chat:write", "search:read"]
       pkce? false
       refresh? false
       revoke? false

@@ -80,6 +80,39 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def search_messages(
+          %{
+            query: "deploy in:#general from:<@U123> after:2026-04-01 has:link",
+            sort: "timestamp",
+            sort_dir: "desc",
+            count: 10,
+            page: 2,
+            highlight: true
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         query: "deploy in:#general from:<@U123> after:2026-04-01 has:link",
+         messages: [
+           %{
+             type: "message",
+             user: "U123",
+             username: "ada",
+             text: "deploy finished",
+             ts: "1700000000.000100",
+             channel: %{id: "C123", name: "general", is_private: false},
+             permalink: "https://example.slack.com/archives/C123/p1700000000000100",
+             team: "T123"
+           }
+         ],
+         total_count: 1,
+         pagination: %{page: 2, per_page: 10, total_count: 1},
+         paging: %{page: 2, count: 10, total: 1},
+         next_cursor: "next"
+       }}
+    end
+
     def list_conversation_members(%{channel: "C123", limit: 100}, "token") do
       {:ok,
        %{
@@ -511,6 +544,19 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok,
             %{
+              id: "slack.message.search",
+              resource: :message,
+              verb: :search,
+              policies: [:workspace_access],
+              scopes: ["search:read"],
+              auth_profile: :user,
+              auth_profiles: [:user],
+              mutation?: false
+            }} =
+             Connect.action(spec, "slack.message.search")
+
+    assert {:ok,
+            %{
               id: "slack.message.post_ephemeral",
               mutation?: true,
               confirmation: :required_for_ai
@@ -892,6 +938,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
+             Jido.Connect.Slack.Actions.SearchMessages,
              Jido.Connect.Slack.Actions.PostEphemeral,
              Jido.Connect.Slack.Actions.ScheduleMessage,
              Jido.Connect.Slack.Actions.UnscheduleMessage,
@@ -932,6 +979,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.AuthTest,
                  Jido.Connect.Slack.Actions.TeamInfo,
                  Jido.Connect.Slack.Actions.PostMessage,
+                 Jido.Connect.Slack.Actions.SearchMessages,
                  Jido.Connect.Slack.Actions.PostEphemeral,
                  Jido.Connect.Slack.Actions.ScheduleMessage,
                  Jido.Connect.Slack.Actions.UnscheduleMessage,
@@ -962,6 +1010,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.GetThreadReplies} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.GetThreadReplies)
+
+    assert {:module, Jido.Connect.Slack.Actions.SearchMessages} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.SearchMessages)
 
     assert {:module, Jido.Connect.Slack.Actions.ListConversationMembers} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.ListConversationMembers)
@@ -1072,6 +1123,45 @@ defmodule Jido.Connect.SlackTest do
     assert projection.risk == :write
     assert projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.PostMessage.name() == "slack_message_post"
+
+    search_projection = Jido.Connect.Slack.Actions.SearchMessages.jido_connect_projection()
+
+    assert search_projection.action_id == "slack.message.search"
+    assert search_projection.label == "Search messages"
+    assert search_projection.resource == :message
+    assert search_projection.verb == :search
+    assert search_projection.scopes == ["search:read"]
+    assert search_projection.auth_profiles == [:user]
+
+    assert Enum.map(search_projection.input, & &1.name) == [
+             :query,
+             :in,
+             :from,
+             :before,
+             :after,
+             :on,
+             :has,
+             :sort,
+             :sort_dir,
+             :count,
+             :page,
+             :cursor,
+             :highlight,
+             :team_id
+           ]
+
+    assert Enum.map(search_projection.output, & &1.name) == [
+             :query,
+             :messages,
+             :total_count,
+             :pagination,
+             :paging,
+             :next_cursor
+           ]
+
+    assert search_projection.risk == :read
+    assert search_projection.confirmation == :none
+    assert Jido.Connect.Slack.Actions.SearchMessages.name() == "slack_message_search"
 
     ephemeral_projection = Jido.Connect.Slack.Actions.PostEphemeral.jido_connect_projection()
 
@@ -1758,6 +1848,46 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated search messages action delegates with query helpers and pagination" do
+    {context, lease} = context_and_lease(profile: :user)
+
+    assert {:ok,
+            %{
+              query: "deploy in:#general from:<@U123> after:2026-04-01 has:link",
+              messages: [
+                %{
+                  type: "message",
+                  user: "U123",
+                  username: "ada",
+                  text: "deploy finished",
+                  ts: "1700000000.000100",
+                  channel: %{id: "C123", name: "general", is_private: false},
+                  permalink: "https://example.slack.com/archives/C123/p1700000000000100",
+                  team: "T123"
+                }
+              ],
+              total_count: 1,
+              pagination: %{page: 2, per_page: 10, total_count: 1},
+              paging: %{page: 2, count: 10, total: 1},
+              next_cursor: "next"
+            }} =
+             Jido.Connect.Slack.Actions.SearchMessages.run(
+               %{
+                 query: "deploy",
+                 in: "#general",
+                 from: "<@U123>",
+                 after: "2026-04-01",
+                 has: "link",
+                 sort: "timestamp",
+                 sort_dir: "desc",
+                 count: 10,
+                 page: 2,
+                 highlight: true
+               },
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated schedule message action delegates through integration runtime" do
     {context, lease} = context_and_lease()
     post_at = System.system_time(:second) + 60
@@ -2267,6 +2397,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
+             Jido.Connect.Slack.Actions.SearchMessages,
              Jido.Connect.Slack.Actions.PostEphemeral,
              Jido.Connect.Slack.Actions.ScheduleMessage,
              Jido.Connect.Slack.Actions.UnscheduleMessage,
@@ -2401,6 +2532,7 @@ defmodule Jido.Connect.SlackTest do
           "files:write",
           "reactions:read",
           "reactions:write",
+          "search:read",
           "team:read",
           "users:read",
           "users:read.email"
