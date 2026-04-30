@@ -95,7 +95,7 @@ defmodule Jido.Connect.Slack.OAuthTest do
               provider: :slack,
               reason: :http_error,
               status: 503,
-              details: %{body: %{"error" => "unavailable"}}
+              details: %{body_summary: %{type: :map, keys: ["error"]}}
             }} =
              OAuth.exchange_code("bad",
                client_id: "client",
@@ -113,7 +113,7 @@ defmodule Jido.Connect.Slack.OAuthTest do
             %Error.ProviderError{
               provider: :slack,
               reason: :invalid_response,
-              details: %{body: %{"ok" => true, "token_type" => "bot"}}
+              details: %{body_summary: %{type: :map, keys: ["ok", "token_type"]}}
             }} =
              OAuth.exchange_code("code",
                client_id: "client",

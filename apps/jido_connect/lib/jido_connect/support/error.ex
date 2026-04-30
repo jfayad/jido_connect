@@ -216,7 +216,13 @@ defmodule Jido.Connect.Error do
 
   @spec provider(String.t(), keyword() | map()) :: ProviderError.t()
   def provider(message, opts \\ []) do
-    ProviderError.exception(Keyword.put(normalize_opts(opts), :message, message))
+    opts =
+      opts
+      |> normalize_opts()
+      |> sanitize_provider_opts()
+      |> Keyword.put(:message, message)
+
+    ProviderError.exception(opts)
   end
 
   @spec config(String.t(), keyword() | map()) :: ConfigError.t()
@@ -383,4 +389,14 @@ defmodule Jido.Connect.Error do
   @doc false
   def normalize_opts(opts) when is_map(opts), do: Map.to_list(opts)
   def normalize_opts(opts), do: opts || []
+
+  defp sanitize_provider_opts(opts) do
+    Keyword.update(opts, :details, %{}, fn details ->
+      Jido.Connect.Sanitizer.sanitize_provider_details(details, :telemetry,
+        max_depth: 6,
+        max_binary: 256,
+        max_collection: 20
+      )
+    end)
+  end
 end

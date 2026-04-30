@@ -63,7 +63,13 @@ defmodule Jido.Connect.ProviderHelpersTest do
 
     assert response.retry_after == 30
     assert ProviderResponse.retryable?(response)
-    assert ProviderResponse.to_public_map(response).body["api_key"] == "[redacted]"
+
+    assert ProviderResponse.to_public_map(response).body_summary == %{
+             "type" => "map",
+             "size" => 1,
+             "keys" => ["api_key"]
+           }
+
     refute inspect(response) =~ "secret"
   end
 

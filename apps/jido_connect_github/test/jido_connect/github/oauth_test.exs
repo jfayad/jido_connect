@@ -89,7 +89,7 @@ defmodule Jido.Connect.GitHub.OAuthTest do
             %Error.ProviderError{
               provider: :github,
               reason: :invalid_response,
-              details: %{body: %{"token_type" => "bearer"}}
+              details: %{body_summary: %{type: :map, keys: ["token_type"]}}
             }} =
              OAuth.exchange_code("code",
                client_id: "client",

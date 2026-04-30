@@ -68,6 +68,35 @@ defmodule Jido.Connect.Sanitizer do
     do_sanitize(value, profile, opts, 0)
   end
 
+  @doc """
+  Sanitizes provider error details without retaining raw provider response bodies.
+
+  Provider response bodies often contain user content, file contents, issue
+  bodies, Slack messages, or profile data. Keep a compact body summary for
+  diagnostics and put provider-specific error messages in explicit fields such
+  as `:message` before calling this function.
+  """
+  @spec sanitize_provider_details(term(), profile(), keyword()) :: term()
+  def sanitize_provider_details(details, profile \\ :telemetry, opts \\ [])
+      when profile in [:telemetry, :transport] do
+    opts = Keyword.merge(@default_opts, opts)
+
+    details
+    |> do_sanitize(profile, opts, 0)
+    |> replace_provider_body(profile, opts)
+  end
+
+  @doc "Returns a compact, value-free summary of a provider response body."
+  @spec provider_body_summary(term(), profile(), keyword()) :: map()
+  def provider_body_summary(body, profile \\ :telemetry, opts \\ [])
+      when profile in [:telemetry, :transport] do
+    opts = Keyword.merge(@default_opts, opts)
+
+    body
+    |> body_summary(profile, opts)
+    |> do_sanitize(profile, opts, 0)
+  end
+
   defp do_sanitize(value, profile, opts, depth) do
     if depth >= opts[:max_depth] do
       "[truncated]"
@@ -191,4 +220,56 @@ defmodule Jido.Connect.Sanitizer do
     do: list ++ ["[truncated #{size - max} items]"]
 
   defp maybe_append_truncation(list, _size, _max), do: list
+
+  defp replace_provider_body(details, profile, opts) when is_map(details) do
+    {body, details} = pop_body(details)
+
+    if is_nil(body) do
+      details
+    else
+      Map.put(details, summary_key(profile), provider_body_summary(body, profile, opts))
+    end
+  end
+
+  defp replace_provider_body(details, _profile, _opts), do: details
+
+  defp pop_body(details) when is_map_key(details, :body), do: Map.pop(details, :body)
+  defp pop_body(details) when is_map_key(details, "body"), do: Map.pop(details, "body")
+  defp pop_body(details), do: {nil, details}
+
+  defp summary_key(:telemetry), do: :body_summary
+  defp summary_key(:transport), do: "body_summary"
+
+  defp body_summary(nil, _profile, _opts), do: %{type: nil}
+
+  defp body_summary(body, _profile, opts) when is_map(body) do
+    keys =
+      body
+      |> Map.keys()
+      |> Enum.take(opts[:max_collection])
+      |> Enum.map(&safe_key/1)
+
+    %{type: :map, size: map_size(body), keys: keys}
+    |> maybe_note_truncation(map_size(body), opts[:max_collection], :telemetry)
+  end
+
+  defp body_summary(body, _profile, opts) when is_list(body) do
+    %{type: :list, length: length(body), sample_size: min(length(body), opts[:max_collection])}
+  end
+
+  defp body_summary(body, _profile, _opts) when is_binary(body) do
+    %{type: :binary, bytes: byte_size(body)}
+  end
+
+  defp body_summary(body, _profile, _opts) when is_boolean(body), do: %{type: :boolean}
+  defp body_summary(body, _profile, _opts) when is_number(body), do: %{type: :number}
+  defp body_summary(body, _profile, _opts) when is_atom(body), do: %{type: :atom}
+
+  defp body_summary(body, _profile, opts) do
+    %{type: :term, inspected_bytes: byte_size(inspect(body, printable_limit: opts[:max_binary]))}
+  end
+
+  defp safe_key(key) when is_atom(key), do: key
+  defp safe_key(key) when is_binary(key), do: key
+  defp safe_key(key), do: inspect(key)
 end

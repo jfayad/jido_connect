@@ -85,5 +85,9 @@ defmodule Jido.Connect.Http do
   end
 
   defp error_message(body) when is_map(body), do: Data.get(body, "message", body)
-  defp error_message(body), do: body
+
+  defp error_message(body) when is_binary(body),
+    do: "provider returned #{byte_size(body)} byte body"
+
+  defp error_message(_body), do: "provider returned an error response"
 end

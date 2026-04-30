@@ -163,7 +163,7 @@ defmodule Jido.Connect.GitHub.AppAuthTest do
             %Error.ProviderError{
               provider: :github,
               reason: :invalid_response,
-              details: %{body: %{"permissions" => %{"issues" => "write"}}}
+              details: %{body_summary: %{type: :map, keys: ["permissions"]}}
             }} =
              AppAuth.installation_token(42, app_id: 123, private_key_pem: pem)
   end

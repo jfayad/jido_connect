@@ -62,9 +62,10 @@ defmodule Jido.Connect.ErrorTest do
              message: "GitHub API request failed",
              details: %{
                "access_token" => "[redacted]",
-               "body" => %{
-                 "message" => "temporarily unavailable",
-                 "private_key" => "[redacted]"
+               "body_summary" => %{
+                 "type" => "map",
+                 "size" => 2,
+                 "keys" => ["message", "private_key"]
                }
              },
              retryable?: true
@@ -72,5 +73,6 @@ defmodule Jido.Connect.ErrorTest do
 
     refute inspect(Error.to_map(error)) =~ "secret-token"
     refute inspect(Error.to_map(error)) =~ "secret-key"
+    refute inspect(error.details) =~ "temporarily unavailable"
   end
 end

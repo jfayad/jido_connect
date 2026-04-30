@@ -72,7 +72,7 @@ defmodule Jido.Connect.ProviderResponse do
       retry_after: response.retry_after,
       retryable?: retryable?(response),
       headers: Sanitizer.sanitize(response.headers, :transport),
-      body: Sanitizer.sanitize(response.body, :transport),
+      body_summary: Sanitizer.provider_body_summary(response.body, :transport),
       metadata: Sanitizer.sanitize(response.metadata, :transport)
     }
   end

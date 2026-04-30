@@ -1038,7 +1038,7 @@ defmodule Jido.Connect.Slack.ClientTest do
             %Error.ProviderError{
               provider: :slack,
               reason: :invalid_response,
-              details: %{body: %{"ok" => true, "files" => %{"matches" => %{"id" => "F123"}}}}
+              details: %{body_summary: %{type: :map, keys: ["files", "ok"]}}
             }} =
              Client.search_files(%{query: "report"}, "token")
   end
@@ -1055,7 +1055,7 @@ defmodule Jido.Connect.Slack.ClientTest do
             %Error.ProviderError{
               provider: :slack,
               reason: :invalid_response,
-              details: %{body: %{"ok" => true, "file_id" => "F123"}}
+              details: %{body_summary: %{type: :map, keys: ["file_id", "ok"]}}
             }} =
              Client.upload_file(
                %{channel_id: "C123", filename: "report.txt", content: "Hello file"},
@@ -1085,7 +1085,7 @@ defmodule Jido.Connect.Slack.ClientTest do
             %Error.ProviderError{
               provider: :slack,
               reason: :invalid_response,
-              details: %{body: %{"ok" => true, "files" => %{"id" => "F123"}}}
+              details: %{body_summary: %{type: :map, keys: ["files", "ok"]}}
             }} =
              Client.upload_file(
                %{channel_id: "C123", filename: "report.txt", content: "Hello file"},
@@ -1140,7 +1140,7 @@ defmodule Jido.Connect.Slack.ClientTest do
             %Error.ProviderError{
               provider: :slack,
               reason: :invalid_response,
-              details: %{body: %{"ok" => true, "files" => %{"id" => "F123"}}}
+              details: %{body_summary: %{type: :map, keys: ["files", "ok"]}}
             }} =
              Client.share_file(%{file_id: "F123", channels: "C123"}, "token")
   end
@@ -1337,7 +1337,7 @@ defmodule Jido.Connect.Slack.ClientTest do
             %Error.ProviderError{
               provider: :slack,
               reason: :invalid_response,
-              details: %{body: %{"ok" => true, "user" => nil}}
+              details: %{body_summary: %{type: :map, keys: ["ok", "user"]}}
             }} = Client.lookup_user_by_email(%{email: "ada@example.com"}, "token")
   end
 
@@ -1391,7 +1391,7 @@ defmodule Jido.Connect.Slack.ClientTest do
               provider: :slack,
               reason: "invalid_auth",
               status: 200,
-              details: %{body: %{"ok" => false, "error" => "invalid_auth"}}
+              details: %{body_summary: %{type: :map, keys: ["error", "ok"]}}
             }} =
              Client.auth_test("bad-token")
   end
@@ -1408,7 +1408,7 @@ defmodule Jido.Connect.Slack.ClientTest do
               provider: :slack,
               reason: :http_error,
               status: 500,
-              details: %{body: %{"error" => "server_error"}}
+              details: %{body_summary: %{type: :map, keys: ["error"]}}
             }} = Client.auth_test("token")
   end
 
@@ -1421,7 +1421,7 @@ defmodule Jido.Connect.Slack.ClientTest do
             %Error.ProviderError{
               provider: :slack,
               reason: :invalid_response,
-              details: %{body: %{"ok" => true, "channels" => %{"id" => "C123"}}}
+              details: %{body_summary: %{type: :map, keys: ["channels", "ok"]}}
             }} =
              Client.list_channels(%{types: "public_channel"}, "token")
   end

@@ -1931,7 +1931,7 @@ defmodule Jido.Connect.GitHub.ClientTest do
             %Error.ProviderError{
               provider: :github,
               reason: :invalid_response,
-              details: %{body: %{"unexpected" => true}}
+              details: %{body_summary: %{type: :map, keys: ["unexpected"]}}
             }} = Client.list_issues("org/repo", "open", "token")
   end
 
@@ -1944,7 +1944,7 @@ defmodule Jido.Connect.GitHub.ClientTest do
             %Error.ProviderError{
               provider: :github,
               reason: :invalid_response,
-              details: %{body: %{"unexpected" => true}}
+              details: %{body_summary: %{type: :map, keys: ["unexpected"]}}
             }} =
              Client.list_repositories(
                %{auth_profile: :installation, page: 1, per_page: 30},
@@ -1961,7 +1961,7 @@ defmodule Jido.Connect.GitHub.ClientTest do
             %Error.ProviderError{
               provider: :github,
               reason: :invalid_response,
-              details: %{body: ["unexpected"]}
+              details: %{body_summary: %{type: :list, length: 1, sample_size: 1}}
             }} = Client.get_repository("org", "repo", "token")
   end
 end
