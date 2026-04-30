@@ -399,8 +399,21 @@ for scope and acceptance. Keep the change limited to this issue.
 The shell orchestrator will handle git commit, issue close, and sync after your
 work is complete. Do not commit, close the issue, or run \`bw sync\`.
 
-Run \`bw prime\` first, inspect the local code needed for this issue, implement the
-smallest coherent change, and run the narrowest useful verification.
+Run \`bw prime\` first, inspect the local code needed for this issue, and implement
+the smallest coherent change.
+
+The shell orchestrator owns formatting, compilation, tests, coverage, commit,
+issue close, and sync through trusted outer hooks after your turn. Do not run
+\`mix format\`, \`mix compile\`, \`mix test\`, \`mix quality\`, \`mix coveralls\`, or
+any other Mix task from nested Codex in this repo. Mix may fail inside nested
+Codex with a local PubSub TCP \`:eperm\` error; if you see that, do not investigate
+Mix internals or retry alternate Mix commands. Continue with code changes and
+report the verification limitation.
+
+Do not run ad-hoc Elixir formatter APIs or formatter commands such as
+\`Code.format_*\`. Preserve existing Spark DSL style, especially no-parens DSL
+calls. Useful lightweight checks are allowed, including \`git diff --check\`,
+\`Code.string_to_quoted!\` parse checks, \`rg\`, and focused file inspection.
 
 If \`bw prime\` reports uncommitted changes while this issue is already
 \`in_progress\`, do not stop to ask the user. The orchestrator is intentionally
@@ -466,6 +479,13 @@ Scope rules:
 - Do not implement unrelated Beadwork issues.
 - Do not commit, close the issue, or run \`bw sync\`.
 - If \`bw prime\` warns about uncommitted changes, do not ask the user; continue with this repair.
+- The shell orchestrator owns the next format/verify run. Do not run \`mix format\`,
+  \`mix compile\`, \`mix test\`, \`mix quality\`, \`mix coveralls\`, or any other Mix
+  task from nested Codex in this repo.
+- Do not run ad-hoc Elixir formatter APIs or formatter commands such as
+  \`Code.format_*\`. Preserve existing Spark DSL style, especially no-parens DSL
+  calls. Prefer \`git diff --check\`, \`Code.string_to_quoted!\`, \`rg\`, and focused
+  file inspection for lightweight local checks.
 
 Current git status:
 
