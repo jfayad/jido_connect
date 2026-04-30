@@ -32,5 +32,43 @@ defmodule Jido.Connect.Slack.Actions.Users do
         field :next_cursor, :string
       end
     end
+
+    action :user_info do
+      id "slack.user.info"
+      resource :user
+      verb :read
+      data_classification :identity
+      label "Get user info"
+      description "Return normalized Slack user or bot identity and profile details."
+      handler Jido.Connect.Slack.Handlers.Actions.UserInfo
+      effect :read
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["users:read"]
+      end
+
+      input do
+        field :user, :string
+        field :include_locale, :boolean, default: false
+      end
+
+      output do
+        field :user_id, :string
+        field :team_id, :string
+        field :name, :string
+        field :real_name, :string
+        field :tz, :string
+        field :deleted, :boolean
+        field :is_bot, :boolean
+        field :is_app_user, :boolean
+        field :user_type, :string
+        field :bot_id, :string
+        field :updated, :integer
+        field :profile, :map
+        field :user, :map
+      end
+    end
   end
 end

@@ -81,6 +81,46 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def user_info(%{user: "U123"}, "token") do
+      {:ok,
+       %{
+         user: %{
+           id: "U123",
+           team_id: "T123",
+           name: "ada",
+           real_name: "Ada Lovelace",
+           deleted: false,
+           is_bot: false,
+           is_app_user: false,
+           profile: %{
+             email: "ada@example.com",
+             display_name: "ada",
+             real_name: "Ada Lovelace"
+           }
+         }
+       }}
+    end
+
+    def user_info(%{user: "B123"}, "token") do
+      {:ok,
+       %{
+         user: %{
+           id: "B123",
+           team_id: "T123",
+           name: "build-bot",
+           real_name: "Build Bot",
+           deleted: false,
+           is_bot: true,
+           is_app_user: false,
+           profile: %{
+             bot_id: "B999",
+             display_name: "build-bot",
+             real_name: "Build Bot"
+           }
+         }
+       }}
+    end
+
     def team_info(%{team_id: "T123"}, "token") do
       {:ok,
        %{
@@ -148,6 +188,17 @@ defmodule Jido.Connect.SlackTest do
               mutation?: false
             }} =
              Connect.action(spec, "slack.user.list")
+
+    assert {:ok,
+            %{
+              id: "slack.user.info",
+              resource: :user,
+              verb: :read,
+              policies: [:workspace_access],
+              scopes: ["users:read"],
+              mutation?: false
+            }} =
+             Connect.action(spec, "slack.user.info")
   end
 
   test "Slack catalog entry exposes setup, auth, and runtime capabilities" do
@@ -171,7 +222,8 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
-             Jido.Connect.Slack.Actions.ListUsers
+             Jido.Connect.Slack.Actions.ListUsers,
+             Jido.Connect.Slack.Actions.UserInfo
            ]
 
     assert Jido.Connect.Slack.jido_sensor_modules() == []
@@ -186,7 +238,8 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.AuthTest,
                  Jido.Connect.Slack.Actions.TeamInfo,
                  Jido.Connect.Slack.Actions.PostMessage,
-                 Jido.Connect.Slack.Actions.ListUsers
+                 Jido.Connect.Slack.Actions.ListUsers,
+                 Jido.Connect.Slack.Actions.UserInfo
                ],
                sensors: [],
                plugin: Jido.Connect.Slack.Plugin
@@ -204,6 +257,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.ListUsers} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.ListUsers)
+
+    assert {:module, Jido.Connect.Slack.Actions.UserInfo} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.UserInfo)
 
     assert {:module, Jido.Connect.Slack.Plugin} =
              Code.ensure_loaded(Jido.Connect.Slack.Plugin)
@@ -266,6 +322,32 @@ defmodule Jido.Connect.SlackTest do
            ]
 
     assert Enum.map(user_projection.output, & &1.name) == [:users, :next_cursor]
+
+    user_info_projection = Jido.Connect.Slack.Actions.UserInfo.jido_connect_projection()
+    assert user_info_projection.action_id == "slack.user.info"
+    assert user_info_projection.resource == :user
+    assert user_info_projection.verb == :read
+
+    assert Enum.map(user_info_projection.input, & &1.name) == [
+             :user,
+             :include_locale
+           ]
+
+    assert Enum.map(user_info_projection.output, & &1.name) == [
+             :user_id,
+             :team_id,
+             :name,
+             :real_name,
+             :tz,
+             :deleted,
+             :is_bot,
+             :is_app_user,
+             :user_type,
+             :bot_id,
+             :updated,
+             :profile,
+             :user
+           ]
   end
 
   test "generated list channels action delegates through integration runtime" do
@@ -359,6 +441,45 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated user info action distinguishes user and bot profiles" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              user_id: "U123",
+              team_id: "T123",
+              name: "ada",
+              real_name: "Ada Lovelace",
+              is_bot: false,
+              is_app_user: false,
+              user_type: "user",
+              profile: %{
+                email: "ada@example.com",
+                display_name: "ada",
+                real_name: "Ada Lovelace"
+              },
+              user: %{id: "U123"}
+            }} =
+             Jido.Connect.Slack.Actions.UserInfo.run(
+               %{user: "U123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:ok,
+            %{
+              user_id: "B123",
+              name: "build-bot",
+              is_bot: true,
+              user_type: "bot",
+              bot_id: "B999",
+              profile: %{bot_id: "B999", display_name: "build-bot"}
+            }} =
+             Jido.Connect.Slack.Actions.UserInfo.run(
+               %{user: "B123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated team info action delegates through integration runtime" do
     {context, lease} = context_and_lease()
 
@@ -386,7 +507,8 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
-             Jido.Connect.Slack.Actions.ListUsers
+             Jido.Connect.Slack.Actions.ListUsers,
+             Jido.Connect.Slack.Actions.UserInfo
            ]
 
     filtered =

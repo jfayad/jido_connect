@@ -117,6 +117,58 @@ defmodule Jido.Connect.Slack.ClientTest do
              Client.list_users(%{limit: 100, team_id: "T123", include_locale: true}, "token")
   end
 
+  test "user info sends expected request and normalizes profile" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/users.info"
+
+      assert %{
+               "include_locale" => "true",
+               "user" => "B123"
+             } = URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        ok: true,
+        user: %{
+          id: "B123",
+          team_id: "T123",
+          name: "build-bot",
+          real_name: "Build Bot",
+          deleted: false,
+          is_bot: true,
+          is_app_user: false,
+          profile: %{
+            bot_id: "B999",
+            display_name: "build-bot",
+            real_name: "Build Bot",
+            unknown_profile_field: "ignored"
+          },
+          unknown_user_field: "ignored"
+        }
+      })
+    end)
+
+    assert {:ok,
+            %{
+              user: %{
+                id: "B123",
+                team_id: "T123",
+                name: "build-bot",
+                real_name: "Build Bot",
+                deleted: false,
+                is_bot: true,
+                is_app_user: false,
+                profile: %{
+                  bot_id: "B999",
+                  display_name: "build-bot",
+                  real_name: "Build Bot"
+                }
+              }
+            }} = Client.user_info(%{user: "B123", include_locale: true}, "token")
+  end
+
   test "auth test returns successful response maps" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

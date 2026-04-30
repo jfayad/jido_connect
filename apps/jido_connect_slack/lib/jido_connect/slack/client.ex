@@ -26,6 +26,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_user_list_response()
   end
 
+  def user_info(params, access_token) when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/users.info", params: user_info_params(params))
+    |> handle_user_info_response()
+  end
+
   def auth_test(access_token) when is_binary(access_token) do
     access_token
     |> request()
@@ -49,6 +56,12 @@ defmodule Jido.Connect.Slack.Client do
   defp list_users_params(params) do
     params
     |> Map.take([:limit, :cursor, :team_id, :include_locale])
+    |> Data.compact()
+  end
+
+  defp user_info_params(params) do
+    params
+    |> Map.take([:user, :include_locale])
     |> Data.compact()
   end
 
@@ -115,6 +128,16 @@ defmodule Jido.Connect.Slack.Client do
 
   defp handle_user_list_response(response), do: handle_error_response(response)
 
+  defp handle_user_info_response({:ok, %{status: status, body: %{"ok" => true} = body}})
+       when status in 200..299 do
+    case Data.get(body, "user") do
+      user when is_map(user) -> {:ok, %{user: normalize_user_info(user)}}
+      _other -> invalid_success_response("Slack user info response was invalid", body)
+    end
+  end
+
+  defp handle_user_info_response(response), do: handle_error_response(response)
+
   defp handle_map_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do
     {:ok, body}
@@ -177,6 +200,45 @@ defmodule Jido.Connect.Slack.Client do
     }
     |> Data.compact()
   end
+
+  defp normalize_user_info(user) when is_map(user) do
+    user
+    |> normalize_user()
+    |> Map.put(:profile, normalize_profile(Data.get(user, "profile")))
+    |> Data.compact()
+  end
+
+  defp normalize_profile(profile) when is_map(profile) do
+    normalized =
+      %{
+        avatar_hash: Data.get(profile, "avatar_hash"),
+        bot_id: Data.get(profile, "bot_id"),
+        display_name: Data.get(profile, "display_name"),
+        display_name_normalized: Data.get(profile, "display_name_normalized"),
+        email: Data.get(profile, "email"),
+        first_name: Data.get(profile, "first_name"),
+        image_24: Data.get(profile, "image_24"),
+        image_32: Data.get(profile, "image_32"),
+        image_48: Data.get(profile, "image_48"),
+        image_72: Data.get(profile, "image_72"),
+        image_192: Data.get(profile, "image_192"),
+        image_512: Data.get(profile, "image_512"),
+        last_name: Data.get(profile, "last_name"),
+        phone: Data.get(profile, "phone"),
+        real_name: Data.get(profile, "real_name"),
+        real_name_normalized: Data.get(profile, "real_name_normalized"),
+        skype: Data.get(profile, "skype"),
+        status_emoji: Data.get(profile, "status_emoji"),
+        status_text: Data.get(profile, "status_text"),
+        team: Data.get(profile, "team"),
+        title: Data.get(profile, "title")
+      }
+      |> Data.compact()
+
+    if map_size(normalized) == 0, do: nil, else: normalized
+  end
+
+  defp normalize_profile(_profile), do: nil
 
   defp invalid_success_response(message, body) do
     {:error,
