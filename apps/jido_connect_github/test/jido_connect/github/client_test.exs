@@ -176,6 +176,59 @@ defmodule Jido.Connect.GitHub.ClientTest do
     refute Map.has_key?(file, :content)
   end
 
+  test "update file sends expected request and normalizes content and commit" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "PUT"
+      assert conn.request_path == "/repos/org/repo/contents/docs/Getting%20Started.md"
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "content" => Base.encode64("hello\n"),
+               "message" => "Update docs",
+               "branch" => "main",
+               "sha" => "abc123",
+               "committer" => %{"name" => "Octo Cat", "email" => "octo@example.com"}
+             }
+
+      Req.Test.json(conn, %{
+        content: %{
+          sha: "def456",
+          url: "https://api.github.test/repos/org/repo/contents/docs/Getting%20Started.md",
+          html_url: "https://github.test/org/repo/blob/main/docs/Getting%20Started.md",
+          download_url: "https://raw.github.test/org/repo/main/docs/Getting%20Started.md"
+        },
+        commit: %{
+          sha: "commit123",
+          message: "Update docs"
+        }
+      })
+    end)
+
+    assert {:ok,
+            %{
+              sha: "def456",
+              url: "https://api.github.test/repos/org/repo/contents/docs/Getting%20Started.md",
+              html_url: "https://github.test/org/repo/blob/main/docs/Getting%20Started.md",
+              download_url: "https://raw.github.test/org/repo/main/docs/Getting%20Started.md",
+              commit_sha: "commit123",
+              commit_message: "Update docs"
+            }} =
+             Client.update_file(
+               "org/repo",
+               "docs/Getting Started.md",
+               %{
+                 content: "hello\n",
+                 message: "Update docs",
+                 branch: "main",
+                 sha: "abc123",
+                 committer: %{name: "Octo Cat", email: "octo@example.com"}
+               },
+               "token"
+             )
+  end
+
   test "list pull requests sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

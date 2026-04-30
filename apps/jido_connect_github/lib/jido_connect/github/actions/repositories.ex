@@ -97,5 +97,43 @@ defmodule Jido.Connect.GitHub.Actions.Repositories do
         field :download_url, :string
       end
     end
+
+    action :update_file do
+      id "github.file.update"
+      resource :file
+      verb :update
+      data_classification :workspace_content
+      label "Create or update file contents"
+      description "Create or update a GitHub repository file by path."
+      handler Jido.Connect.GitHub.Handlers.Actions.UpdateFile
+      effect :write, confirmation: :always
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :path, :string, required?: true, example: "README.md"
+        field :content, :string, required?: true
+        field :message, :string, required?: true
+        field :branch, :string
+        field :sha, :string
+        field :committer, :map
+      end
+
+      output do
+        field :repo, :string
+        field :path, :string
+        field :sha, :string
+        field :url, :string
+        field :html_url, :string
+        field :download_url, :string
+        field :commit_sha, :string
+        field :commit_message, :string
+      end
+    end
   end
 end

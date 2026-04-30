@@ -60,6 +60,29 @@ defmodule Jido.Connect.GitHubTest do
        }}
     end
 
+    def update_file(
+          "org/repo",
+          "README.md",
+          %{
+            content: "# Project\n",
+            message: "Update README",
+            branch: "main",
+            sha: "abc123",
+            committer: %{name: "Octo Cat", email: "octo@example.com"}
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         sha: "def456",
+         url: "https://api.github.test/repos/org/repo/contents/README.md",
+         html_url: "https://github.test/org/repo/blob/main/README.md",
+         download_url: "https://raw.github.test/org/repo/main/README.md",
+         commit_sha: "commit123",
+         commit_message: "Update README"
+       }}
+    end
+
     def list_pull_requests(
           %{
             repo: "org/repo",
@@ -332,6 +355,19 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.file.update",
+              resource: :file,
+              verb: :update,
+              mutation?: true,
+              confirmation: :always,
+              auth_profiles: [:user, :installation],
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.file.update")
+
+    assert {:ok,
+            %{
               id: "github.issue.list",
               resource: :issue,
               verb: :list,
@@ -494,6 +530,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.ReadFile,
+             Jido.Connect.GitHub.Actions.UpdateFile,
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
@@ -522,6 +559,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.ListRepositories,
                  Jido.Connect.GitHub.Actions.ListInstallationRepositories,
                  Jido.Connect.GitHub.Actions.ReadFile,
+                 Jido.Connect.GitHub.Actions.UpdateFile,
                  Jido.Connect.GitHub.Actions.ListIssues,
                  Jido.Connect.GitHub.Actions.CreateIssue,
                  Jido.Connect.GitHub.Actions.ListPullRequests,
@@ -551,6 +589,9 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:module, Jido.Connect.GitHub.Actions.ReadFile} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ReadFile)
+
+    assert {:module, Jido.Connect.GitHub.Actions.UpdateFile} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.UpdateFile)
 
     assert {:module, Jido.Connect.GitHub.Actions.CreateIssueComment} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.CreateIssueComment)
@@ -592,6 +633,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListInstallationRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ReadFile, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.UpdateFile, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListPullRequests, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.SearchIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListWorkflowRuns, :run, 2)
@@ -730,6 +772,43 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.ReadFile.name() == "github_file_read"
+  end
+
+  test "generated file update action metadata tracks branch, message, sha, and committer fields" do
+    projection = Jido.Connect.GitHub.Actions.UpdateFile.jido_connect_projection()
+
+    assert projection.action_id == "github.file.update"
+    assert projection.label == "Create or update file contents"
+
+    assert Enum.map(projection.input, & &1.name) == [
+             :repo,
+             :path,
+             :content,
+             :message,
+             :branch,
+             :sha,
+             :committer
+           ]
+
+    assert Enum.map(projection.output, & &1.name) == [
+             :repo,
+             :path,
+             :sha,
+             :url,
+             :html_url,
+             :download_url,
+             :commit_sha,
+             :commit_message
+           ]
+
+    assert projection.risk == :write
+    assert projection.confirmation == :always
+    assert projection.resource == :file
+    assert projection.verb == :update
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.UpdateFile.name() == "github_file_update"
   end
 
   test "generated issue search action metadata tracks query helper and pagination fields" do
@@ -933,6 +1012,34 @@ defmodule Jido.Connect.GitHubTest do
                Jido.Connect.GitHub.integration(),
                "github.file.read",
                %{repo: "org/repo", path: "README.md", ref: "main"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes GitHub file update action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              repo: "org/repo",
+              path: "README.md",
+              sha: "def456",
+              commit_sha: "commit123",
+              commit_message: "Update README"
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.file.update",
+               %{
+                 repo: "org/repo",
+                 path: "README.md",
+                 content: "# Project\n",
+                 message: "Update README",
+                 branch: "main",
+                 sha: "abc123",
+                 committer: %{name: "Octo Cat", email: "octo@example.com"}
+               },
                context: context,
                credential_lease: lease
              )
@@ -1145,6 +1252,43 @@ defmodule Jido.Connect.GitHubTest do
                Jido.Connect.GitHub.integration(),
                "github.file.read",
                %{repo: "org/repo", path: "README.md", ref: "main"},
+               context: missing_write,
+               credential_lease: lease
+             )
+
+    write_context = %{
+      context
+      | connection: %{context.connection | scopes: ["metadata:read", "contents:write"]}
+    }
+
+    assert {:ok, %{sha: "def456", commit_sha: "commit123"}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.file.update",
+               %{
+                 repo: "org/repo",
+                 path: "README.md",
+                 content: "# Project\n",
+                 message: "Update README",
+                 branch: "main",
+                 sha: "abc123",
+                 committer: %{name: "Octo Cat", email: "octo@example.com"}
+               },
+               context: write_context,
+               credential_lease: lease
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{reason: :missing_scopes, missing_scopes: ["contents:write"]}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.file.update",
+               %{
+                 repo: "org/repo",
+                 path: "README.md",
+                 content: "# Project\n",
+                 message: "Update README"
+               },
                context: missing_write,
                credential_lease: lease
              )
@@ -1380,6 +1524,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.ReadFile,
+             Jido.Connect.GitHub.Actions.UpdateFile,
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,

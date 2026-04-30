@@ -44,6 +44,17 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_file_content_response()
   end
 
+  def update_file(repo, path, attrs, access_token)
+      when is_binary(repo) and is_binary(path) and is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.put(
+      url: "/repos/#{repo}/contents/#{encode_path(path)}",
+      json: file_update_payload(attrs)
+    )
+    |> handle_file_update_response()
+  end
+
   def list_pull_requests(%{repo: repo} = params, access_token)
       when is_binary(repo) and is_binary(access_token) do
     access_token
@@ -263,6 +274,18 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_file_content_response(response), do: handle_error_response(response)
+
+  defp handle_file_update_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_file_update(body)}
+  end
+
+  defp handle_file_update_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub file update response was invalid", body)
+  end
+
+  defp handle_file_update_response(response), do: handle_error_response(response)
 
   defp handle_pull_request_list_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_list(body) do
@@ -580,6 +603,21 @@ defmodule Jido.Connect.GitHub.Client do
     |> Map.new()
   end
 
+  defp normalize_file_update(result) when is_map(result) do
+    content = Data.get(result, "content") || %{}
+    commit = Data.get(result, "commit") || %{}
+
+    %{
+      sha: Data.get(content, "sha"),
+      url: Data.get(content, "url"),
+      html_url: Data.get(content, "html_url"),
+      download_url: Data.get(content, "download_url"),
+      commit_sha: Data.get(commit, "sha"),
+      commit_message: Data.get(commit, "message")
+    }
+    |> Data.compact()
+  end
+
   defp normalize_pull_request_ref(ref) when is_map(ref) do
     %{
       label: Data.get(ref, "label"),
@@ -667,6 +705,12 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp file_content_params(ref) when is_binary(ref), do: [ref: ref]
   defp file_content_params(_ref), do: []
+
+  defp file_update_payload(attrs) do
+    attrs
+    |> Map.put(:content, Base.encode64(Map.fetch!(attrs, :content)))
+    |> Data.compact()
+  end
 
   defp encode_path(path) do
     path
