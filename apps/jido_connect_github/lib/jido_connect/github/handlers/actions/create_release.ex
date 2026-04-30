@@ -44,6 +44,7 @@ defmodule Jido.Connect.GitHub.Handlers.Actions.CreateRelease do
       target_commitish: Map.get(release, :target_commitish),
       author: Map.get(release, :author),
       url: Map.get(release, :url),
+      upload_url: Map.get(release, :upload_url),
       tarball_url: Map.get(release, :tarball_url),
       zipball_url: Map.get(release, :zipball_url),
       created_at: Map.get(release, :created_at),

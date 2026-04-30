@@ -117,6 +117,22 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_release_response()
   end
 
+  def upload_release_asset(upload_url, attrs, access_token)
+      when is_binary(upload_url) and is_map(attrs) and is_binary(access_token) do
+    with {:ok, url} <- release_asset_upload_url(upload_url),
+         {:ok, content} <- decode_release_asset_content(attrs) do
+      access_token
+      |> request()
+      |> Req.post(
+        url: url,
+        params: release_asset_upload_params(attrs),
+        headers: [{"content-type", Map.fetch!(attrs, :content_type)}],
+        body: content
+      )
+      |> handle_release_asset_response()
+    end
+  end
+
   def list_workflow_run_jobs(%{repo: repo, run_id: run_id} = params, access_token)
       when is_binary(repo) and is_integer(run_id) and is_binary(access_token) do
     access_token
@@ -527,6 +543,18 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_release_response(response), do: handle_error_response(response)
 
+  defp handle_release_asset_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_release_asset(body)}
+  end
+
+  defp handle_release_asset_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub release asset response was invalid", body)
+  end
+
+  defp handle_release_asset_response(response), do: handle_error_response(response)
+
   defp handle_tag_list_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_list(body) do
     {:ok, Enum.map(body, &normalize_tag/1)}
@@ -899,11 +927,31 @@ defmodule Jido.Connect.GitHub.Client do
       target_commitish: Data.get(release, "target_commitish"),
       author: normalize_user(Data.get(release, "author")),
       url: Data.get(release, "html_url") || Data.get(release, "url"),
+      upload_url: Data.get(release, "upload_url"),
       tarball_url: Data.get(release, "tarball_url"),
       zipball_url: Data.get(release, "zipball_url"),
       created_at: Data.get(release, "created_at"),
       published_at: Data.get(release, "published_at"),
       body: Data.get(release, "body")
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_release_asset(asset) when is_map(asset) do
+    %{
+      id: Data.get(asset, "id"),
+      node_id: Data.get(asset, "node_id"),
+      name: Data.get(asset, "name"),
+      label: Data.get(asset, "label"),
+      state: Data.get(asset, "state"),
+      content_type: Data.get(asset, "content_type"),
+      size: Data.get(asset, "size"),
+      download_count: Data.get(asset, "download_count"),
+      url: Data.get(asset, "url"),
+      browser_download_url: Data.get(asset, "browser_download_url"),
+      created_at: Data.get(asset, "created_at"),
+      updated_at: Data.get(asset, "updated_at"),
+      uploader: normalize_user(Data.get(asset, "uploader"))
     }
     |> Data.compact()
   end
@@ -1203,6 +1251,46 @@ defmodule Jido.Connect.GitHub.Client do
       page: Map.get(params, :page, 1)
     ]
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp release_asset_upload_url(upload_url) do
+    url = String.replace(upload_url, ~r/\{\?.*\}\z/, "")
+    uri = URI.parse(url)
+
+    if uri.scheme in ["http", "https"] and is_binary(uri.host) do
+      {:ok, url}
+    else
+      {:error,
+       Error.validation("GitHub release asset upload URL is invalid",
+         reason: :invalid_upload_url,
+         subject: :upload_url
+       )}
+    end
+  end
+
+  defp release_asset_upload_params(attrs) do
+    [
+      name: Map.fetch!(attrs, :name),
+      label: Map.get(attrs, :label)
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp decode_release_asset_content(attrs) do
+    attrs
+    |> Map.fetch!(:content_base64)
+    |> Base.decode64(ignore: :whitespace)
+    |> case do
+      {:ok, content} ->
+        {:ok, content}
+
+      :error ->
+        {:error,
+         Error.validation("GitHub release asset content must be valid base64",
+           reason: :invalid_content,
+           subject: :content_base64
+         )}
+    end
   end
 
   defp workflow_run_job_list_params(params) do

@@ -297,8 +297,38 @@ defmodule Jido.Connect.GitHubTest do
          target_commitish: "main",
          author: %{login: "octocat"},
          url: "https://github.test/org/repo/releases/tag/v1.0.0",
+         upload_url:
+           "https://uploads.github.test/repos/org/repo/releases/102/assets{?name,label}",
          created_at: "2026-04-29T10:00:00Z",
          body: "Release notes"
+       }}
+    end
+
+    def upload_release_asset(
+          "https://uploads.github.test/repos/org/repo/releases/102/assets{?name,label}",
+          %{
+            name: "dist.zip",
+            label: "Distribution",
+            content_type: "application/zip",
+            content_base64: "emlwLWJ5dGVz"
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         id: 201,
+         node_id: "RA_kwDO",
+         name: "dist.zip",
+         label: "Distribution",
+         state: "uploaded",
+         content_type: "application/zip",
+         size: 9,
+         download_count: 0,
+         url: "https://api.github.test/repos/org/repo/releases/assets/201",
+         browser_download_url: "https://github.test/org/repo/releases/download/v1.0.0/dist.zip",
+         created_at: "2026-04-29T10:10:00Z",
+         updated_at: "2026-04-29T10:10:00Z",
+         uploader: %{login: "octocat"}
        }}
     end
 
@@ -735,6 +765,19 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.release_asset.upload",
+              resource: :release_asset,
+              verb: :upload,
+              mutation?: true,
+              confirmation: :always,
+              auth_profiles: [:user, :installation],
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.release_asset.upload")
+
+    assert {:ok,
+            %{
               id: "github.workflow_run.job.list",
               resource: :workflow_run_job,
               verb: :list,
@@ -926,6 +969,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
              Jido.Connect.GitHub.Actions.ListReleases,
              Jido.Connect.GitHub.Actions.CreateRelease,
+             Jido.Connect.GitHub.Actions.UploadReleaseAsset,
              Jido.Connect.GitHub.Actions.ListWorkflowRunJobs,
              Jido.Connect.GitHub.Actions.RerunWorkflowRun,
              Jido.Connect.GitHub.Actions.CancelWorkflowRun,
@@ -967,6 +1011,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.ListWorkflowRuns,
                  Jido.Connect.GitHub.Actions.ListReleases,
                  Jido.Connect.GitHub.Actions.CreateRelease,
+                 Jido.Connect.GitHub.Actions.UploadReleaseAsset,
                  Jido.Connect.GitHub.Actions.ListWorkflowRunJobs,
                  Jido.Connect.GitHub.Actions.RerunWorkflowRun,
                  Jido.Connect.GitHub.Actions.CancelWorkflowRun,
@@ -1436,6 +1481,7 @@ defmodule Jido.Connect.GitHubTest do
              :target_commitish,
              :author,
              :url,
+             :upload_url,
              :tarball_url,
              :zipball_url,
              :created_at,
@@ -1451,6 +1497,47 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.CreateRelease.name() == "github_release_create"
+  end
+
+  test "generated release asset upload action metadata tracks safe content fields" do
+    projection = Jido.Connect.GitHub.Actions.UploadReleaseAsset.jido_connect_projection()
+
+    assert projection.action_id == "github.release_asset.upload"
+    assert projection.label == "Upload release asset"
+
+    assert Enum.map(projection.input, & &1.name) == [
+             :repo,
+             :upload_url,
+             :name,
+             :label,
+             :content_type,
+             :content_base64
+           ]
+
+    assert Enum.map(projection.output, & &1.name) == [
+             :id,
+             :node_id,
+             :name,
+             :label,
+             :state,
+             :content_type,
+             :size,
+             :download_count,
+             :url,
+             :browser_download_url,
+             :created_at,
+             :updated_at,
+             :uploader
+           ]
+
+    assert projection.risk == :write
+    assert projection.confirmation == :always
+    assert projection.resource == :release_asset
+    assert projection.verb == :upload
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.UploadReleaseAsset.name() == "github_release_asset_upload"
   end
 
   test "generated workflow run rerun action metadata tracks confirmation" do
@@ -2620,6 +2707,40 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "generated release asset upload action delegates with base64 content" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              id: 201,
+              name: "dist.zip",
+              label: "Distribution",
+              state: "uploaded",
+              content_type: "application/zip",
+              size: 9,
+              download_count: 0,
+              uploader: %{login: "octocat"}
+            } = asset} =
+             Jido.Connect.GitHub.Actions.UploadReleaseAsset.run(
+               %{
+                 repo: "org/repo",
+                 upload_url:
+                   "https://uploads.github.test/repos/org/repo/releases/102/assets{?name,label}",
+                 name: "dist.zip",
+                 label: "Distribution",
+                 content_type: "application/zip",
+                 content_base64: "emlwLWJ5dGVz"
+               },
+               %{
+                 integration_context: context,
+                 credential_lease: lease
+               }
+             )
+
+    refute Map.has_key?(asset, :content)
+    refute Map.has_key?(asset, :content_base64)
+  end
+
   test "generated workflow run job action delegates with normalized CI status" do
     {context, lease} = context_and_lease()
 
@@ -2780,6 +2901,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
              Jido.Connect.GitHub.Actions.ListReleases,
              Jido.Connect.GitHub.Actions.CreateRelease,
+             Jido.Connect.GitHub.Actions.UploadReleaseAsset,
              Jido.Connect.GitHub.Actions.ListWorkflowRunJobs,
              Jido.Connect.GitHub.Actions.RerunWorkflowRun,
              Jido.Connect.GitHub.Actions.CancelWorkflowRun,
@@ -2858,6 +2980,12 @@ defmodule Jido.Connect.GitHubTest do
 
     assert create_release_installation_missing_scopes.state == :missing_scopes
     assert create_release_installation_missing_scopes.missing_scopes == ["contents:write"]
+
+    upload_release_asset_installation_missing_scopes =
+      availability_for(installation_tools, "github.release_asset.upload")
+
+    assert upload_release_asset_installation_missing_scopes.state == :missing_scopes
+    assert upload_release_asset_installation_missing_scopes.missing_scopes == ["contents:write"]
 
     workflow_rerun_installation_missing_scopes =
       availability_for(installation_tools, "github.workflow_run.rerun")

@@ -294,11 +294,54 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
         field :target_commitish, :string
         field :author, :map
         field :url, :string
+        field :upload_url, :string
         field :tarball_url, :string
         field :zipball_url, :string
         field :created_at, :string
         field :published_at, :string
         field :body, :string
+      end
+    end
+
+    action :upload_release_asset do
+      id "github.release_asset.upload"
+      resource :release_asset
+      verb :upload
+      data_classification :workspace_content
+      label "Upload release asset"
+      description "Upload a GitHub release asset using the release upload URL boundary."
+      handler Jido.Connect.GitHub.Handlers.Actions.UploadReleaseAsset
+      effect :write, confirmation: :always
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :upload_url, :string, required?: true
+        field :name, :string, required?: true, example: "dist.zip"
+        field :label, :string
+        field :content_type, :string, required?: true, example: "application/zip"
+        field :content_base64, :string, required?: true
+      end
+
+      output do
+        field :id, :integer
+        field :node_id, :string
+        field :name, :string
+        field :label, :string
+        field :state, :string
+        field :content_type, :string
+        field :size, :integer
+        field :download_count, :integer
+        field :url, :string
+        field :browser_download_url, :string
+        field :created_at, :string
+        field :updated_at, :string
+        field :uploader, :map
       end
     end
 
