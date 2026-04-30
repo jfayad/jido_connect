@@ -13,7 +13,7 @@ defmodule Jido.Connect.JidoActionRuntime do
            }),
          {:ok, lease} <- RuntimeContext.credential_lease(agent_context) do
       Connect.invoke(
-        projection.integration_module.integration(),
+        projection.integration_module,
         projection.action_id,
         params,
         RuntimeContext.runtime_opts(agent_context, context, lease)

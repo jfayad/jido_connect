@@ -33,7 +33,7 @@ defmodule Jido.Connect.JidoSensorRuntime do
          {:ok, lease} <- RuntimeContext.credential_lease(context),
          {:ok, result} <-
            Connect.poll(
-             projection.integration_module.integration(),
+             projection.integration_module,
              projection.trigger_id,
              Map.get(state, :config, %{}),
              RuntimeContext.runtime_opts(context, integration_context, lease, %{

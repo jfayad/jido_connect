@@ -167,6 +167,21 @@ Poll sensors are operational generated modules: Jido schedules ticks, core
 delegates to `Jido.Connect.poll/4`, and the runtime emits `Jido.Signal`s while
 carrying the in-memory checkpoint forward.
 
+Generated plugin subscriptions accept a shared `trigger_config` fallback or
+per-trigger configs keyed by trigger id:
+
+```elixir
+Jido.Connect.GitHub.Plugin.subscriptions(
+  %{
+    trigger_configs: %{
+      "github.issue.new" => %{repo: "org/repo"},
+      "github.workflow_run.updated" => %{repo: "org/repo", branch: "main"}
+    }
+  },
+  context
+)
+```
+
 Webhook sensors are generated as metadata-only projections until a host delivery
 contract is attached. Provider packages should verify signatures and normalize
 webhook bodies with their pure webhook helper modules, then the host can route

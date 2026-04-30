@@ -89,6 +89,18 @@ defmodule Jido.Connect.Jido.RuntimeTest do
                integration_context: context
              })
 
+    raising_projection = %{projection | integration_module: RuntimeFixtures.RaisingIntegration}
+
+    assert {:error,
+            %Connect.Error.ExecutionError{
+              phase: :provider_integration,
+              details: %{message: "integration lookup exploded"}
+            }} =
+             Connect.JidoActionRuntime.run(raising_projection, %{repo: "org/repo"}, %{
+               integration_context: context,
+               credential_lease: lease
+             })
+
     sensor = RuntimeFixtures.sensor_projection()
 
     assert {:ok, state, [{:schedule, 1_000}]} =
@@ -137,6 +149,21 @@ defmodule Jido.Connect.Jido.RuntimeTest do
     assert {:ok, _state, [{:emit, _selector_signal}, {:schedule, 1_000}]} =
              Connect.JidoSensorRuntime.handle_event(sensor, :tick, selector_state)
 
+    raising_sensor = %{sensor | integration_module: RuntimeFixtures.RaisingIntegration}
+
+    assert {:ok, raising_state, [{:schedule, 1_000}]} =
+             Connect.JidoSensorRuntime.init(raising_sensor, %{repo: "org/repo"}, %{
+               integration_context: context,
+               credential_lease: lease
+             })
+
+    assert {:error,
+            %Connect.Error.ExecutionError{
+              phase: :provider_integration,
+              details: %{message: "integration lookup exploded"}
+            }} =
+             Connect.JidoSensorRuntime.handle_event(raising_sensor, :tick, raising_state)
+
     webhook = %{sensor | kind: :webhook, runtime_mode: :metadata_only}
     assert {:ok, %{projection: ^webhook}} = Connect.JidoSensorRuntime.init(webhook, %{}, %{})
 
@@ -166,6 +193,31 @@ defmodule Jido.Connect.Jido.RuntimeTest do
              Connect.JidoPluginRuntime.subscriptions(
                projection,
                %{trigger_config: %{repo: "org/repo"}},
+               %{}
+             )
+
+    second_sensor = %{
+      sensor
+      | module: RuntimeFixtures.Integration.Sensors.SecondRepoChanged,
+        trigger_id: "demo.repo.second_changed",
+        name: "demo_repo_second_changed"
+    }
+
+    multi_sensor_projection = %{projection | sensors: [sensor, second_sensor]}
+
+    assert [
+             {RuntimeFixtures.Integration.Sensors.RepoChanged, %{repo: "org/one"}},
+             {RuntimeFixtures.Integration.Sensors.SecondRepoChanged, %{repo: "org/two"}}
+           ] =
+             Connect.JidoPluginRuntime.subscriptions(
+               multi_sensor_projection,
+               %{
+                 trigger_configs: %{
+                   "demo.repo.changed" => %{repo: "org/one"},
+                   "demo.repo.second_changed" => %{repo: "org/two"}
+                 },
+                 trigger_config: %{repo: "fallback/repo"}
+               },
                %{}
              )
 

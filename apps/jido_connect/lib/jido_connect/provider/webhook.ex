@@ -3,11 +3,16 @@ defmodule Jido.Connect.Webhook do
   Shared pure helpers for provider webhook verification and parsing.
   """
 
-  alias Jido.Connect.{Data, Error, Security}
+  alias Jido.Connect.{Error, Security}
 
   @spec header(map(), String.t()) :: term()
   def header(headers, key) when is_map(headers) and is_binary(key) do
-    Data.get(headers, key) || Data.get(headers, String.downcase(key))
+    target = normalize_header_key(key)
+
+    Enum.find_value(headers, fn
+      {header_key, value} ->
+        if normalize_header_key(header_key) == target, do: value
+    end)
   end
 
   @spec verify_hmac_sha256(String.t(), String.t() | nil, String.t() | nil, keyword()) ::
@@ -78,5 +83,12 @@ defmodule Jido.Connect.Webhook do
      Error.auth(Keyword.get(opts, :invalid_signature_message, "Webhook signature is invalid"),
        reason: Keyword.get(opts, :invalid_signature_reason, :invalid_signature)
      )}
+  end
+
+  defp normalize_header_key(key) do
+    key
+    |> to_string()
+    |> String.downcase()
+    |> String.replace("_", "-")
   end
 end

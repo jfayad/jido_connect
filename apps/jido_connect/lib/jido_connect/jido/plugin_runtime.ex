@@ -27,7 +27,7 @@ defmodule Jido.Connect.JidoPluginRuntime do
     |> filtered_sensors(config)
     |> Enum.filter(&(&1.kind == :poll))
     |> Enum.map(fn sensor ->
-      {sensor.module, Map.get(config, :trigger_config, %{})}
+      {sensor.module, sensor_config(config, sensor)}
     end)
   end
 
@@ -180,6 +180,46 @@ defmodule Jido.Connect.JidoPluginRuntime do
       values when is_list(values) -> MapSet.new(values)
       values -> MapSet.new(List.wrap(values))
     end
+  end
+
+  defp sensor_config(config, sensor) do
+    fallback = config_value(config, :trigger_config, %{})
+
+    config
+    |> config_value(:trigger_configs, %{})
+    |> trigger_config_for(sensor)
+    |> case do
+      nil ->
+        case trigger_config_for(fallback, sensor) do
+          nil -> fallback
+          config -> config
+        end
+
+      config ->
+        config
+    end
+  end
+
+  defp trigger_config_for(configs, sensor) when is_map(configs) do
+    Map.get(configs, sensor.trigger_id) ||
+      maybe_get(configs, existing_atom(sensor.trigger_id)) ||
+      Map.get(configs, sensor.name) ||
+      maybe_get(configs, existing_atom(sensor.name))
+  end
+
+  defp trigger_config_for(_configs, _sensor), do: nil
+
+  defp maybe_get(_map, nil), do: nil
+  defp maybe_get(map, key), do: Map.get(map, key)
+
+  defp existing_atom(value) when is_binary(value) do
+    String.to_existing_atom(value)
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp config_value(config, key, default) when is_map(config) do
+    Map.get(config, key, Map.get(config, Atom.to_string(key), default))
   end
 
   defp connection_availability(operation, %Connect.Connection{} = connection, config) do

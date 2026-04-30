@@ -98,6 +98,8 @@ defmodule Jido.Connect.ProviderHelpersTest do
              Webhook.decode_json("not-json", provider: :demo)
 
     assert Webhook.header(%{"x-demo-header" => "value"}, "X-Demo-Header") == "value"
+    assert Webhook.header(%{"X-Demo-Header" => "value"}, "x-demo-header") == "value"
+    assert Webhook.header(%{"x_demo_header" => "value"}, "x-demo-header") == "value"
     assert Webhook.duplicate?("delivery_1", ["delivery_1"])
 
     delivery =
