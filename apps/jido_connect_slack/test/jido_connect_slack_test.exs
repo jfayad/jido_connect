@@ -48,6 +48,18 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def update_message(
+          %{channel: "C123", ts: "1700000000.000100", text: "Updated"},
+          "token"
+        ) do
+      {:ok,
+       %{
+         channel: "C123",
+         ts: "1700000000.000100",
+         message: %{text: "Updated"}
+       }}
+    end
+
     def auth_test("token") do
       {:ok,
        %{
@@ -209,6 +221,9 @@ defmodule Jido.Connect.SlackTest do
     assert {:ok, %{id: "slack.message.post", mutation?: true, confirmation: :required_for_ai}} =
              Connect.action(spec, "slack.message.post")
 
+    assert {:ok, %{id: "slack.message.update", mutation?: true, confirmation: :required_for_ai}} =
+             Connect.action(spec, "slack.message.update")
+
     assert {:ok,
             %{
               id: "slack.auth.test",
@@ -285,6 +300,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
+             Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.ListUsers,
              Jido.Connect.Slack.Actions.UserInfo,
              Jido.Connect.Slack.Actions.LookupUserByEmail
@@ -302,6 +318,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.AuthTest,
                  Jido.Connect.Slack.Actions.TeamInfo,
                  Jido.Connect.Slack.Actions.PostMessage,
+                 Jido.Connect.Slack.Actions.UpdateMessage,
                  Jido.Connect.Slack.Actions.ListUsers,
                  Jido.Connect.Slack.Actions.UserInfo,
                  Jido.Connect.Slack.Actions.LookupUserByEmail
@@ -329,6 +346,9 @@ defmodule Jido.Connect.SlackTest do
     assert {:module, Jido.Connect.Slack.Actions.LookupUserByEmail} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.LookupUserByEmail)
 
+    assert {:module, Jido.Connect.Slack.Actions.UpdateMessage} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.UpdateMessage)
+
     assert {:module, Jido.Connect.Slack.Plugin} =
              Code.ensure_loaded(Jido.Connect.Slack.Plugin)
 
@@ -355,6 +375,24 @@ defmodule Jido.Connect.SlackTest do
     assert projection.risk == :write
     assert projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.PostMessage.name() == "slack_message_post"
+
+    update_projection = Jido.Connect.Slack.Actions.UpdateMessage.jido_connect_projection()
+
+    assert update_projection.action_id == "slack.message.update"
+    assert update_projection.label == "Update message"
+    assert update_projection.resource == :message
+    assert update_projection.verb == :update
+
+    assert Enum.map(update_projection.input, & &1.name) == [
+             :channel,
+             :ts,
+             :text,
+             :blocks
+           ]
+
+    assert update_projection.risk == :write
+    assert update_projection.confirmation == :required_for_ai
+    assert Jido.Connect.Slack.Actions.UpdateMessage.name() == "slack_message_update"
 
     list_projection = Jido.Connect.Slack.Actions.ListChannels.jido_connect_projection()
     assert list_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
@@ -492,6 +530,21 @@ defmodule Jido.Connect.SlackTest do
             }} =
              Jido.Connect.Slack.Actions.PostMessage.run(
                %{channel: "C123", text: "Hello"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "generated update message action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              ts: "1700000000.000100",
+              message: %{text: "Updated"}
+            }} =
+             Jido.Connect.Slack.Actions.UpdateMessage.run(
+               %{channel: "C123", ts: "1700000000.000100", text: "Updated"},
                %{integration_context: context, credential_lease: lease}
              )
   end
@@ -680,6 +733,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
+             Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.ListUsers,
              Jido.Connect.Slack.Actions.UserInfo,
              Jido.Connect.Slack.Actions.LookupUserByEmail

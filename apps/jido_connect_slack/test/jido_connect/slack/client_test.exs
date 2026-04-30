@@ -70,6 +70,40 @@ defmodule Jido.Connect.Slack.ClientTest do
              Client.post_message(%{channel: "C123", text: "Hello"}, "token")
   end
 
+  test "update message sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/chat.update"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "channel" => "C123",
+               "ts" => "1700000000.000100",
+               "text" => "Updated",
+               "blocks" => [%{"type" => "section"}]
+             } = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        ok: true,
+        channel: "C123",
+        ts: "1700000000.000100",
+        message: %{text: "Updated"}
+      })
+    end)
+
+    assert {:ok, %{channel: "C123", ts: "1700000000.000100"}} =
+             Client.update_message(
+               %{
+                 channel: "C123",
+                 ts: "1700000000.000100",
+                 text: "Updated",
+                 blocks: [%{type: "section"}]
+               },
+               "token"
+             )
+  end
+
   test "list users sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

@@ -33,5 +33,35 @@ defmodule Jido.Connect.Slack.Actions.Messages do
         field :message, :map
       end
     end
+
+    action :update_message do
+      id "slack.message.update"
+      resource :message
+      verb :update
+      data_classification :message_content
+      label "Update message"
+      description "Update a Slack message by channel and timestamp."
+      handler Jido.Connect.Slack.Handlers.Actions.UpdateMessage
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["chat:write"]
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+        field :ts, :string, required?: true, description: "Slack message timestamp."
+        field :text, :string
+        field :blocks, {:array, :map}
+      end
+
+      output do
+        field :channel, :string
+        field :ts, :string
+        field :message, :map
+      end
+    end
   end
 end

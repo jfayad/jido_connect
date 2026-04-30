@@ -19,6 +19,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_message_response()
   end
 
+  def update_message(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/chat.update", json: Data.compact(attrs))
+    |> handle_message_response()
+  end
+
   def list_users(params, access_token) when is_map(params) and is_binary(access_token) do
     access_token
     |> request()
