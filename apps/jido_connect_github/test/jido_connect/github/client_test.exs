@@ -767,6 +767,39 @@ defmodule Jido.Connect.GitHub.ClientTest do
             ]} = Client.add_issue_labels("org/repo", 2, ["bug", "triage"], "token")
   end
 
+  test "assign issue sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/issues/2/assignees"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"assignees" => ["octocat", "mona"]} = Jason.decode!(body)
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        number: 2,
+        html_url: "https://github.test/2",
+        title: "Bug",
+        state: "open",
+        assignees: [
+          %{login: "octocat", id: 1, type: "User", html_url: "https://github.test/octocat"},
+          %{login: "mona", id: 2, type: "User", html_url: "https://github.test/mona"}
+        ]
+      })
+    end)
+
+    assert {:ok,
+            %{
+              number: 2,
+              title: "Bug",
+              state: "open",
+              assignees: [
+                %{login: "octocat", id: 1, type: "User", url: "https://github.test/octocat"},
+                %{login: "mona", id: 2, type: "User", url: "https://github.test/mona"}
+              ]
+            }} = Client.assign_issue("org/repo", 2, ["octocat", "mona"], "token")
+  end
+
   test "create issue comment sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

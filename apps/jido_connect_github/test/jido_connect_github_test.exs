@@ -222,6 +222,20 @@ defmodule Jido.Connect.GitHubTest do
        ]}
     end
 
+    def assign_issue("org/repo", 2, ["octocat", "mona"], "token") do
+      {:ok,
+       %{
+         number: 2,
+         url: "https://github.test/2",
+         title: "Bug",
+         state: "open",
+         assignees: [
+           %{login: "octocat", id: 1, type: "User"},
+           %{login: "mona", id: 2, type: "User"}
+         ]
+       }}
+    end
+
     def create_pull_request(
           "org/repo",
           %{
@@ -426,6 +440,17 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.issue.assign",
+              resource: :issue,
+              verb: :update,
+              mutation?: true,
+              confirmation: :required_for_ai,
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} = Connect.action(spec, "github.issue.assign")
+
+    assert {:ok,
+            %{
               id: "github.pull_request.list",
               resource: :pull_request,
               verb: :list,
@@ -586,6 +611,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.AddIssueLabels,
+             Jido.Connect.GitHub.Actions.AssignIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
              Jido.Connect.GitHub.Actions.SearchIssues,
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
@@ -617,6 +643,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.ListIssues,
                  Jido.Connect.GitHub.Actions.CreateIssue,
                  Jido.Connect.GitHub.Actions.AddIssueLabels,
+                 Jido.Connect.GitHub.Actions.AssignIssue,
                  Jido.Connect.GitHub.Actions.ListPullRequests,
                  Jido.Connect.GitHub.Actions.SearchIssues,
                  Jido.Connect.GitHub.Actions.ListWorkflowRuns,
@@ -651,6 +678,9 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:module, Jido.Connect.GitHub.Actions.AddIssueLabels} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.AddIssueLabels)
+
+    assert {:module, Jido.Connect.GitHub.Actions.AssignIssue} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.AssignIssue)
 
     assert {:module, Jido.Connect.GitHub.Actions.CreateIssueComment} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.CreateIssueComment)
@@ -697,6 +727,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ReadFile, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdateFile, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.AddIssueLabels, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.AssignIssue, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListPullRequests, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.SearchIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListWorkflowRuns, :run, 2)
@@ -747,6 +778,23 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.AddIssueLabels.name() == "github_issue_label_add"
+  end
+
+  test "generated assign issue action metadata tracks required assignee fields" do
+    projection = Jido.Connect.GitHub.Actions.AssignIssue.jido_connect_projection()
+
+    assert projection.action_id == "github.issue.assign"
+    assert projection.label == "Assign issue"
+    assert Enum.map(projection.input, & &1.name) == [:repo, :issue_number, :assignees]
+    assert Enum.map(projection.output, & &1.name) == [:number, :url, :title, :state, :assignees]
+    assert projection.risk == :write
+    assert projection.confirmation == :required_for_ai
+    assert projection.resource == :issue
+    assert projection.verb == :update
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.AssignIssue.name() == "github_issue_assign"
   end
 
   test "generated issue comment action metadata tracks high-risk DSL fields" do
@@ -1420,6 +1468,16 @@ defmodule Jido.Connect.GitHubTest do
              )
 
     assert {:error,
+            %Connect.Error.AuthError{reason: :missing_scopes, missing_scopes: ["issues:write"]}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.issue.assign",
+               %{repo: "org/repo", issue_number: 2, assignees: ["octocat"]},
+               context: missing_write,
+               credential_lease: lease
+             )
+
+    assert {:error,
             %Connect.Error.AuthError{
               reason: :missing_scopes,
               missing_scopes: ["pull_requests:write"]
@@ -1499,6 +1557,52 @@ defmodule Jido.Connect.GitHubTest do
                Jido.Connect.GitHub.integration(),
                "github.issue.label.add",
                %{repo: "org/repo", issue_number: 2, labels: []},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes GitHub assign issue action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              number: 2,
+              title: "Bug",
+              state: "open",
+              assignees: [%{login: "octocat"}, %{login: "mona"}]
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.issue.assign",
+               %{repo: "org/repo", issue_number: 2, assignees: ["octocat", "mona"]},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "rejects empty assignee list before assigning issue" do
+    {context, lease} = context_and_lease()
+
+    assert {:error, %Connect.Error.ValidationError{reason: :empty_assignees, subject: :assignees}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.issue.assign",
+               %{repo: "org/repo", issue_number: 2, assignees: []},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "rejects blank assignee logins before assigning issue" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ValidationError{reason: :invalid_assignees, subject: :assignees}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.issue.assign",
+               %{repo: "org/repo", issue_number: 2, assignees: ["octocat", " "]},
                context: context,
                credential_lease: lease
              )
@@ -1726,6 +1830,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.AddIssueLabels,
+             Jido.Connect.GitHub.Actions.AssignIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
              Jido.Connect.GitHub.Actions.SearchIssues,
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,

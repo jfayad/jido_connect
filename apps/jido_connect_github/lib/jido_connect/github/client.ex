@@ -154,6 +154,17 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_label_list_response()
   end
 
+  def assign_issue(repo, issue_number, assignees, access_token)
+      when is_integer(issue_number) and is_list(assignees) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(
+      url: "/repos/#{repo}/issues/#{issue_number}/assignees",
+      json: %{assignees: assignees}
+    )
+    |> handle_issue_assignment_response()
+  end
+
   def create_issue_comment(repo, issue_number, body, access_token)
       when is_integer(issue_number) and is_binary(access_token) do
     access_token
@@ -418,6 +429,18 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_label_list_response(response), do: handle_error_response(response)
 
+  defp handle_issue_assignment_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_assigned_issue(body)}
+  end
+
+  defp handle_issue_assignment_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub issue assignment response was invalid", body)
+  end
+
+  defp handle_issue_assignment_response(response), do: handle_error_response(response)
+
   defp handle_comment_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     {:ok, normalize_comment(body)}
@@ -475,6 +498,12 @@ defmodule Jido.Connect.GitHub.Client do
       state: Data.get(issue, "state"),
       updated_at: Data.get(issue, "updated_at")
     }
+  end
+
+  defp normalize_assigned_issue(issue) when is_map(issue) do
+    issue
+    |> normalize_issue()
+    |> Map.put(:assignees, normalize_users(Data.get(issue, "assignees")))
   end
 
   defp normalize_repository(repository) when is_map(repository) do
