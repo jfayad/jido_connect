@@ -85,6 +85,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_add_reaction_response(attrs)
   end
 
+  def remove_reaction(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/reactions.remove", json: reaction_params(attrs))
+    |> handle_remove_reaction_response(attrs)
+  end
+
   def upload_file(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
     content = Data.get(attrs, :content, "")
 
@@ -432,6 +439,18 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_add_reaction_response(response, _attrs), do: handle_error_response(response)
+
+  defp handle_remove_reaction_response({:ok, %{status: status, body: %{"ok" => true}}}, attrs)
+       when status in 200..299 do
+    {:ok,
+     %{
+       channel: Data.get(attrs, :channel),
+       timestamp: Data.get(attrs, :timestamp),
+       name: Data.get(attrs, :name)
+     }}
+  end
+
+  defp handle_remove_reaction_response(response, _attrs), do: handle_error_response(response)
 
   defp normalize_post_at(post_at) when is_integer(post_at), do: post_at
 

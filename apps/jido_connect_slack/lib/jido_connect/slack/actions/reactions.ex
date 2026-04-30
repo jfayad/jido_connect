@@ -32,5 +32,34 @@ defmodule Jido.Connect.Slack.Actions.Reactions do
         field :name, :string
       end
     end
+
+    action :remove_reaction do
+      id "slack.reaction.remove"
+      resource :reaction
+      verb :delete
+      data_classification :workspace_metadata
+      label "Remove reaction"
+      description "Remove an emoji reaction from a Slack message by channel and timestamp."
+      handler Jido.Connect.Slack.Handlers.Actions.RemoveReaction
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["reactions:write"]
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+        field :timestamp, :string, required?: true, description: "Slack message timestamp."
+        field :name, :string, required?: true, example: "thumbsup"
+      end
+
+      output do
+        field :channel, :string
+        field :timestamp, :string
+        field :name, :string
+      end
+    end
   end
 end

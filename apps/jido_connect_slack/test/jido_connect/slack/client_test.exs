@@ -372,6 +372,29 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "remove reaction sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/reactions.remove"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "channel" => "C123",
+               "timestamp" => "1700000000.000100",
+               "name" => "thumbsup"
+             } = Jason.decode!(body)
+
+      Req.Test.json(conn, %{ok: true})
+    end)
+
+    assert {:ok, %{channel: "C123", timestamp: "1700000000.000100", name: "thumbsup"}} =
+             Client.remove_reaction(
+               %{channel: "C123", timestamp: "1700000000.000100", name: "thumbsup"},
+               "token"
+             )
+  end
+
   test "upload file uses external upload flow" do
     Req.Test.stub(__MODULE__, fn conn ->
       case conn.request_path do
