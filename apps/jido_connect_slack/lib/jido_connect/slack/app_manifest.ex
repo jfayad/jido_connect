@@ -15,7 +15,7 @@ defmodule Jido.Connect.Slack.AppManifest do
     "files:write",
     "reactions:write"
   ]
-  @event_scopes ["app_mentions:read", "channels:history"]
+  @event_scopes ["app_mentions:read", "channels:history", "groups:history"]
 
   @type option ::
           {:name, String.t()}
@@ -109,7 +109,7 @@ defmodule Jido.Connect.Slack.AppManifest do
   defp maybe_put_event_subscriptions(manifest, base_url, true) do
     put_in(manifest, [:settings, :event_subscriptions], %{
       request_url: events_url(base_url),
-      bot_events: ["app_mention", "message.channels"]
+      bot_events: ["app_mention", "message.channels", "message.groups"]
     })
   end
 

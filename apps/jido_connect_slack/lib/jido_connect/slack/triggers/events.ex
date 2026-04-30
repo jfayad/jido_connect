@@ -74,5 +74,42 @@ defmodule Jido.Connect.Slack.Triggers.Events do
         field :event_ts, :string
       end
     end
+
+    webhook :private_channel_message do
+      id "slack.event.message.groups"
+      resource :message
+      verb :watch
+      data_classification :workspace_content
+      label "Private channel message"
+
+      description "Receive Slack Events API message.groups callbacks for plain private channel messages. Requires Slack groups:history for private channel history events."
+
+      verification %{
+        kind: :slack_signed_request,
+        signature_header: "x-slack-signature",
+        timestamp_header: "x-slack-request-timestamp"
+      }
+
+      dedupe %{key: [:team_id, :channel, :ts]}
+      handler Jido.Connect.Slack.Handlers.Triggers.PrivateChannelMessageEvent
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["groups:history"]
+      end
+
+      signal do
+        field :team_id, :string
+        field :event_id, :string
+        field :channel, :string
+        field :channel_type, :string
+        field :user, :string
+        field :text, :string
+        field :ts, :string
+        field :thread_ts, :string
+        field :event_ts, :string
+      end
+    end
   end
 end

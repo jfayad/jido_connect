@@ -111,24 +111,17 @@ defmodule Jido.Connect.Slack.Webhook do
         %{"type" => "event_callback", "event" => %{"type" => "message"} = event} = payload
       ) do
     with :ok <- reject_message_subtype(event),
-         :ok <- require_public_channel_message(event) do
-      {:ok,
-       Data.compact(%{
-         team_id: Data.get(payload, "team_id"),
-         event_id: Data.get(payload, "event_id"),
-         channel: Data.get(event, "channel"),
-         channel_type: Data.get(event, "channel_type"),
-         user: Data.get(event, "user"),
-         text: Data.get(event, "text"),
-         ts: Data.get(event, "ts"),
-         thread_ts: Data.get(event, "thread_ts"),
-         event_ts: Data.get(event, "event_ts")
-       })}
+         :ok <- require_message_channel_type(event, [nil, "channel", "group"]) do
+      {:ok, message_signal(payload, event)}
     end
   end
 
   def normalize_signal("message.channels", payload) do
-    normalize_signal("message", payload)
+    normalize_message_signal(payload, [nil, "channel"])
+  end
+
+  def normalize_signal("message.groups", payload) do
+    normalize_message_signal(payload, ["group"])
   end
 
   def normalize_signal(event, _payload) do
@@ -196,8 +189,40 @@ defmodule Jido.Connect.Slack.Webhook do
     end
   end
 
-  defp require_public_channel_message(event) do
-    if Data.get(event, "channel_type") in [nil, "channel"] do
+  defp normalize_message_signal(
+         %{"type" => "event_callback", "event" => %{"type" => "message"} = event} = payload,
+         channel_types
+       ) do
+    with :ok <- reject_message_subtype(event),
+         :ok <- require_message_channel_type(event, channel_types) do
+      {:ok, message_signal(payload, event)}
+    end
+  end
+
+  defp normalize_message_signal(_payload, _channel_types) do
+    {:error,
+     Error.provider("Unsupported Slack event",
+       provider: :slack,
+       reason: :unsupported_event
+     )}
+  end
+
+  defp message_signal(payload, event) do
+    Data.compact(%{
+      team_id: Data.get(payload, "team_id"),
+      event_id: Data.get(payload, "event_id"),
+      channel: Data.get(event, "channel"),
+      channel_type: Data.get(event, "channel_type"),
+      user: Data.get(event, "user"),
+      text: Data.get(event, "text"),
+      ts: Data.get(event, "ts"),
+      thread_ts: Data.get(event, "thread_ts"),
+      event_ts: Data.get(event, "event_ts")
+    })
+  end
+
+  defp require_message_channel_type(event, channel_types) do
+    if Data.get(event, "channel_type") in channel_types do
       :ok
     else
       {:error,

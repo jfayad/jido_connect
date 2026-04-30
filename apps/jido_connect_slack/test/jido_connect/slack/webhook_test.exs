@@ -200,7 +200,46 @@ defmodule Jido.Connect.Slack.WebhookTest do
     im_payload = put_in(payload, ["event", "channel_type"], "im")
 
     assert {:error, %Error.ProviderError{provider: :slack, reason: :unsupported_channel_type}} =
-             Webhook.normalize_signal("message", im_payload)
+             Webhook.normalize_signal("message.channels", im_payload)
+  end
+
+  test "normalizes private channel message events and rejects other channel types" do
+    payload = %{
+      "type" => "event_callback",
+      "team_id" => "T123",
+      "event_id" => "Ev789",
+      "event" => %{
+        "type" => "message",
+        "channel" => "G123",
+        "channel_type" => "group",
+        "user" => "U123",
+        "text" => "private hello",
+        "ts" => "1700000000.000300",
+        "thread_ts" => "1700000000.000100",
+        "event_ts" => "1700000000.000300"
+      }
+    }
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev789",
+              channel: "G123",
+              channel_type: "group",
+              user: "U123",
+              text: "private hello",
+              ts: "1700000000.000300",
+              thread_ts: "1700000000.000100",
+              event_ts: "1700000000.000300"
+            }} = Webhook.normalize_signal("message.groups", payload)
+
+    assert {:ok, %{channel: "G123"}} = Webhook.normalize_signal("message", payload)
+    assert {:ok, %{channel: "G123"}} = Webhook.normalize_event(payload)
+
+    public_payload = put_in(payload, ["event", "channel_type"], "channel")
+
+    assert {:error, %Error.ProviderError{provider: :slack, reason: :unsupported_channel_type}} =
+             Webhook.normalize_signal("message.groups", public_payload)
   end
 
   test "invalid JSON payloads are provider errors" do

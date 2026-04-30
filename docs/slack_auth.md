@@ -37,6 +37,12 @@ For future Events API work, configure:
 https://example.ngrok-free.app/integrations/slack/events
 ```
 
+Event subscriptions use Slack's event-specific history scopes:
+
+- `app_mention` requires `app_mentions:read`
+- `message.channels` requires `channels:history`
+- `message.groups` requires `groups:history`
+
 Local env keys:
 
 ```sh
