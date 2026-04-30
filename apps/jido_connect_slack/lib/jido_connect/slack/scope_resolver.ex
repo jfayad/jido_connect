@@ -27,6 +27,11 @@ defmodule Jido.Connect.Slack.ScopeResolver do
     "mpim" => "mpim:write"
   }
 
+  @channel_create_scopes %{
+    false => "channels:manage",
+    true => "groups:write"
+  }
+
   def required_scopes(%{id: "slack.channel.list"}, input, _connection) do
     input
     |> requested_types()
@@ -47,6 +52,17 @@ defmodule Jido.Connect.Slack.ScopeResolver do
 
   def required_scopes(%{action_id: "slack.conversation.info"}, input, connection) do
     required_scopes(%{id: "slack.conversation.info"}, input, connection)
+  end
+
+  def required_scopes(%{id: "slack.channel.create"}, input, _connection) do
+    input
+    |> private_channel?()
+    |> then(&Map.fetch!(@channel_create_scopes, &1))
+    |> List.wrap()
+  end
+
+  def required_scopes(%{action_id: "slack.channel.create"}, input, connection) do
+    required_scopes(%{id: "slack.channel.create"}, input, connection)
   end
 
   def required_scopes(%{id: "slack.conversation.open"}, input, _connection) do
@@ -106,6 +122,10 @@ defmodule Jido.Connect.Slack.ScopeResolver do
 
   defp conversation_read_scope(type) do
     Map.get(@conversation_type_scopes, type, "channels:read")
+  end
+
+  defp private_channel?(input) do
+    Map.get(input, :is_private, Map.get(input, "is_private", false)) == true
   end
 
   defp requested_open_conversation_type(input) do

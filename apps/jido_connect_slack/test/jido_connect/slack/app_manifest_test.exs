@@ -14,7 +14,9 @@ defmodule Jido.Connect.Slack.AppManifestTest do
 
     assert get_in(manifest, [:oauth_config, :scopes, :bot]) == [
              "channels:read",
+             "channels:manage",
              "channels:history",
+             "groups:write",
              "im:write",
              "mpim:write",
              "chat:write",
@@ -36,7 +38,9 @@ defmodule Jido.Connect.Slack.AppManifestTest do
 
     assert get_in(manifest, [:oauth_config, :scopes, :bot]) == [
              "channels:read",
+             "channels:manage",
              "channels:history",
+             "groups:write",
              "im:write",
              "mpim:write",
              "chat:write",

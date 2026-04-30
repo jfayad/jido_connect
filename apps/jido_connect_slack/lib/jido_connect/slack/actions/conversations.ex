@@ -108,6 +108,33 @@ defmodule Jido.Connect.Slack.Actions.Conversations do
       end
     end
 
+    action :create_channel do
+      id "slack.channel.create"
+      resource :channel
+      verb :create
+      data_classification :workspace_metadata
+      label "Create channel"
+      description "Create a Slack public or private channel."
+      handler Jido.Connect.Slack.Handlers.Actions.CreateChannel
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["channels:manage"], resolver: Jido.Connect.Slack.ScopeResolver
+      end
+
+      input do
+        field :name, :string, required?: true, example: "project-updates"
+        field :is_private, :boolean, default: false
+        field :team_id, :string
+      end
+
+      output do
+        field :channel, :map
+      end
+    end
+
     action :open_conversation do
       id "slack.conversation.open"
       resource :conversation

@@ -61,8 +61,10 @@ defmodule Jido.Connect.Slack do
 
       scopes [
         "channels:read",
+        "channels:manage",
         "channels:history",
         "groups:read",
+        "groups:write",
         "groups:history",
         "im:read",
         "im:write",
@@ -81,7 +83,9 @@ defmodule Jido.Connect.Slack do
 
       default_scopes [
         "channels:read",
+        "channels:manage",
         "channels:history",
+        "groups:write",
         "im:write",
         "mpim:write",
         "app_mentions:read",

@@ -34,6 +34,14 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_conversation_info_response(params)
   end
 
+  def create_channel(params, access_token)
+      when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/conversations.create", json: create_channel_params(params))
+    |> handle_create_channel_response()
+  end
+
   def open_conversation(params, access_token)
       when is_map(params) and is_binary(access_token) do
     access_token
@@ -212,6 +220,12 @@ defmodule Jido.Connect.Slack.Client do
   defp conversation_info_params(params) do
     params
     |> Map.take([:channel, :include_locale])
+    |> Data.compact()
+  end
+
+  defp create_channel_params(params) do
+    params
+    |> Map.take([:name, :is_private, :team_id])
     |> Data.compact()
   end
 
@@ -430,6 +444,16 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_conversation_info_response(response, _params), do: handle_error_response(response)
+
+  defp handle_create_channel_response({:ok, %{status: status, body: %{"ok" => true} = body}})
+       when status in 200..299 do
+    case Data.get(body, "channel") do
+      channel when is_map(channel) -> {:ok, %{channel: normalize_channel(channel)}}
+      _other -> invalid_success_response("Slack channel create response was invalid", body)
+    end
+  end
+
+  defp handle_create_channel_response(response), do: handle_error_response(response)
 
   defp handle_open_conversation_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do

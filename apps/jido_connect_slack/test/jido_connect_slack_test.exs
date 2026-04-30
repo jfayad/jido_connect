@@ -181,6 +181,32 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def create_channel(%{name: "project-updates", is_private: false}, "token") do
+      {:ok,
+       %{
+         channel: %{
+           id: "C999",
+           name: "project-updates",
+           is_archived: false,
+           is_private: false,
+           is_member: true
+         }
+       }}
+    end
+
+    def create_channel(%{name: "secret-updates", is_private: true}, "token") do
+      {:ok,
+       %{
+         channel: %{
+           id: "G999",
+           name: "secret-updates",
+           is_archived: false,
+           is_private: true,
+           is_member: true
+         }
+       }}
+    end
+
     def open_conversation(%{users: ["U123"]}, "token") do
       {:ok,
        %{
@@ -567,6 +593,18 @@ defmodule Jido.Connect.SlackTest do
               mutation?: false
             }} =
              Connect.action(spec, "slack.conversation.info")
+
+    assert {:ok,
+            %{
+              id: "slack.channel.create",
+              resource: :channel,
+              verb: :create,
+              policies: [:workspace_access],
+              scopes: ["channels:manage"],
+              mutation?: true,
+              confirmation: :required_for_ai
+            }} =
+             Connect.action(spec, "slack.channel.create")
 
     assert {:ok,
             %{
@@ -982,6 +1020,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.GetThreadReplies,
              Jido.Connect.Slack.Actions.GetConversationInfo,
+             Jido.Connect.Slack.Actions.CreateChannel,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
@@ -1024,6 +1063,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.ListChannels,
                  Jido.Connect.Slack.Actions.GetThreadReplies,
                  Jido.Connect.Slack.Actions.GetConversationInfo,
+                 Jido.Connect.Slack.Actions.CreateChannel,
                  Jido.Connect.Slack.Actions.OpenConversation,
                  Jido.Connect.Slack.Actions.ListConversationMembers,
                  Jido.Connect.Slack.Actions.UploadFile,
@@ -1063,6 +1103,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.GetThreadReplies} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.GetThreadReplies)
+
+    assert {:module, Jido.Connect.Slack.Actions.CreateChannel} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.CreateChannel)
 
     assert {:module, Jido.Connect.Slack.Actions.SearchMessages} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.SearchMessages)
@@ -1557,6 +1600,25 @@ defmodule Jido.Connect.SlackTest do
              :conversation
            ]
 
+    create_channel_projection =
+      Jido.Connect.Slack.Actions.CreateChannel.jido_connect_projection()
+
+    assert create_channel_projection.action_id == "slack.channel.create"
+    assert create_channel_projection.resource == :channel
+    assert create_channel_projection.verb == :create
+    assert create_channel_projection.scopes == ["channels:manage"]
+    assert create_channel_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
+
+    assert Enum.map(create_channel_projection.input, & &1.name) == [
+             :name,
+             :is_private,
+             :team_id
+           ]
+
+    assert Enum.map(create_channel_projection.output, & &1.name) == [
+             :channel
+           ]
+
     open_conversation_projection =
       Jido.Connect.Slack.Actions.OpenConversation.jido_connect_projection()
 
@@ -1813,6 +1875,75 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.GetConversationInfo.run(
                %{channel: "GMP123", conversation_type: "mpim"},
                %{integration_context: expanded_context, credential_lease: lease}
+             )
+  end
+
+  test "generated create channel action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: %{
+                id: "C999",
+                name: "project-updates",
+                is_private: false
+              }
+            }} =
+             Jido.Connect.Slack.Actions.CreateChannel.run(
+               %{name: "project-updates", is_private: false},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "create channel resolves scopes for public and private channels" do
+    {context, lease} = context_and_lease()
+
+    no_manage_context = %{
+      context
+      | connection: %{
+          context.connection
+          | scopes: context.connection.scopes -- ["channels:manage", "groups:write"]
+        }
+    }
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["channels:manage"]
+            }} =
+             Jido.Connect.Slack.Actions.CreateChannel.run(
+               %{name: "project-updates", is_private: false},
+               %{integration_context: no_manage_context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["groups:write"]
+            }} =
+             Jido.Connect.Slack.Actions.CreateChannel.run(
+               %{name: "secret-updates", is_private: true},
+               %{integration_context: no_manage_context, credential_lease: lease}
+             )
+
+    assert {:ok, %{channel: %{id: "G999", is_private: true}}} =
+             Jido.Connect.Slack.Actions.CreateChannel.run(
+               %{name: "secret-updates", is_private: true},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "create channel validates Slack channel names" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              details: %{field: :name}
+            }} =
+             Jido.Connect.Slack.Actions.CreateChannel.run(
+               %{name: "Invalid Name", is_private: false},
+               %{integration_context: context, credential_lease: lease}
              )
   end
 
@@ -2521,6 +2652,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.GetThreadReplies,
              Jido.Connect.Slack.Actions.GetConversationInfo,
+             Jido.Connect.Slack.Actions.CreateChannel,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
@@ -2659,7 +2791,9 @@ defmodule Jido.Connect.SlackTest do
         status: :connected,
         scopes: [
           "channels:read",
+          "channels:manage",
           "channels:history",
+          "groups:write",
           "im:write",
           "mpim:write",
           "chat:write",
