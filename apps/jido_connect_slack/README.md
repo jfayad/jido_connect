@@ -5,7 +5,8 @@
 It includes:
 
 - `Jido.Connect.Slack`, a Spark-authored provider that compiles into Jido tools
-- generated actions for listing conversations and posting messages
+- generated actions for listing conversations and posting, updating, and
+  deleting messages
 - OAuth v2 helpers in `Jido.Connect.Slack.OAuth`
 - Slack Web API helpers in `Jido.Connect.Slack.Client`
 - signed request verification and Events API helpers in `Jido.Connect.Slack.Webhook`
@@ -57,6 +58,14 @@ url =
 
 Hosts turn the token response into a durable `Jido.Connect.Connection` and a
 short-lived `Jido.Connect.CredentialLease` before running generated actions.
+
+## Message deletion
+
+`slack.message.delete` calls Slack `chat.delete` with `channel` and `ts`. It is
+marked destructive and always requires confirmation. Slack allows both bot and
+user tokens with `chat:write`, but the token determines what can be deleted: a
+bot token can delete only messages posted by that bot, while a user token can
+delete only messages that user can delete in Slack.
 
 ## Webhooks
 

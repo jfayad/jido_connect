@@ -55,10 +55,15 @@ event delivery dedupe. The provider package owns:
 - `Jido.Connect.Slack.OAuth.exchange_code/2`
 - `Jido.Connect.Slack.Client.list_channels/2`
 - `Jido.Connect.Slack.Client.post_message/2`
+- `Jido.Connect.Slack.Client.update_message/2`
+- `Jido.Connect.Slack.Client.delete_message/2`
 - `Jido.Connect.Slack.Webhook.verify_request/4`
 
-Generated actions stay thin. The first generated modules are the Slack
-ListChannels and PostMessage action adapters.
+Generated actions stay thin. Message deletion is exposed as
+`slack.message.delete`, a destructive action that always requires confirmation.
+Slack `chat.delete` accepts bot and user tokens with `chat:write`; bot tokens
+can delete only messages posted by that bot, and user tokens can delete only
+messages that user can delete in Slack.
 
 ## Signed Requests
 

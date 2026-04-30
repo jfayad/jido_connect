@@ -104,6 +104,29 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "delete message sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/chat.delete"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "channel" => "C123",
+               "ts" => "1700000000.000100"
+             } = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        ok: true,
+        channel: "C123",
+        ts: "1700000000.000100"
+      })
+    end)
+
+    assert {:ok, %{channel: "C123", ts: "1700000000.000100"}} =
+             Client.delete_message(%{channel: "C123", ts: "1700000000.000100"}, "token")
+  end
+
   test "list users sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

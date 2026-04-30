@@ -63,5 +63,38 @@ defmodule Jido.Connect.Slack.Actions.Messages do
         field :message, :map
       end
     end
+
+    action :delete_message do
+      id "slack.message.delete"
+      resource :message
+      verb :delete
+      data_classification :message_content
+      label "Delete message"
+
+      description """
+      Delete a Slack message by channel and timestamp. Slack permits bot tokens
+      to delete only messages posted by that bot; user tokens may delete only
+      messages that user can delete in Slack.
+      """
+
+      handler Jido.Connect.Slack.Handlers.Actions.DeleteMessage
+      effect :destructive, confirmation: :always
+
+      access do
+        auth [:bot, :user], default: :bot
+        policies [:workspace_access]
+        scopes ["chat:write"]
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+        field :ts, :string, required?: true, description: "Slack message timestamp."
+      end
+
+      output do
+        field :channel, :string
+        field :ts, :string
+      end
+    end
   end
 end

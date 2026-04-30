@@ -26,6 +26,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_message_response()
   end
 
+  def delete_message(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/chat.delete", json: Data.compact(attrs))
+    |> handle_delete_message_response()
+  end
+
   def list_users(params, access_token) when is_map(params) and is_binary(access_token) do
     access_token
     |> request()
@@ -132,6 +139,17 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_message_response(response), do: handle_error_response(response)
+
+  defp handle_delete_message_response({:ok, %{status: status, body: %{"ok" => true} = body}})
+       when status in 200..299 do
+    {:ok,
+     %{
+       channel: Data.get(body, "channel"),
+       ts: Data.get(body, "ts")
+     }}
+  end
+
+  defp handle_delete_message_response(response), do: handle_error_response(response)
 
   defp handle_user_list_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do

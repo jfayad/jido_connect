@@ -71,6 +71,28 @@ defmodule Jido.Connect.Slack do
       refresh? false
       revoke? false
     end
+
+    oauth2 :user do
+      owner :user
+      subject :user
+      label "Slack user OAuth"
+      authorize_url "https://slack.com/oauth/v2/authorize"
+      token_url "https://slack.com/api/oauth.v2.access"
+      callback_path "/integrations/slack/oauth/callback"
+      token_field :access_token
+      setup :oauth2_authorization_code
+      credential_fields [:access_token]
+      lease_fields [:access_token]
+
+      scopes [
+        "chat:write"
+      ]
+
+      default_scopes ["chat:write"]
+      pkce? false
+      refresh? false
+      revoke? false
+    end
   end
 
   policies do

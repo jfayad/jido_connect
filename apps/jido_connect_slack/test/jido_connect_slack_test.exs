@@ -60,6 +60,18 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def delete_message(
+          %{channel: "C123", ts: "1700000000.000100"},
+          token
+        )
+        when token in ["token", "user-token"] do
+      {:ok,
+       %{
+         channel: "C123",
+         ts: "1700000000.000100"
+       }}
+    end
+
     def auth_test("token") do
       {:ok,
        %{
@@ -226,6 +238,17 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok,
             %{
+              id: "slack.message.delete",
+              mutation?: true,
+              confirmation: :always,
+              risk: :destructive,
+              auth_profile: :bot,
+              auth_profiles: [:bot, :user]
+            }} =
+             Connect.action(spec, "slack.message.delete")
+
+    assert {:ok,
+            %{
               id: "slack.auth.test",
               resource: :auth,
               verb: :read,
@@ -301,6 +324,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
+             Jido.Connect.Slack.Actions.DeleteMessage,
              Jido.Connect.Slack.Actions.ListUsers,
              Jido.Connect.Slack.Actions.UserInfo,
              Jido.Connect.Slack.Actions.LookupUserByEmail
@@ -319,6 +343,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.TeamInfo,
                  Jido.Connect.Slack.Actions.PostMessage,
                  Jido.Connect.Slack.Actions.UpdateMessage,
+                 Jido.Connect.Slack.Actions.DeleteMessage,
                  Jido.Connect.Slack.Actions.ListUsers,
                  Jido.Connect.Slack.Actions.UserInfo,
                  Jido.Connect.Slack.Actions.LookupUserByEmail
@@ -348,6 +373,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.UpdateMessage} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.UpdateMessage)
+
+    assert {:module, Jido.Connect.Slack.Actions.DeleteMessage} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.DeleteMessage)
 
     assert {:module, Jido.Connect.Slack.Plugin} =
              Code.ensure_loaded(Jido.Connect.Slack.Plugin)
@@ -393,6 +421,29 @@ defmodule Jido.Connect.SlackTest do
     assert update_projection.risk == :write
     assert update_projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.UpdateMessage.name() == "slack_message_update"
+
+    delete_projection = Jido.Connect.Slack.Actions.DeleteMessage.jido_connect_projection()
+
+    assert delete_projection.action_id == "slack.message.delete"
+    assert delete_projection.label == "Delete message"
+    assert delete_projection.resource == :message
+    assert delete_projection.verb == :delete
+
+    assert Enum.map(delete_projection.input, & &1.name) == [
+             :channel,
+             :ts
+           ]
+
+    assert Enum.map(delete_projection.output, & &1.name) == [
+             :channel,
+             :ts
+           ]
+
+    assert delete_projection.risk == :destructive
+    assert delete_projection.confirmation == :always
+    assert delete_projection.auth_profile == :bot
+    assert delete_projection.auth_profiles == [:bot, :user]
+    assert Jido.Connect.Slack.Actions.DeleteMessage.name() == "slack_message_delete"
 
     list_projection = Jido.Connect.Slack.Actions.ListChannels.jido_connect_projection()
     assert list_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
@@ -545,6 +596,34 @@ defmodule Jido.Connect.SlackTest do
             }} =
              Jido.Connect.Slack.Actions.UpdateMessage.run(
                %{channel: "C123", ts: "1700000000.000100", text: "Updated"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "generated delete message action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              ts: "1700000000.000100"
+            }} =
+             Jido.Connect.Slack.Actions.DeleteMessage.run(
+               %{channel: "C123", ts: "1700000000.000100"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "generated delete message action accepts Slack user-token connections" do
+    {context, lease} = context_and_lease(profile: :user, access_token: "user-token")
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              ts: "1700000000.000100"
+            }} =
+             Jido.Connect.Slack.Actions.DeleteMessage.run(
+               %{channel: "C123", ts: "1700000000.000100"},
                %{integration_context: context, credential_lease: lease}
              )
   end
@@ -734,6 +813,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
+             Jido.Connect.Slack.Actions.DeleteMessage,
              Jido.Connect.Slack.Actions.ListUsers,
              Jido.Connect.Slack.Actions.UserInfo,
              Jido.Connect.Slack.Actions.LookupUserByEmail
@@ -762,15 +842,18 @@ defmodule Jido.Connect.SlackTest do
     assert missing_scopes.missing_scopes == ["channels:read"]
   end
 
-  defp context_and_lease do
+  defp context_and_lease(opts \\ []) do
+    profile = Keyword.get(opts, :profile, :bot)
+    access_token = Keyword.get(opts, :access_token, "token")
+
     connection =
       Connect.Connection.new!(%{
         id: "slack-team-T123",
         provider: :slack,
-        profile: :bot,
+        profile: profile,
         tenant_id: "tenant_1",
-        owner_type: :tenant,
-        owner_id: "T123",
+        owner_type: if(profile == :user, do: :user, else: :tenant),
+        owner_id: if(profile == :user, do: "user_1", else: "T123"),
         status: :connected,
         scopes: ["channels:read", "chat:write", "team:read", "users:read", "users:read.email"]
       })
@@ -786,7 +869,7 @@ defmodule Jido.Connect.SlackTest do
       Connect.CredentialLease.new!(%{
         connection_id: "slack-team-T123",
         expires_at: DateTime.add(DateTime.utc_now(), 300, :second),
-        fields: %{access_token: "token", slack_client: FakeSlackClient}
+        fields: %{access_token: access_token, slack_client: FakeSlackClient}
       })
 
     {context, lease}
