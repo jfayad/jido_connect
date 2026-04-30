@@ -169,6 +169,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_get_reactions_response(params)
   end
 
+  def add_pin(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/pins.add", json: pin_params(attrs))
+    |> handle_add_pin_response(attrs)
+  end
+
   def upload_file(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
     content = Data.get(attrs, :content, "")
 
@@ -376,6 +383,12 @@ defmodule Jido.Connect.Slack.Client do
   defp get_reactions_params(params) do
     params
     |> Map.take([:channel, :timestamp, :file, :file_comment, :full])
+    |> Data.compact()
+  end
+
+  defp pin_params(params) do
+    params
+    |> Map.take([:channel, :timestamp])
     |> Data.compact()
   end
 
@@ -826,6 +839,18 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_get_reactions_response(response, _params), do: handle_error_response(response)
+
+  defp handle_add_pin_response({:ok, %{status: status, body: %{"ok" => true}}}, attrs)
+       when status in 200..299 do
+    {:ok,
+     %{
+       type: "message",
+       channel: Data.get(attrs, :channel),
+       timestamp: Data.get(attrs, :timestamp)
+     }}
+  end
+
+  defp handle_add_pin_response(response, _attrs), do: handle_error_response(response)
 
   defp reactions_target("message", body) do
     case Data.get(body, "message") do

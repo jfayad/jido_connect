@@ -12,6 +12,7 @@ defmodule Jido.Connect.Slack do
       Jido.Connect.Slack.Actions.Files,
       Jido.Connect.Slack.Actions.Identity,
       Jido.Connect.Slack.Actions.Messages,
+      Jido.Connect.Slack.Actions.Pins,
       Jido.Connect.Slack.Actions.Reactions,
       Jido.Connect.Slack.Actions.Users,
       Jido.Connect.Slack.Triggers.Events
@@ -75,6 +76,7 @@ defmodule Jido.Connect.Slack do
         "app_mentions:read",
         "chat:write",
         "files:write",
+        "pins:write",
         "reactions:read",
         "reactions:write",
         "team:read",
@@ -91,6 +93,7 @@ defmodule Jido.Connect.Slack do
         "app_mentions:read",
         "chat:write",
         "files:write",
+        "pins:write",
         "reactions:read",
         "reactions:write",
         "team:read",

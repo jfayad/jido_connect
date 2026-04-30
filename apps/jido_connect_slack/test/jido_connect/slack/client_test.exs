@@ -737,6 +737,25 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "add pin sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/pins.add"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "channel" => "C123",
+               "timestamp" => "1700000000.000100"
+             } = Jason.decode!(body)
+
+      Req.Test.json(conn, %{ok: true})
+    end)
+
+    assert {:ok, %{type: "message", channel: "C123", timestamp: "1700000000.000100"}} =
+             Client.add_pin(%{channel: "C123", timestamp: "1700000000.000100"}, "token")
+  end
+
   test "get reactions sends expected message target request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"
