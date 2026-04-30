@@ -123,6 +123,28 @@ defmodule Jido.Connect.GitHubTest do
        ]}
     end
 
+    def list_pull_request_files(
+          %{repo: "org/repo", pull_number: 4, page: 2, per_page: 10},
+          "token"
+        ) do
+      {:ok,
+       [
+         %{
+           filename: "lib/example.ex",
+           status: "modified",
+           additions: 12,
+           deletions: 3,
+           changes: 15,
+           sha: "abc123",
+           previous_filename: nil,
+           blob_url: "https://github.test/org/repo/blob/abc123/lib/example.ex",
+           raw_url: "https://github.test/org/repo/raw/abc123/lib/example.ex",
+           contents_url: "https://api.github.test/repos/org/repo/contents/lib/example.ex",
+           patch: "@@ -1 +1 @@"
+         }
+       ]}
+    end
+
     def search_issues(
           %{
             q: "crash repo:org/repo is:pr state:open author:octocat assignee:mona label:bug",
@@ -505,6 +527,18 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.pull_request_file.list",
+              resource: :pull_request_file,
+              verb: :list,
+              mutation?: false,
+              auth_profiles: [:user, :installation],
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.pull_request_file.list")
+
+    assert {:ok,
+            %{
               id: "github.issue.search",
               resource: :issue,
               verb: :search,
@@ -671,6 +705,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
              Jido.Connect.GitHub.Actions.DispatchWorkflow,
              Jido.Connect.GitHub.Actions.GetPullRequest,
+             Jido.Connect.GitHub.Actions.ListPullRequestFiles,
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
              Jido.Connect.GitHub.Actions.RequestPullRequestReviewers,
@@ -705,6 +740,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.ListWorkflowRuns,
                  Jido.Connect.GitHub.Actions.DispatchWorkflow,
                  Jido.Connect.GitHub.Actions.GetPullRequest,
+                 Jido.Connect.GitHub.Actions.ListPullRequestFiles,
                  Jido.Connect.GitHub.Actions.CreatePullRequest,
                  Jido.Connect.GitHub.Actions.UpdatePullRequest,
                  Jido.Connect.GitHub.Actions.RequestPullRequestReviewers,
@@ -763,6 +799,9 @@ defmodule Jido.Connect.GitHubTest do
     assert {:module, Jido.Connect.GitHub.Actions.GetPullRequest} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.GetPullRequest)
 
+    assert {:module, Jido.Connect.GitHub.Actions.ListPullRequestFiles} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListPullRequestFiles)
+
     assert {:module, Jido.Connect.GitHub.Actions.CreatePullRequest} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.CreatePullRequest)
 
@@ -797,6 +836,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListWorkflowRuns, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.DispatchWorkflow, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.GetPullRequest, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.ListPullRequestFiles, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.CreatePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdatePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.RequestPullRequestReviewers, :run, 2)
@@ -1119,6 +1159,24 @@ defmodule Jido.Connect.GitHubTest do
     assert Jido.Connect.GitHub.Actions.GetPullRequest.name() == "github_pull_request_get"
   end
 
+  test "generated pull request file list action metadata tracks pagination fields" do
+    projection = Jido.Connect.GitHub.Actions.ListPullRequestFiles.jido_connect_projection()
+
+    assert projection.action_id == "github.pull_request_file.list"
+    assert projection.label == "List pull request files"
+    assert Enum.map(projection.input, & &1.name) == [:repo, :pull_number, :page, :per_page]
+    assert Enum.map(projection.output, & &1.name) == [:files]
+    assert projection.risk == :read
+    assert projection.resource == :pull_request_file
+    assert projection.verb == :list
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+
+    assert Jido.Connect.GitHub.Actions.ListPullRequestFiles.name() ==
+             "github_pull_request_file_list"
+  end
+
   test "generated create pull request action metadata tracks creation fields" do
     projection = Jido.Connect.GitHub.Actions.CreatePullRequest.jido_connect_projection()
 
@@ -1419,6 +1477,31 @@ defmodule Jido.Connect.GitHubTest do
                Jido.Connect.GitHub.integration(),
                "github.pull_request.get",
                %{repo: "org/repo", pull_number: 4},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes GitHub list pull request files action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              files: [
+                %{
+                  filename: "lib/example.ex",
+                  status: "modified",
+                  additions: 12,
+                  deletions: 3,
+                  changes: 15,
+                  sha: "abc123"
+                }
+              ]
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request_file.list",
+               %{repo: "org/repo", pull_number: 4, page: 2, per_page: 10},
                context: context,
                credential_lease: lease
              )
@@ -2031,6 +2114,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
              Jido.Connect.GitHub.Actions.DispatchWorkflow,
              Jido.Connect.GitHub.Actions.GetPullRequest,
+             Jido.Connect.GitHub.Actions.ListPullRequestFiles,
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
              Jido.Connect.GitHub.Actions.RequestPullRequestReviewers,

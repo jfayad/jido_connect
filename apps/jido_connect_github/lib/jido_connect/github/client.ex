@@ -116,6 +116,17 @@ defmodule Jido.Connect.GitHub.Client do
     end
   end
 
+  def list_pull_request_files(%{repo: repo, pull_number: pull_number} = params, access_token)
+      when is_binary(repo) and is_integer(pull_number) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(
+      url: "/repos/#{repo}/pulls/#{pull_number}/files",
+      params: pull_request_file_list_params(params)
+    )
+    |> handle_pull_request_file_list_response()
+  end
+
   def create_pull_request(repo, attrs, access_token) when is_binary(access_token) do
     access_token
     |> request()
@@ -394,6 +405,18 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_pull_request_response(response), do: handle_error_response(response)
 
+  defp handle_pull_request_file_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_list(body) do
+    {:ok, Enum.map(body, &normalize_pull_request_file/1)}
+  end
+
+  defp handle_pull_request_file_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub pull request file list response was invalid", body)
+  end
+
+  defp handle_pull_request_file_list_response(response), do: handle_error_response(response)
+
   defp handle_workflow_run_list_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     case Data.get(body, "workflow_runs") do
@@ -616,6 +639,23 @@ defmodule Jido.Connect.GitHub.Client do
       user: normalize_user(Data.get(pull_request, "user")),
       labels: normalize_labels(Data.get(pull_request, "labels")),
       updated_at: Data.get(pull_request, "updated_at")
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_pull_request_file(file) when is_map(file) do
+    %{
+      filename: Data.get(file, "filename"),
+      status: Data.get(file, "status"),
+      additions: Data.get(file, "additions"),
+      deletions: Data.get(file, "deletions"),
+      changes: Data.get(file, "changes"),
+      sha: Data.get(file, "sha"),
+      previous_filename: Data.get(file, "previous_filename"),
+      blob_url: Data.get(file, "blob_url"),
+      raw_url: Data.get(file, "raw_url"),
+      contents_url: Data.get(file, "contents_url"),
+      patch: Data.get(file, "patch")
     }
     |> Data.compact()
   end
@@ -887,6 +927,14 @@ defmodule Jido.Connect.GitHub.Client do
       q: Map.fetch!(params, :q),
       sort: Map.get(params, :sort, "updated"),
       order: Map.get(params, :direction, "desc"),
+      per_page: Map.get(params, :per_page, 30),
+      page: Map.get(params, :page, 1)
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp pull_request_file_list_params(params) do
+    [
       per_page: Map.get(params, :per_page, 30),
       page: Map.get(params, :page, 1)
     ]

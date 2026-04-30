@@ -326,6 +326,65 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "list pull request files sends expected request and normalizes file stats" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/repos/org/repo/pulls/4/files"
+
+      assert %{"page" => "2", "per_page" => "10"} = URI.decode_query(conn.query_string)
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, [
+        %{
+          filename: "lib/example.ex",
+          status: "modified",
+          additions: 12,
+          deletions: 3,
+          changes: 15,
+          sha: "abc123",
+          blob_url: "https://github.test/org/repo/blob/abc123/lib/example.ex",
+          raw_url: "https://github.test/org/repo/raw/abc123/lib/example.ex",
+          contents_url: "https://api.github.test/repos/org/repo/contents/lib/example.ex",
+          patch: "@@ -1 +1 @@"
+        },
+        %{
+          filename: "lib/renamed.ex",
+          previous_filename: "lib/old.ex",
+          status: "renamed",
+          additions: 4,
+          deletions: 0,
+          changes: 4,
+          sha: "def456"
+        }
+      ])
+    end)
+
+    assert {:ok,
+            [
+              %{
+                filename: "lib/example.ex",
+                status: "modified",
+                additions: 12,
+                deletions: 3,
+                changes: 15,
+                sha: "abc123",
+                patch: "@@ -1 +1 @@"
+              },
+              %{
+                filename: "lib/renamed.ex",
+                previous_filename: "lib/old.ex",
+                status: "renamed",
+                additions: 4,
+                deletions: 0,
+                changes: 4
+              }
+            ]} =
+             Client.list_pull_request_files(
+               %{repo: "org/repo", pull_number: 4, page: 2, per_page: 10},
+               "token"
+             )
+  end
+
   test "search issues sends expected request and normalizes issues and pull requests" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

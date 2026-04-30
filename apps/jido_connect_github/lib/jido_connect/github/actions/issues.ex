@@ -284,6 +284,34 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :list_pull_request_files do
+      id "github.pull_request_file.list"
+      resource :pull_request_file
+      verb :list
+      data_classification :workspace_content
+      label "List pull request files"
+      description "List changed files on a GitHub pull request with per-file change stats."
+      handler Jido.Connect.GitHub.Handlers.Actions.ListPullRequestFiles
+      effect :read
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :pull_number, :integer, required?: true
+        field :page, :integer, default: 1
+        field :per_page, :integer, default: 30
+      end
+
+      output do
+        field :files, {:array, :map}
+      end
+    end
+
     action :create_pull_request do
       id "github.pull_request.create"
       resource :pull_request
