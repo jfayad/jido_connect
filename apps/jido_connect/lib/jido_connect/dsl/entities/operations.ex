@@ -125,6 +125,7 @@ defmodule Jido.Connect.Dsl.Entities.Operations do
       config_schema: [type: :atom],
       signal_schema: [type: :atom],
       verification: [type: :map, required: true],
+      dedupe: [type: :map],
       handler: [type: :module, required: true],
       metadata: [type: :map, default: %{}]
     ]

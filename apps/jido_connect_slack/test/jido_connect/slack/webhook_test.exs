@@ -153,10 +153,54 @@ defmodule Jido.Connect.Slack.WebhookTest do
     assert {:ok, %{channel: "C123"}} = Webhook.normalize_event(payload)
 
     assert {:error, %Error.ProviderError{provider: :slack, reason: :unsupported_event}} =
-             Webhook.normalize_signal("message", %{
+             Webhook.normalize_signal("reaction_added", %{
                "type" => "event_callback",
-               "event" => %{"type" => "message"}
+               "event" => %{"type" => "reaction_added"}
              })
+  end
+
+  test "normalizes public channel message events and rejects subtypes" do
+    payload = %{
+      "type" => "event_callback",
+      "team_id" => "T123",
+      "event_id" => "Ev456",
+      "event" => %{
+        "type" => "message",
+        "channel" => "C123",
+        "channel_type" => "channel",
+        "user" => "U123",
+        "text" => "hello",
+        "ts" => "1700000000.000200",
+        "thread_ts" => "1700000000.000100",
+        "event_ts" => "1700000000.000200"
+      }
+    }
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev456",
+              channel: "C123",
+              channel_type: "channel",
+              user: "U123",
+              text: "hello",
+              ts: "1700000000.000200",
+              thread_ts: "1700000000.000100",
+              event_ts: "1700000000.000200"
+            }} = Webhook.normalize_signal("message", payload)
+
+    assert {:ok, %{channel: "C123"}} = Webhook.normalize_signal("message.channels", payload)
+    assert {:ok, %{channel: "C123"}} = Webhook.normalize_event(payload)
+
+    subtype_payload = put_in(payload, ["event", "subtype"], "message_changed")
+
+    assert {:error, %Error.ProviderError{provider: :slack, reason: :unsupported_message_subtype}} =
+             Webhook.normalize_signal("message", subtype_payload)
+
+    im_payload = put_in(payload, ["event", "channel_type"], "im")
+
+    assert {:error, %Error.ProviderError{provider: :slack, reason: :unsupported_channel_type}} =
+             Webhook.normalize_signal("message", im_payload)
   end
 
   test "invalid JSON payloads are provider errors" do

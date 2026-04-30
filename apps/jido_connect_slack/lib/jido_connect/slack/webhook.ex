@@ -106,6 +106,31 @@ defmodule Jido.Connect.Slack.Webhook do
      })}
   end
 
+  def normalize_signal(
+        "message",
+        %{"type" => "event_callback", "event" => %{"type" => "message"} = event} = payload
+      ) do
+    with :ok <- reject_message_subtype(event),
+         :ok <- require_public_channel_message(event) do
+      {:ok,
+       Data.compact(%{
+         team_id: Data.get(payload, "team_id"),
+         event_id: Data.get(payload, "event_id"),
+         channel: Data.get(event, "channel"),
+         channel_type: Data.get(event, "channel_type"),
+         user: Data.get(event, "user"),
+         text: Data.get(event, "text"),
+         ts: Data.get(event, "ts"),
+         thread_ts: Data.get(event, "thread_ts"),
+         event_ts: Data.get(event, "event_ts")
+       })}
+    end
+  end
+
+  def normalize_signal("message.channels", payload) do
+    normalize_signal("message", payload)
+  end
+
   def normalize_signal(event, _payload) do
     {:error,
      Error.provider("Unsupported Slack event",
@@ -151,6 +176,37 @@ defmodule Jido.Connect.Slack.Webhook do
       duplicate?: delivery.duplicate?,
       received_at: delivery.received_at
     })
+  end
+
+  defp reject_message_subtype(event) do
+    case Data.get(event, "subtype") do
+      nil ->
+        :ok
+
+      "" ->
+        :ok
+
+      subtype ->
+        {:error,
+         Error.provider("Unsupported Slack message subtype",
+           provider: :slack,
+           reason: :unsupported_message_subtype,
+           details: %{subtype: subtype}
+         )}
+    end
+  end
+
+  defp require_public_channel_message(event) do
+    if Data.get(event, "channel_type") in [nil, "channel"] do
+      :ok
+    else
+      {:error,
+       Error.provider("Unsupported Slack message channel type",
+         provider: :slack,
+         reason: :unsupported_channel_type,
+         details: %{channel_type: Data.get(event, "channel_type")}
+       )}
+    end
   end
 
   defp parse_timestamp(nil) do

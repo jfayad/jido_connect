@@ -422,6 +422,34 @@ defmodule Jido.Connect.SlackTest do
              :ts,
              :thread_ts
            ]
+
+    assert {:ok,
+            %{
+              id: "slack.event.message.channels",
+              kind: :webhook,
+              resource: :message,
+              verb: :watch,
+              policies: [:workspace_access],
+              scopes: ["channels:history"],
+              dedupe: %{key: [:team_id, :channel, :ts]},
+              verification: %{
+                kind: :slack_signed_request,
+                signature_header: "x-slack-signature",
+                timestamp_header: "x-slack-request-timestamp"
+              }
+            } = trigger} = Connect.trigger(spec, "slack.event.message.channels")
+
+    assert Enum.map(trigger.signal, & &1.name) == [
+             :team_id,
+             :event_id,
+             :channel,
+             :channel_type,
+             :user,
+             :text,
+             :ts,
+             :thread_ts,
+             :event_ts
+           ]
   end
 
   test "Slack catalog entry exposes setup, auth, and runtime capabilities" do
@@ -456,7 +484,8 @@ defmodule Jido.Connect.SlackTest do
            ]
 
     assert Jido.Connect.Slack.jido_sensor_modules() == [
-             Jido.Connect.Slack.Sensors.AppMention
+             Jido.Connect.Slack.Sensors.AppMention,
+             Jido.Connect.Slack.Sensors.PublicChannelMessage
            ]
 
     assert Jido.Connect.Slack.jido_plugin_module() == Jido.Connect.Slack.Plugin
@@ -480,7 +509,8 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.LookupUserByEmail
                ],
                sensors: [
-                 Jido.Connect.Slack.Sensors.AppMention
+                 Jido.Connect.Slack.Sensors.AppMention,
+                 Jido.Connect.Slack.Sensors.PublicChannelMessage
                ],
                plugin: Jido.Connect.Slack.Plugin
              }
@@ -525,8 +555,12 @@ defmodule Jido.Connect.SlackTest do
     assert {:module, Jido.Connect.Slack.Sensors.AppMention} =
              Code.ensure_loaded(Jido.Connect.Slack.Sensors.AppMention)
 
+    assert {:module, Jido.Connect.Slack.Sensors.PublicChannelMessage} =
+             Code.ensure_loaded(Jido.Connect.Slack.Sensors.PublicChannelMessage)
+
     assert function_exported?(Jido.Connect.Slack.Actions.ListChannels, :run, 2)
     assert function_exported?(Jido.Connect.Slack.Sensors.AppMention, :handle_event, 2)
+    assert function_exported?(Jido.Connect.Slack.Sensors.PublicChannelMessage, :handle_event, 2)
     assert function_exported?(Jido.Connect.Slack.Plugin, :plugin_spec, 1)
   end
 
