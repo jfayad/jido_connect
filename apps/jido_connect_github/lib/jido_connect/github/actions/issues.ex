@@ -416,6 +416,48 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :create_pull_request_review_comment do
+      id "github.pull_request.review_comment.create"
+      resource :pull_request_review_comment
+      verb :create
+      data_classification :message_content
+      label "Create pull request review comment"
+      description "Create a review comment on a GitHub pull request diff."
+      handler Jido.Connect.GitHub.Handlers.Actions.CreatePullRequestReviewComment
+      effect :external_write, confirmation: :required_for_ai
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :pull_number, :integer, required?: true
+        field :body, :string, required?: true
+        field :commit_id, :string, required?: true
+        field :path, :string, required?: true
+        field :position, :integer
+        field :line, :integer
+        field :side, :string, enum: ["LEFT", "RIGHT"]
+        field :start_line, :integer
+        field :start_side, :string, enum: ["LEFT", "RIGHT"]
+      end
+
+      output do
+        field :id, :integer
+        field :url, :string
+        field :body, :string
+        field :path, :string
+        field :position, :integer
+        field :line, :integer
+        field :side, :string
+        field :start_line, :integer
+        field :start_side, :string
+      end
+    end
+
     action :merge_pull_request do
       id "github.pull_request.merge"
       resource :pull_request

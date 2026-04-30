@@ -153,6 +153,18 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_pull_request_reviewers_response()
   end
 
+  def create_pull_request_review_comment(repo, pull_number, attrs, access_token)
+      when is_binary(repo) and is_integer(pull_number) and is_map(attrs) and
+             is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(
+      url: "/repos/#{repo}/pulls/#{pull_number}/comments",
+      json: Data.compact(attrs)
+    )
+    |> handle_pull_request_review_comment_response()
+  end
+
   def merge_pull_request(repo, pull_number, attrs, access_token)
       when is_integer(pull_number) and is_map(attrs) and is_binary(access_token) do
     access_token
@@ -472,6 +484,18 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_pull_request_reviewers_response(response), do: handle_error_response(response)
 
+  defp handle_pull_request_review_comment_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_pull_request_review_comment(body)}
+  end
+
+  defp handle_pull_request_review_comment_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub pull request review comment response was invalid", body)
+  end
+
+  defp handle_pull_request_review_comment_response(response), do: handle_error_response(response)
+
   defp handle_issue_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     {:ok, normalize_issue(body)}
@@ -690,6 +714,26 @@ defmodule Jido.Connect.GitHub.Client do
       normalize_users(Data.get(pull_request, "requested_reviewers"))
     )
     |> Map.put(:requested_teams, normalize_teams(Data.get(pull_request, "requested_teams")))
+  end
+
+  defp normalize_pull_request_review_comment(comment) when is_map(comment) do
+    comment
+    |> normalize_comment()
+    |> Map.merge(%{
+      path: Data.get(comment, "path"),
+      position: Data.get(comment, "position"),
+      original_position: Data.get(comment, "original_position"),
+      commit_id: Data.get(comment, "commit_id"),
+      original_commit_id: Data.get(comment, "original_commit_id"),
+      diff_hunk: Data.get(comment, "diff_hunk"),
+      line: Data.get(comment, "line"),
+      original_line: Data.get(comment, "original_line"),
+      side: Data.get(comment, "side"),
+      start_line: Data.get(comment, "start_line"),
+      original_start_line: Data.get(comment, "original_start_line"),
+      start_side: Data.get(comment, "start_side")
+    })
+    |> Data.compact()
   end
 
   defp normalize_workflow_run(workflow_run) when is_map(workflow_run) do

@@ -974,6 +974,59 @@ defmodule Jido.Connect.GitHub.ClientTest do
              Client.create_issue_comment("org/repo", 2, "Ship it", "token")
   end
 
+  test "create pull request review comment sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/pulls/5/comments"
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "body" => "Consider extracting this helper",
+               "commit_id" => "abc123",
+               "path" => "lib/example.ex",
+               "line" => 12,
+               "side" => "RIGHT"
+             }
+
+      Req.Test.json(conn, %{
+        id: 44,
+        html_url: "https://github.test/pull/5#discussion-diff-44",
+        body: "Consider extracting this helper",
+        path: "lib/example.ex",
+        commit_id: "abc123",
+        diff_hunk: "@@ -10,6 +10,7 @@",
+        line: 12,
+        side: "RIGHT"
+      })
+    end)
+
+    assert {:ok,
+            %{
+              id: 44,
+              url: "https://github.test/pull/5#discussion-diff-44",
+              body: "Consider extracting this helper",
+              path: "lib/example.ex",
+              commit_id: "abc123",
+              diff_hunk: "@@ -10,6 +10,7 @@",
+              line: 12,
+              side: "RIGHT"
+            }} =
+             Client.create_pull_request_review_comment(
+               "org/repo",
+               5,
+               %{
+                 body: "Consider extracting this helper",
+                 commit_id: "abc123",
+                 path: "lib/example.ex",
+                 line: 12,
+                 side: "RIGHT"
+               },
+               "token"
+             )
+  end
+
   test "list issue comments sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

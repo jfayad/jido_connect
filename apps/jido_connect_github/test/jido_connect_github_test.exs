@@ -340,6 +340,50 @@ defmodule Jido.Connect.GitHubTest do
        }}
     end
 
+    def create_pull_request_review_comment(
+          "org/repo",
+          5,
+          %{
+            body: "Consider extracting this helper",
+            commit_id: "abc123",
+            path: "lib/example.ex",
+            line: 12,
+            side: "RIGHT"
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         id: 44,
+         url: "https://github.test/pull/5#discussion-diff-44",
+         body: "Consider extracting this helper",
+         path: "lib/example.ex",
+         line: 12,
+         side: "RIGHT"
+       }}
+    end
+
+    def create_pull_request_review_comment(
+          "org/repo",
+          5,
+          %{
+            body: "Consider extracting this helper",
+            commit_id: "abc123",
+            path: "lib/example.ex",
+            position: 3
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         id: 45,
+         url: "https://github.test/pull/5#discussion-diff-45",
+         body: "Consider extracting this helper",
+         path: "lib/example.ex",
+         position: 3
+       }}
+    end
+
     def merge_pull_request(
           "org/repo",
           5,
@@ -621,6 +665,17 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.pull_request.review_comment.create",
+              resource: :pull_request_review_comment,
+              verb: :create,
+              mutation?: true,
+              confirmation: :required_for_ai,
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} = Connect.action(spec, "github.pull_request.review_comment.create")
+
+    assert {:ok,
+            %{
               id: "github.pull_request.merge",
               resource: :pull_request,
               verb: :merge,
@@ -709,6 +764,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
              Jido.Connect.GitHub.Actions.RequestPullRequestReviewers,
+             Jido.Connect.GitHub.Actions.CreatePullRequestReviewComment,
              Jido.Connect.GitHub.Actions.MergePullRequest,
              Jido.Connect.GitHub.Actions.UpdateIssue,
              Jido.Connect.GitHub.Actions.CreateIssueComment,
@@ -744,6 +800,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.CreatePullRequest,
                  Jido.Connect.GitHub.Actions.UpdatePullRequest,
                  Jido.Connect.GitHub.Actions.RequestPullRequestReviewers,
+                 Jido.Connect.GitHub.Actions.CreatePullRequestReviewComment,
                  Jido.Connect.GitHub.Actions.MergePullRequest,
                  Jido.Connect.GitHub.Actions.UpdateIssue,
                  Jido.Connect.GitHub.Actions.CreateIssueComment,
@@ -811,6 +868,9 @@ defmodule Jido.Connect.GitHubTest do
     assert {:module, Jido.Connect.GitHub.Actions.RequestPullRequestReviewers} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.RequestPullRequestReviewers)
 
+    assert {:module, Jido.Connect.GitHub.Actions.CreatePullRequestReviewComment} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.CreatePullRequestReviewComment)
+
     assert {:module, Jido.Connect.GitHub.Actions.MergePullRequest} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.MergePullRequest)
 
@@ -840,6 +900,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.CreatePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdatePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.RequestPullRequestReviewers, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.CreatePullRequestReviewComment, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.MergePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdateIssue, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.CreateIssueComment, :run, 2)
@@ -1268,6 +1329,51 @@ defmodule Jido.Connect.GitHubTest do
              "github_pull_request_reviewers_request"
   end
 
+  test "generated create pull request review comment action metadata tracks diff fields" do
+    projection =
+      Jido.Connect.GitHub.Actions.CreatePullRequestReviewComment.jido_connect_projection()
+
+    assert projection.action_id == "github.pull_request.review_comment.create"
+    assert projection.label == "Create pull request review comment"
+
+    assert Enum.map(projection.input, & &1.name) == [
+             :repo,
+             :pull_number,
+             :body,
+             :commit_id,
+             :path,
+             :position,
+             :line,
+             :side,
+             :start_line,
+             :start_side
+           ]
+
+    assert Enum.map(projection.output, & &1.name) == [
+             :id,
+             :url,
+             :body,
+             :path,
+             :position,
+             :line,
+             :side,
+             :start_line,
+             :start_side
+           ]
+
+    assert projection.data_classification == :message_content
+    assert projection.risk == :external_write
+    assert projection.confirmation == :required_for_ai
+    assert projection.resource == :pull_request_review_comment
+    assert projection.verb == :create
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+
+    assert Jido.Connect.GitHub.Actions.CreatePullRequestReviewComment.name() ==
+             "github_pull_request_review_comment_create"
+  end
+
   test "generated merge pull request action metadata tracks merge guard fields" do
     projection = Jido.Connect.GitHub.Actions.MergePullRequest.jido_connect_projection()
 
@@ -1597,6 +1703,108 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "invokes GitHub create pull request review comment action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              id: 44,
+              body: "Consider extracting this helper",
+              path: "lib/example.ex",
+              line: 12,
+              side: "RIGHT"
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request.review_comment.create",
+               %{
+                 repo: "org/repo",
+                 pull_number: 5,
+                 body: "Consider extracting this helper",
+                 commit_id: "abc123",
+                 path: "lib/example.ex",
+                 line: 12,
+                 side: "RIGHT"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "rejects ambiguous pull request review comment locations" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ValidationError{reason: :ambiguous_location, subject: :position}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request.review_comment.create",
+               %{
+                 repo: "org/repo",
+                 pull_number: 5,
+                 body: "Consider extracting this helper",
+                 commit_id: "abc123",
+                 path: "lib/example.ex",
+                 position: 3,
+                 line: 12,
+                 side: "RIGHT"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "validates pull request review comment location shapes" do
+    credentials = %{access_token: "token", github_client: FakeGitHubClient}
+
+    base = %{
+      repo: "org/repo",
+      pull_number: 5,
+      body: "Consider extracting this helper",
+      commit_id: "abc123",
+      path: "lib/example.ex"
+    }
+
+    handler = Jido.Connect.GitHub.Handlers.Actions.CreatePullRequestReviewComment
+
+    assert {:ok, %{id: 45, position: 3}} =
+             handler.run(Map.put(base, :position, 3), %{credentials: credentials})
+
+    assert {:error, %Connect.Error.ValidationError{reason: :missing_location, subject: :position}} =
+             handler.run(base, %{credentials: credentials})
+
+    assert {:error, %Connect.Error.ValidationError{reason: :invalid_location, subject: :line}} =
+             handler.run(Map.merge(base, %{line: 0, side: "RIGHT"}), %{credentials: credentials})
+
+    assert {:error, %Connect.Error.ValidationError{reason: :invalid_side, subject: :side}} =
+             handler.run(Map.merge(base, %{line: 12, side: "CENTER"}), %{credentials: credentials})
+
+    assert {:error,
+            %Connect.Error.ValidationError{reason: :missing_start_side, subject: :start_side}} =
+             handler.run(Map.merge(base, %{line: 12, side: "RIGHT", start_line: 10}), %{
+               credentials: credentials
+             })
+
+    assert {:error,
+            %Connect.Error.ValidationError{reason: :missing_start_line, subject: :start_line}} =
+             handler.run(Map.merge(base, %{line: 12, side: "RIGHT", start_side: "RIGHT"}), %{
+               credentials: credentials
+             })
+
+    assert {:error,
+            %Connect.Error.ValidationError{reason: :invalid_line_range, subject: :start_line}} =
+             handler.run(
+               Map.merge(base, %{line: 12, side: "RIGHT", start_line: 13, start_side: "RIGHT"}),
+               %{credentials: credentials}
+             )
+
+    assert {:error,
+            %Connect.Error.ValidationError{reason: :ambiguous_location, subject: :position}} =
+             handler.run(Map.merge(base, %{position: 3, side: "RIGHT"}), %{
+               credentials: credentials
+             })
+  end
+
   test "rejects empty reviewer lists before requesting pull request reviewers" do
     {context, lease} = context_and_lease()
 
@@ -1760,6 +1968,27 @@ defmodule Jido.Connect.GitHubTest do
                Jido.Connect.GitHub.integration(),
                "github.pull_request.reviewers.request",
                %{repo: "org/repo", pull_number: 5, reviewers: ["octocat"]},
+               context: missing_write,
+               credential_lease: lease
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["pull_requests:write"]
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request.review_comment.create",
+               %{
+                 repo: "org/repo",
+                 pull_number: 5,
+                 body: "Consider extracting this helper",
+                 commit_id: "abc123",
+                 path: "lib/example.ex",
+                 line: 12,
+                 side: "RIGHT"
+               },
                context: missing_write,
                credential_lease: lease
              )
@@ -2118,6 +2347,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
              Jido.Connect.GitHub.Actions.RequestPullRequestReviewers,
+             Jido.Connect.GitHub.Actions.CreatePullRequestReviewComment,
              Jido.Connect.GitHub.Actions.MergePullRequest,
              Jido.Connect.GitHub.Actions.UpdateIssue,
              Jido.Connect.GitHub.Actions.CreateIssueComment,
