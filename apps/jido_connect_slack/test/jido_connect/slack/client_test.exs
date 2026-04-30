@@ -166,6 +166,37 @@ defmodule Jido.Connect.Slack.ClientTest do
              Client.post_message(%{channel: "C123", text: "Hello"}, "token")
   end
 
+  test "post ephemeral sends expected request and normalizes output" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/chat.postEphemeral"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "channel" => "C123",
+               "user" => "U123",
+               "text" => "Only you can see this"
+             } = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        ok: true,
+        message_ts: "1700000000.000200"
+      })
+    end)
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              user: "U123",
+              message_ts: "1700000000.000200"
+            }} =
+             Client.post_ephemeral(
+               %{channel: "C123", user: "U123", text: "Only you can see this"},
+               "token"
+             )
+  end
+
   test "update message sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

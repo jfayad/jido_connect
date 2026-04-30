@@ -34,6 +34,37 @@ defmodule Jido.Connect.Slack.Actions.Messages do
       end
     end
 
+    action :post_ephemeral do
+      id "slack.message.post_ephemeral"
+      resource :message
+      verb :create
+      data_classification :message_content
+      label "Post ephemeral message"
+      description "Post an ephemeral Slack message to one user in a channel or conversation."
+      handler Jido.Connect.Slack.Handlers.Actions.PostEphemeral
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["chat:write"]
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+        field :user, :string, required?: true, example: "U012AB3CD"
+        field :text, :string, required?: true
+        field :thread_ts, :string
+        field :blocks, {:array, :map}
+      end
+
+      output do
+        field :channel, :string
+        field :user, :string
+        field :message_ts, :string
+      end
+    end
+
     action :update_message do
       id "slack.message.update"
       resource :message

@@ -110,6 +110,18 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def post_ephemeral(
+          %{channel: "C123", user: "U123", text: "Only you can see this"},
+          "token"
+        ) do
+      {:ok,
+       %{
+         channel: "C123",
+         user: "U123",
+         message_ts: "1700000000.000200"
+       }}
+    end
+
     def update_message(
           %{channel: "C123", ts: "1700000000.000100", text: "Updated"},
           "token"
@@ -345,6 +357,14 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok, %{id: "slack.message.post", mutation?: true, confirmation: :required_for_ai}} =
              Connect.action(spec, "slack.message.post")
+
+    assert {:ok,
+            %{
+              id: "slack.message.post_ephemeral",
+              mutation?: true,
+              confirmation: :required_for_ai
+            }} =
+             Connect.action(spec, "slack.message.post_ephemeral")
 
     assert {:ok, %{id: "slack.message.update", mutation?: true, confirmation: :required_for_ai}} =
              Connect.action(spec, "slack.message.update")
@@ -662,6 +682,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
+             Jido.Connect.Slack.Actions.PostEphemeral,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
              Jido.Connect.Slack.Actions.AddReaction,
@@ -694,6 +715,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.AuthTest,
                  Jido.Connect.Slack.Actions.TeamInfo,
                  Jido.Connect.Slack.Actions.PostMessage,
+                 Jido.Connect.Slack.Actions.PostEphemeral,
                  Jido.Connect.Slack.Actions.UpdateMessage,
                  Jido.Connect.Slack.Actions.DeleteMessage,
                  Jido.Connect.Slack.Actions.AddReaction,
@@ -743,6 +765,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.UpdateMessage} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.UpdateMessage)
+
+    assert {:module, Jido.Connect.Slack.Actions.PostEphemeral} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.PostEphemeral)
 
     assert {:module, Jido.Connect.Slack.Actions.DeleteMessage} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.DeleteMessage)
@@ -811,6 +836,32 @@ defmodule Jido.Connect.SlackTest do
     assert projection.risk == :write
     assert projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.PostMessage.name() == "slack_message_post"
+
+    ephemeral_projection = Jido.Connect.Slack.Actions.PostEphemeral.jido_connect_projection()
+
+    assert ephemeral_projection.action_id == "slack.message.post_ephemeral"
+    assert ephemeral_projection.label == "Post ephemeral message"
+    assert ephemeral_projection.resource == :message
+    assert ephemeral_projection.verb == :create
+    assert ephemeral_projection.scopes == ["chat:write"]
+
+    assert Enum.map(ephemeral_projection.input, & &1.name) == [
+             :channel,
+             :user,
+             :text,
+             :thread_ts,
+             :blocks
+           ]
+
+    assert Enum.map(ephemeral_projection.output, & &1.name) == [
+             :channel,
+             :user,
+             :message_ts
+           ]
+
+    assert ephemeral_projection.risk == :write
+    assert ephemeral_projection.confirmation == :required_for_ai
+    assert Jido.Connect.Slack.Actions.PostEphemeral.name() == "slack_message_post_ephemeral"
 
     update_projection = Jido.Connect.Slack.Actions.UpdateMessage.jido_connect_projection()
 
@@ -1113,6 +1164,47 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ListConversationMembers.run(
                %{channel: "G123"},
                %{integration_context: private_context, credential_lease: lease}
+             )
+  end
+
+  test "generated post ephemeral action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              user: "U123",
+              message_ts: "1700000000.000200"
+            }} =
+             Jido.Connect.Slack.Actions.PostEphemeral.run(
+               %{channel: "C123", user: "U123", text: "Only you can see this"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "generated post ephemeral action validates channel and user ids" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              subject: "general",
+              details: %{field: :channel}
+            }} =
+             Jido.Connect.Slack.Actions.PostEphemeral.run(
+               %{channel: "general", user: "U123", text: "Only you can see this"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              subject: "ada",
+              details: %{field: :user}
+            }} =
+             Jido.Connect.Slack.Actions.PostEphemeral.run(
+               %{channel: "C123", user: "ada", text: "Only you can see this"},
+               %{integration_context: context, credential_lease: lease}
              )
   end
 
@@ -1483,6 +1575,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
+             Jido.Connect.Slack.Actions.PostEphemeral,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
              Jido.Connect.Slack.Actions.AddReaction,

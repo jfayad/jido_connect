@@ -34,6 +34,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_message_response()
   end
 
+  def post_ephemeral(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/chat.postEphemeral", json: ephemeral_message_params(attrs))
+    |> handle_ephemeral_message_response(attrs)
+  end
+
   def update_message(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
     access_token
     |> request()
@@ -130,6 +137,12 @@ defmodule Jido.Connect.Slack.Client do
   defp conversation_members_params(params) do
     params
     |> Map.take([:channel, :limit, :cursor])
+    |> Data.compact()
+  end
+
+  defp ephemeral_message_params(params) do
+    params
+    |> Map.take([:channel, :user, :text, :thread_ts, :blocks])
     |> Data.compact()
   end
 
@@ -279,6 +292,27 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_message_response(response), do: handle_error_response(response)
+
+  defp handle_ephemeral_message_response(
+         {:ok, %{status: status, body: %{"ok" => true} = body}},
+         attrs
+       )
+       when status in 200..299 do
+    case Data.get(body, "message_ts") do
+      message_ts when is_binary(message_ts) ->
+        {:ok,
+         %{
+           channel: Data.get(attrs, :channel),
+           user: Data.get(attrs, :user),
+           message_ts: message_ts
+         }}
+
+      _other ->
+        invalid_success_response("Slack ephemeral message response was invalid", body)
+    end
+  end
+
+  defp handle_ephemeral_message_response(response, _attrs), do: handle_error_response(response)
 
   defp handle_delete_message_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do
