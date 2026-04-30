@@ -197,6 +197,41 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "schedule message sends expected request and normalizes output" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/chat.scheduleMessage"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "channel" => "C123",
+               "text" => "Later",
+               "post_at" => 1_700_000_600
+             } = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        ok: true,
+        channel: "C123",
+        scheduled_message_id: "Q123",
+        post_at: "1700000600",
+        message: %{text: "Later", type: "delayed_message"}
+      })
+    end)
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              scheduled_message_id: "Q123",
+              post_at: 1_700_000_600,
+              message: %{"text" => "Later", "type" => "delayed_message"}
+            }} =
+             Client.schedule_message(
+               %{channel: "C123", text: "Later", post_at: 1_700_000_600},
+               "token"
+             )
+  end
+
   test "update message sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

@@ -41,6 +41,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_ephemeral_message_response(attrs)
   end
 
+  def schedule_message(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/chat.scheduleMessage", json: scheduled_message_params(attrs))
+    |> handle_scheduled_message_response()
+  end
+
   def update_message(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
     access_token
     |> request()
@@ -143,6 +150,12 @@ defmodule Jido.Connect.Slack.Client do
   defp ephemeral_message_params(params) do
     params
     |> Map.take([:channel, :user, :text, :thread_ts, :blocks])
+    |> Data.compact()
+  end
+
+  defp scheduled_message_params(params) do
+    params
+    |> Map.take([:channel, :text, :post_at, :thread_ts, :reply_broadcast, :blocks])
     |> Data.compact()
   end
 
@@ -314,6 +327,26 @@ defmodule Jido.Connect.Slack.Client do
 
   defp handle_ephemeral_message_response(response, _attrs), do: handle_error_response(response)
 
+  defp handle_scheduled_message_response({:ok, %{status: status, body: %{"ok" => true} = body}})
+       when status in 200..299 do
+    with channel when is_binary(channel) <- Data.get(body, "channel"),
+         scheduled_message_id when is_binary(scheduled_message_id) <-
+           Data.get(body, "scheduled_message_id"),
+         post_at when is_integer(post_at) <- normalize_post_at(Data.get(body, "post_at")) do
+      {:ok,
+       %{
+         channel: channel,
+         scheduled_message_id: scheduled_message_id,
+         post_at: post_at,
+         message: Data.get(body, "message") || %{}
+       }}
+    else
+      _other -> invalid_success_response("Slack scheduled message response was invalid", body)
+    end
+  end
+
+  defp handle_scheduled_message_response(response), do: handle_error_response(response)
+
   defp handle_delete_message_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do
     {:ok,
@@ -336,6 +369,17 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_add_reaction_response(response, _attrs), do: handle_error_response(response)
+
+  defp normalize_post_at(post_at) when is_integer(post_at), do: post_at
+
+  defp normalize_post_at(post_at) when is_binary(post_at) do
+    case Integer.parse(post_at) do
+      {integer, ""} -> integer
+      _other -> nil
+    end
+  end
+
+  defp normalize_post_at(_post_at), do: nil
 
   defp handle_upload_url_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do

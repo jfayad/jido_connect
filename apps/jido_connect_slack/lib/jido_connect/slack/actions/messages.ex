@@ -65,6 +65,43 @@ defmodule Jido.Connect.Slack.Actions.Messages do
       end
     end
 
+    action :schedule_message do
+      id "slack.message.schedule"
+      resource :message
+      verb :create
+      data_classification :message_content
+      label "Schedule message"
+      description "Schedule a Slack message to post to a channel or conversation."
+      handler Jido.Connect.Slack.Handlers.Actions.ScheduleMessage
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["chat:write"]
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+        field :text, :string, required?: true
+
+        field :post_at, :integer,
+          required?: true,
+          description: "Unix timestamp in seconds for when Slack should post the message."
+
+        field :thread_ts, :string
+        field :reply_broadcast, :boolean, default: false
+        field :blocks, {:array, :map}
+      end
+
+      output do
+        field :channel, :string
+        field :scheduled_message_id, :string
+        field :post_at, :integer
+        field :message, :map
+      end
+    end
+
     action :update_message do
       id "slack.message.update"
       resource :message

@@ -122,6 +122,20 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def schedule_message(
+          %{channel: "C123", text: "Later", post_at: post_at, reply_broadcast: false},
+          "token"
+        )
+        when is_integer(post_at) do
+      {:ok,
+       %{
+         channel: "C123",
+         scheduled_message_id: "Q123",
+         post_at: post_at,
+         message: %{text: "Later", type: "delayed_message"}
+       }}
+    end
+
     def update_message(
           %{channel: "C123", ts: "1700000000.000100", text: "Updated"},
           "token"
@@ -365,6 +379,16 @@ defmodule Jido.Connect.SlackTest do
               confirmation: :required_for_ai
             }} =
              Connect.action(spec, "slack.message.post_ephemeral")
+
+    assert {:ok,
+            %{
+              id: "slack.message.schedule",
+              resource: :message,
+              verb: :create,
+              mutation?: true,
+              confirmation: :required_for_ai
+            }} =
+             Connect.action(spec, "slack.message.schedule")
 
     assert {:ok, %{id: "slack.message.update", mutation?: true, confirmation: :required_for_ai}} =
              Connect.action(spec, "slack.message.update")
@@ -683,6 +707,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
              Jido.Connect.Slack.Actions.PostEphemeral,
+             Jido.Connect.Slack.Actions.ScheduleMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
              Jido.Connect.Slack.Actions.AddReaction,
@@ -716,6 +741,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.TeamInfo,
                  Jido.Connect.Slack.Actions.PostMessage,
                  Jido.Connect.Slack.Actions.PostEphemeral,
+                 Jido.Connect.Slack.Actions.ScheduleMessage,
                  Jido.Connect.Slack.Actions.UpdateMessage,
                  Jido.Connect.Slack.Actions.DeleteMessage,
                  Jido.Connect.Slack.Actions.AddReaction,
@@ -768,6 +794,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.PostEphemeral} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.PostEphemeral)
+
+    assert {:module, Jido.Connect.Slack.Actions.ScheduleMessage} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.ScheduleMessage)
 
     assert {:module, Jido.Connect.Slack.Actions.DeleteMessage} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.DeleteMessage)
@@ -862,6 +891,34 @@ defmodule Jido.Connect.SlackTest do
     assert ephemeral_projection.risk == :write
     assert ephemeral_projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.PostEphemeral.name() == "slack_message_post_ephemeral"
+
+    schedule_projection = Jido.Connect.Slack.Actions.ScheduleMessage.jido_connect_projection()
+
+    assert schedule_projection.action_id == "slack.message.schedule"
+    assert schedule_projection.label == "Schedule message"
+    assert schedule_projection.resource == :message
+    assert schedule_projection.verb == :create
+    assert schedule_projection.scopes == ["chat:write"]
+
+    assert Enum.map(schedule_projection.input, & &1.name) == [
+             :channel,
+             :text,
+             :post_at,
+             :thread_ts,
+             :reply_broadcast,
+             :blocks
+           ]
+
+    assert Enum.map(schedule_projection.output, & &1.name) == [
+             :channel,
+             :scheduled_message_id,
+             :post_at,
+             :message
+           ]
+
+    assert schedule_projection.risk == :write
+    assert schedule_projection.confirmation == :required_for_ai
+    assert Jido.Connect.Slack.Actions.ScheduleMessage.name() == "slack_message_schedule"
 
     update_projection = Jido.Connect.Slack.Actions.UpdateMessage.jido_connect_projection()
 
@@ -1273,6 +1330,51 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated schedule message action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+    post_at = System.system_time(:second) + 60
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              scheduled_message_id: "Q123",
+              post_at: ^post_at,
+              message: %{text: "Later", type: "delayed_message"}
+            }} =
+             Jido.Connect.Slack.Actions.ScheduleMessage.run(
+               %{channel: "C123", text: "Later", post_at: post_at},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "generated schedule message action validates post_at" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              subject: 1,
+              details: %{field: :post_at}
+            }} =
+             Jido.Connect.Slack.Actions.ScheduleMessage.run(
+               %{channel: "C123", text: "Later", post_at: 1},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    post_at = System.system_time(:second) + 121 * 24 * 60 * 60
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              subject: ^post_at,
+              details: %{field: :post_at}
+            }} =
+             Jido.Connect.Slack.Actions.ScheduleMessage.run(
+               %{channel: "C123", text: "Later", post_at: post_at},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated update message action delegates through integration runtime" do
     {context, lease} = context_and_lease()
 
@@ -1576,6 +1678,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
              Jido.Connect.Slack.Actions.PostEphemeral,
+             Jido.Connect.Slack.Actions.ScheduleMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
              Jido.Connect.Slack.Actions.AddReaction,
