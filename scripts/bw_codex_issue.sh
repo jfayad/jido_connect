@@ -41,6 +41,8 @@ Options:
   --format-cmd CMD          Formatter command. Default: $BW_CODEX_FORMAT_CMD or mix format.
   --no-verify               Skip verification.
   --verify-cmd CMD          Verification command. Default: $BW_CODEX_VERIFY_CMD or mix quality.
+  --max-fix-attempts N      Codex repair attempts after format/verify failure.
+                            Default: $BW_CODEX_MAX_FIX_ATTEMPTS or 2. Use 0 to disable.
   --prompt-file FILE        Optional operator note appended after Beadwork context.
   -h, --help                Show this help.
 
@@ -68,6 +70,7 @@ Command customization:
   BW_CODEX_ORDER            Default issue order when --order is not provided.
   BW_CODEX_LOG_FILE         Default log file. Keep this outside tracked paths.
   BW_CODEX_FORMAT_CMD       Default formatter command when --format-cmd is not provided.
+  BW_CODEX_MAX_FIX_ATTEMPTS Default repair attempts after format/verify failure.
   CODEX_EXTRA_ARGS          Extra shell words appended to the default codex exec command.
   CODEX_COMMAND_TEMPLATE    Full command template. If set, it is evaluated with the prompt
                             on stdin and these variables exported:
@@ -446,6 +449,45 @@ PROMPT
   } >"${prompt_file}"
 }
 
+write_fix_prompt() {
+  local prompt_file="$1"
+  local attempt="$2"
+
+  {
+    cat <<PROMPT
+Fix the current format/verification failure for this Beadwork issue.
+
+Issue: ${ISSUE_ID} - ${ISSUE_TITLE}
+Repair attempt: ${attempt}/${MAX_FIX_ATTEMPTS}
+
+Scope rules:
+- Continue from the current dirty working tree; these changes are the partial implementation for this issue.
+- Fix only the format, compile, test, or verification errors shown below.
+- Do not implement unrelated Beadwork issues.
+- Do not commit, close the issue, or run \`bw sync\`.
+- If \`bw prime\` warns about uncommitted changes, do not ask the user; continue with this repair.
+
+Current git status:
+
+\`\`\`text
+$(git -C "${WORKDIR}" status --short)
+\`\`\`
+
+Current diff summary:
+
+\`\`\`text
+$(git -C "${WORKDIR}" diff --stat)
+\`\`\`
+
+Recent runner log, including the latest failed command output:
+
+\`\`\`text
+$(tail -n 260 "${LOG_FILE}")
+\`\`\`
+PROMPT
+  } >"${prompt_file}"
+}
+
 run_codex() {
   local prompt_file="$1"
   local workdir="$2"
@@ -511,6 +553,46 @@ run_codex() {
   "${command[@]}" <"${prompt_file}" 2>&1 | tee -a "${LOG_FILE}"
 }
 
+run_format_verify_once() {
+  if [[ "${FORMAT}" == "true" ]]; then
+    set_phase "format:${ISSUE_ID}"
+    run_shell_hook "format" "${FORMAT_CMD}" "${WORKDIR}" || return $?
+  fi
+
+  if [[ "${VERIFY}" == "true" ]]; then
+    set_phase "verify:${ISSUE_ID}"
+    run_shell_hook "verify" "${VERIFY_CMD}" "${WORKDIR}" || return $?
+  fi
+}
+
+run_format_verify_with_fix_loop() {
+  local attempt=0
+  local status=0
+  local fix_prompt
+
+  while true; do
+    if run_format_verify_once; then
+      return 0
+    fi
+
+    status=$?
+
+    if [[ "${DRY_RUN}" == "true" || "${MAX_FIX_ATTEMPTS}" == "0" || "${attempt}" -ge "${MAX_FIX_ATTEMPTS}" ]]; then
+      return "${status}"
+    fi
+
+    attempt=$((attempt + 1))
+    log "Format/verify failed; running Codex repair attempt ${attempt}/${MAX_FIX_ATTEMPTS}."
+
+    fix_prompt="$(prompt_temp_path "${ISSUE_ID}-fix-${attempt}")"
+    write_fix_prompt "${fix_prompt}" "${attempt}"
+    run_codex "${fix_prompt}" "${WORKDIR}"
+    rm -f "${fix_prompt}"
+
+    run_hook "review" "${BW_CODEX_REVIEW_SCRIPT:-}" "${BW_CODEX_REVIEW_CMD:-}" "${WORKDIR}"
+  done
+}
+
 DRY_RUN=false
 LOOP=false
 MAX_ISSUES=0
@@ -538,6 +620,7 @@ VERIFY=true
 FORMAT=true
 FORMAT_CMD="${BW_CODEX_FORMAT_CMD:-mix format}"
 VERIFY_CMD="${BW_CODEX_VERIFY_CMD:-mix quality}"
+MAX_FIX_ATTEMPTS="${BW_CODEX_MAX_FIX_ATTEMPTS:-2}"
 CUSTOM_PROMPT_FILE=""
 CURRENT_PHASE="startup"
 
@@ -669,6 +752,11 @@ while [[ $# -gt 0 ]]; do
       [[ -n "${VERIFY_CMD}" ]] || die "--verify-cmd requires a command"
       shift 2
       ;;
+    --max-fix-attempts)
+      MAX_FIX_ATTEMPTS="${2:-}"
+      [[ -n "${MAX_FIX_ATTEMPTS}" ]] || die "--max-fix-attempts requires a value"
+      shift 2
+      ;;
     --prompt-file)
       CUSTOM_PROMPT_FILE="${2:-}"
       [[ -f "${CUSTOM_PROMPT_FILE}" ]] || die "--prompt-file must point to a file"
@@ -693,6 +781,7 @@ validate_effort "${CODEX_EFFORT_VALUE}"
 validate_order "${QUEUE_ORDER}"
 validate_non_negative_integer "--max-issues" "${MAX_ISSUES}"
 validate_non_negative_integer "--loop-delay" "${LOOP_DELAY}"
+validate_non_negative_integer "--max-fix-attempts" "${MAX_FIX_ATTEMPTS}"
 
 if [[ "${COMMIT_ALL_DIRTY}" == "true" && "${ALLOW_DIRTY}" != "true" ]]; then
   die "--commit-all-dirty requires --allow-dirty"
@@ -868,15 +957,7 @@ run_one_issue() {
 
   run_hook "review" "${BW_CODEX_REVIEW_SCRIPT:-}" "${BW_CODEX_REVIEW_CMD:-}" "${WORKDIR}"
 
-  if [[ "${FORMAT}" == "true" ]]; then
-    set_phase "format:${ISSUE_ID}"
-    run_shell_hook "format" "${FORMAT_CMD}" "${WORKDIR}"
-  fi
-
-  if [[ "${VERIFY}" == "true" ]]; then
-    set_phase "verify:${ISSUE_ID}"
-    run_shell_hook "verify" "${VERIFY_CMD}" "${WORKDIR}"
-  fi
+  run_format_verify_with_fix_loop
 
   run_hook "pre-commit" "${BW_CODEX_PRE_COMMIT_SCRIPT:-}" "${BW_CODEX_PRE_COMMIT_CMD:-}" "${WORKDIR}"
 
