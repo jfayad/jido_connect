@@ -153,9 +153,9 @@ defmodule Jido.Connect.Slack.WebhookTest do
     assert {:ok, %{channel: "C123"}} = Webhook.normalize_event(payload)
 
     assert {:error, %Error.ProviderError{provider: :slack, reason: :unsupported_event}} =
-             Webhook.normalize_signal("reaction_removed", %{
+             Webhook.normalize_signal("unknown_event", %{
                "type" => "event_callback",
-               "event" => %{"type" => "reaction_removed"}
+               "event" => %{"type" => "unknown_event"}
              })
   end
 
@@ -431,6 +431,49 @@ defmodule Jido.Connect.Slack.WebhookTest do
               file: "F123",
               file_comment: "Fc123"
             }} = Webhook.normalize_signal("reaction_added", file_payload)
+  end
+
+  test "normalizes reaction removed events with item metadata and actor identity" do
+    payload = %{
+      "type" => "event_callback",
+      "team_id" => "T123",
+      "event_id" => "Ev905",
+      "event" => %{
+        "type" => "reaction_removed",
+        "user" => "U123",
+        "reaction" => "thumbsup",
+        "item_user" => "U456",
+        "item" => %{
+          "type" => "message",
+          "channel" => "C123",
+          "ts" => "1700000000.000700"
+        },
+        "event_ts" => "1700000000.000900"
+      }
+    }
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev905",
+              user: "U123",
+              reaction: "thumbsup",
+              item_user: "U456",
+              item: %{
+                "type" => "message",
+                "channel" => "C123",
+                "ts" => "1700000000.000700"
+              },
+              item_type: "message",
+              channel: "C123",
+              ts: "1700000000.000700",
+              event_ts: "1700000000.000900",
+              actor: %{id: "U123", team_id: "T123"},
+              item_owner: %{id: "U456", team_id: "T123"}
+            }} = Webhook.normalize_signal("reaction_removed", payload)
+
+    assert {:ok, %{reaction: "thumbsup", item_type: "message"}} =
+             Webhook.normalize_event(payload)
   end
 
   test "invalid JSON payloads are provider errors" do

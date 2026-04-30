@@ -61,7 +61,8 @@ defmodule Jido.Connect.Slack.AppManifestTest do
                "message.groups",
                "message.im",
                "message.mpim",
-               "reaction_added"
+               "reaction_added",
+               "reaction_removed"
              ]
            }
 

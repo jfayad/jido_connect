@@ -141,7 +141,15 @@ defmodule Jido.Connect.Slack.Webhook do
         %{"type" => "event_callback", "event" => %{"type" => "reaction_added"} = event} =
           payload
       ) do
-    {:ok, reaction_added_signal(payload, event)}
+    {:ok, reaction_signal(payload, event)}
+  end
+
+  def normalize_signal(
+        "reaction_removed",
+        %{"type" => "event_callback", "event" => %{"type" => "reaction_removed"} = event} =
+          payload
+      ) do
+    {:ok, reaction_signal(payload, event)}
   end
 
   def normalize_signal(event, _payload) do
@@ -315,7 +323,7 @@ defmodule Jido.Connect.Slack.Webhook do
     })
   end
 
-  defp reaction_added_signal(payload, event) do
+  defp reaction_signal(payload, event) do
     item = reaction_item(event)
 
     Data.compact(%{
