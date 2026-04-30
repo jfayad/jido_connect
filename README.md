@@ -61,6 +61,9 @@ Run the package quality gate:
 mix quality
 ```
 
+See `docs/release_checklist.md` for the full baseline verification checklist
+before a release candidate or another large connector expansion pass.
+
 Live GitHub App validation has covered app creation, app installation,
 installation-token minting, generated issue creation/listing, issue cleanup,
 and verified issue webhooks through ngrok.
