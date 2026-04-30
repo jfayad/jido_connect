@@ -466,6 +466,22 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "kick conversation sends expected request and normalizes output" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/conversations.kick"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{"channel" => "C123", "user" => "U123"} = Jason.decode!(body)
+
+      Req.Test.json(conn, %{ok: true})
+    end)
+
+    assert {:ok, %{channel: "C123", user: "U123"}} =
+             Client.kick_conversation(%{channel: "C123", user: "U123"}, "token")
+  end
+
   test "open conversation sends expected request and normalizes output" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

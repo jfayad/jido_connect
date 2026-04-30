@@ -256,6 +256,36 @@ defmodule Jido.Connect.Slack.Actions.Conversations do
       end
     end
 
+    action :kick_user do
+      id "slack.conversation.kick"
+      resource :conversation_member
+      verb :delete
+      data_classification :workspace_metadata
+      label "Remove user from channel"
+      description "Remove a Slack user from a public or private channel."
+      handler Jido.Connect.Slack.Handlers.Actions.KickUser
+      effect :destructive, confirmation: :always
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["channels:manage"], resolver: Jido.Connect.Slack.ScopeResolver
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+        field :user, :string, required?: true, description: "Slack user ID to remove."
+
+        field :conversation_type, :string,
+          description: "Optional Slack conversation type: public_channel or private_channel."
+      end
+
+      output do
+        field :channel, :string
+        field :user, :string
+      end
+    end
+
     action :open_conversation do
       id "slack.conversation.open"
       resource :conversation

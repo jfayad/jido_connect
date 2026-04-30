@@ -275,6 +275,14 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def kick_conversation(%{channel: "C999", user: "U123"}, "token") do
+      {:ok, %{channel: "C999", user: "U123"}}
+    end
+
+    def kick_conversation(%{channel: "G999", user: "U123"}, "token") do
+      {:ok, %{channel: "G999", user: "U123"}}
+    end
+
     def open_conversation(%{users: ["U123"]}, "token") do
       {:ok,
        %{
@@ -725,6 +733,19 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok,
             %{
+              id: "slack.conversation.kick",
+              resource: :conversation_member,
+              verb: :delete,
+              policies: [:workspace_access],
+              scopes: ["channels:manage"],
+              mutation?: true,
+              confirmation: :always,
+              risk: :destructive
+            }} =
+             Connect.action(spec, "slack.conversation.kick")
+
+    assert {:ok,
+            %{
               id: "slack.conversation.open",
               resource: :conversation,
               verb: :create,
@@ -1142,6 +1163,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.UnarchiveChannel,
              Jido.Connect.Slack.Actions.RenameChannel,
              Jido.Connect.Slack.Actions.InviteUsers,
+             Jido.Connect.Slack.Actions.KickUser,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
@@ -1189,6 +1211,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.UnarchiveChannel,
                  Jido.Connect.Slack.Actions.RenameChannel,
                  Jido.Connect.Slack.Actions.InviteUsers,
+                 Jido.Connect.Slack.Actions.KickUser,
                  Jido.Connect.Slack.Actions.OpenConversation,
                  Jido.Connect.Slack.Actions.ListConversationMembers,
                  Jido.Connect.Slack.Actions.UploadFile,
@@ -1240,6 +1263,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.RenameChannel} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.RenameChannel)
+
+    assert {:module, Jido.Connect.Slack.Actions.KickUser} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.KickUser)
 
     assert {:module, Jido.Connect.Slack.Actions.SearchMessages} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.SearchMessages)
@@ -1851,6 +1877,31 @@ defmodule Jido.Connect.SlackTest do
     assert invite_users_projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.InviteUsers.name() == "slack_conversation_invite"
 
+    kick_user_projection =
+      Jido.Connect.Slack.Actions.KickUser.jido_connect_projection()
+
+    assert kick_user_projection.action_id == "slack.conversation.kick"
+    assert kick_user_projection.label == "Remove user from channel"
+    assert kick_user_projection.resource == :conversation_member
+    assert kick_user_projection.verb == :delete
+    assert kick_user_projection.scopes == ["channels:manage"]
+    assert kick_user_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
+
+    assert Enum.map(kick_user_projection.input, & &1.name) == [
+             :channel,
+             :user,
+             :conversation_type
+           ]
+
+    assert Enum.map(kick_user_projection.output, & &1.name) == [
+             :channel,
+             :user
+           ]
+
+    assert kick_user_projection.risk == :destructive
+    assert kick_user_projection.confirmation == :always
+    assert Jido.Connect.Slack.Actions.KickUser.name() == "slack_conversation_kick"
+
     open_conversation_projection =
       Jido.Connect.Slack.Actions.OpenConversation.jido_connect_projection()
 
@@ -2395,6 +2446,78 @@ defmodule Jido.Connect.SlackTest do
             }} =
              Jido.Connect.Slack.Actions.InviteUsers.run(
                %{channel: "C999", users: ["U123", "U404"], force: true},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "generated kick user action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{channel: "C999", user: "U123"}} =
+             Jido.Connect.Slack.Actions.KickUser.run(
+               %{channel: "C999", user: "U123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "kick user validates Slack channel and user ids" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              details: %{field: :channel}
+            }} =
+             Jido.Connect.Slack.Actions.KickUser.run(
+               %{channel: "D123", user: "U123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              details: %{field: :user}
+            }} =
+             Jido.Connect.Slack.Actions.KickUser.run(
+               %{channel: "C999", user: "not-a-user"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "kick user resolves scopes from conversation type" do
+    {context, lease} = context_and_lease()
+
+    no_manage_context = %{
+      context
+      | connection: %{
+          context.connection
+          | scopes: context.connection.scopes -- ["channels:manage", "groups:write"]
+        }
+    }
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["channels:manage"]
+            }} =
+             Jido.Connect.Slack.Actions.KickUser.run(
+               %{channel: "C999", user: "U123"},
+               %{integration_context: no_manage_context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["groups:write"]
+            }} =
+             Jido.Connect.Slack.Actions.KickUser.run(
+               %{channel: "G999", user: "U123"},
+               %{integration_context: no_manage_context, credential_lease: lease}
+             )
+
+    assert {:ok, %{channel: "G999", user: "U123"}} =
+             Jido.Connect.Slack.Actions.KickUser.run(
+               %{channel: "G999", user: "U123"},
                %{integration_context: context, credential_lease: lease}
              )
   end
@@ -3109,6 +3232,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.UnarchiveChannel,
              Jido.Connect.Slack.Actions.RenameChannel,
              Jido.Connect.Slack.Actions.InviteUsers,
+             Jido.Connect.Slack.Actions.KickUser,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,

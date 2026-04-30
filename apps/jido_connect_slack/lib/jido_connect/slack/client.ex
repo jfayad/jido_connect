@@ -74,6 +74,14 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_invite_conversation_response(params)
   end
 
+  def kick_conversation(params, access_token)
+      when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/conversations.kick", json: kick_conversation_params(params))
+    |> handle_kick_conversation_response(params)
+  end
+
   def open_conversation(params, access_token)
       when is_map(params) and is_binary(access_token) do
     access_token
@@ -283,6 +291,12 @@ defmodule Jido.Connect.Slack.Client do
     params
     |> Map.take([:channel, :users, :force])
     |> maybe_join_users()
+    |> Data.compact()
+  end
+
+  defp kick_conversation_params(params) do
+    params
+    |> Map.take([:channel, :user])
     |> Data.compact()
   end
 
@@ -591,6 +605,20 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_invite_conversation_response(response, _params), do: handle_error_response(response)
+
+  defp handle_kick_conversation_response(
+         {:ok, %{status: status, body: %{"ok" => true}}},
+         params
+       )
+       when status in 200..299 do
+    {:ok,
+     %{
+       channel: Data.get(params, :channel),
+       user: Data.get(params, :user)
+     }}
+  end
+
+  defp handle_kick_conversation_response(response, _params), do: handle_error_response(response)
 
   defp handle_open_conversation_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do
