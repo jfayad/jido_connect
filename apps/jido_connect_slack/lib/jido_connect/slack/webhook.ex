@@ -169,7 +169,11 @@ defmodule Jido.Connect.Slack.Webhook do
                "file_shared",
                "file_public",
                "file_deleted",
-               "file_change"
+               "file_change",
+               "app_uninstalled",
+               "tokens_revoked",
+               "scope_denied",
+               "app_home_opened"
              ] do
     {:ok, lifecycle_signal(payload, event)}
   end
@@ -424,6 +428,59 @@ defmodule Jido.Connect.Slack.Webhook do
     })
   end
 
+  defp lifecycle_signal(payload, %{"type" => "app_uninstalled"}) do
+    Data.compact(%{
+      team_id: Data.get(payload, "team_id"),
+      event_id: Data.get(payload, "event_id"),
+      api_app_id: Data.get(payload, "api_app_id"),
+      event_time: Data.get(payload, "event_time"),
+      authorizations: Data.get(payload, "authorizations")
+    })
+  end
+
+  defp lifecycle_signal(payload, %{"type" => "tokens_revoked"} = event) do
+    tokens = token_revocation_metadata(event)
+
+    Data.compact(%{
+      team_id: Data.get(payload, "team_id"),
+      event_id: Data.get(payload, "event_id"),
+      api_app_id: Data.get(payload, "api_app_id"),
+      event_time: Data.get(payload, "event_time"),
+      tokens: tokens,
+      oauth_user_ids: Data.get(tokens, "oauth"),
+      bot_user_ids: Data.get(tokens, "bot")
+    })
+  end
+
+  defp lifecycle_signal(payload, %{"type" => "scope_denied"} = event) do
+    Data.compact(%{
+      team_id: Data.get(payload, "team_id"),
+      event_id: Data.get(payload, "event_id"),
+      api_app_id: Data.get(payload, "api_app_id"),
+      event_time: Data.get(payload, "event_time"),
+      scope: Data.get(event, "scope"),
+      scopes: Data.get(event, "scopes"),
+      user: Data.get(event, "user"),
+      trigger_id: Data.get(event, "trigger_id"),
+      event_ts: Data.get(event, "event_ts")
+    })
+  end
+
+  defp lifecycle_signal(payload, %{"type" => "app_home_opened"} = event) do
+    Data.compact(%{
+      team_id: Data.get(payload, "team_id"),
+      event_id: Data.get(payload, "event_id"),
+      api_app_id: Data.get(payload, "api_app_id"),
+      user: Data.get(event, "user"),
+      channel: Data.get(event, "channel"),
+      tab: Data.get(event, "tab"),
+      view: app_home_view(event),
+      event_ts: Data.get(event, "event_ts"),
+      actor: app_home_actor(payload, event),
+      conversation: app_home_conversation(event)
+    })
+  end
+
   defp lifecycle_signal(payload, event), do: file_signal(payload, event)
 
   defp channel_id(event) do
@@ -461,6 +518,35 @@ defmodule Jido.Connect.Slack.Webhook do
       _other ->
         nil
     end
+  end
+
+  defp token_revocation_metadata(event) do
+    case Data.get(event, "tokens") do
+      tokens when is_map(tokens) -> Data.compact(tokens)
+      _other -> %{}
+    end
+  end
+
+  defp app_home_view(event) do
+    case Data.get(event, "view") do
+      view when is_map(view) -> Data.compact(view)
+      _other -> nil
+    end
+  end
+
+  defp app_home_actor(payload, event) do
+    Data.compact(%{
+      id: Data.get(event, "user"),
+      team_id: Data.get(payload, "team_id")
+    })
+  end
+
+  defp app_home_conversation(event) do
+    Data.compact(%{
+      id: Data.get(event, "channel"),
+      type: "app_home",
+      tab: Data.get(event, "tab")
+    })
   end
 
   defp file_signal(payload, event) do

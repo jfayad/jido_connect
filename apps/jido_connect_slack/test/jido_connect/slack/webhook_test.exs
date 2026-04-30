@@ -700,6 +700,118 @@ defmodule Jido.Connect.Slack.WebhookTest do
             }} = Webhook.normalize_signal("file_change", payload)
   end
 
+  test "normalizes app uninstalled events" do
+    payload =
+      app_lifecycle_payload("app_uninstalled", "Ev916", %{}, %{
+        "authorizations" => [
+          %{
+            "team_id" => "T123",
+            "user_id" => "U123",
+            "is_bot" => false,
+            "is_enterprise_install" => false
+          }
+        ]
+      })
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev916",
+              api_app_id: "A123",
+              event_time: 1_700_000_000,
+              authorizations: [
+                %{
+                  "team_id" => "T123",
+                  "user_id" => "U123",
+                  "is_bot" => false,
+                  "is_enterprise_install" => false
+                }
+              ]
+            }} = Webhook.normalize_signal("app_uninstalled", payload)
+
+    assert {:ok, %{api_app_id: "A123"}} = Webhook.normalize_event(payload)
+  end
+
+  test "normalizes tokens revoked events without exposing token material" do
+    payload =
+      app_lifecycle_payload("tokens_revoked", "Ev917", %{
+        "tokens" => %{
+          "oauth" => ["U123"],
+          "bot" => ["U999"]
+        }
+      })
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev917",
+              api_app_id: "A123",
+              event_time: 1_700_000_000,
+              tokens: %{"oauth" => ["U123"], "bot" => ["U999"]},
+              oauth_user_ids: ["U123"],
+              bot_user_ids: ["U999"]
+            }} = Webhook.normalize_signal("tokens_revoked", payload)
+
+    assert {:ok, %{oauth_user_ids: ["U123"], bot_user_ids: ["U999"]}} =
+             Webhook.normalize_event(payload)
+  end
+
+  test "normalizes scope denied events conservatively" do
+    payload =
+      app_lifecycle_payload("scope_denied", "Ev918", %{
+        "scopes" => ["channels:history"],
+        "user" => "U123",
+        "trigger_id" => "123.456",
+        "event_ts" => "1700000000.001300"
+      })
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev918",
+              api_app_id: "A123",
+              event_time: 1_700_000_000,
+              scopes: ["channels:history"],
+              user: "U123",
+              trigger_id: "123.456",
+              event_ts: "1700000000.001300"
+            }} = Webhook.normalize_signal("scope_denied", payload)
+
+    assert {:ok, %{scopes: ["channels:history"]}} = Webhook.normalize_event(payload)
+  end
+
+  test "normalizes app home opened events with view metadata" do
+    payload =
+      app_lifecycle_payload("app_home_opened", "Ev919", %{
+        "user" => "U123",
+        "channel" => "D123",
+        "tab" => "home",
+        "event_ts" => "1700000000.001400",
+        "view" => %{
+          "id" => "V123",
+          "team_id" => "T123",
+          "type" => "home",
+          "app_id" => "A123"
+        }
+      })
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev919",
+              api_app_id: "A123",
+              user: "U123",
+              channel: "D123",
+              tab: "home",
+              event_ts: "1700000000.001400",
+              view: %{"id" => "V123", "team_id" => "T123", "type" => "home", "app_id" => "A123"},
+              actor: %{id: "U123", team_id: "T123"},
+              conversation: %{id: "D123", type: "app_home", tab: "home"}
+            }} = Webhook.normalize_signal("app_home_opened", payload)
+
+    assert {:ok, %{conversation: %{type: "app_home"}}} = Webhook.normalize_event(payload)
+  end
+
   test "invalid JSON payloads are provider errors" do
     body = "not json"
     timestamp = "1700000000"
@@ -752,5 +864,19 @@ defmodule Jido.Connect.Slack.WebhookTest do
       "event_id" => event_id,
       "event" => Map.put(event_attrs, "type", type)
     }
+  end
+
+  defp app_lifecycle_payload(type, event_id, event_attrs, payload_attrs \\ %{}) do
+    Map.merge(
+      %{
+        "type" => "event_callback",
+        "team_id" => "T123",
+        "api_app_id" => "A123",
+        "event_id" => event_id,
+        "event_time" => 1_700_000_000,
+        "event" => Map.put(event_attrs, "type", type)
+      },
+      payload_attrs
+    )
   end
 end

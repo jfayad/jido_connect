@@ -62,6 +62,7 @@ defmodule Jido.Connect.Slack.AppManifestTest do
                "message.groups",
                "message.im",
                "message.mpim",
+               "app_home_opened",
                "channel_created",
                "channel_rename",
                "channel_archive",
@@ -73,6 +74,9 @@ defmodule Jido.Connect.Slack.AppManifestTest do
                "file_public",
                "file_deleted",
                "file_change",
+               "app_uninstalled",
+               "tokens_revoked",
+               "scope_denied",
                "reaction_added",
                "reaction_removed"
              ]

@@ -1296,6 +1296,98 @@ defmodule Jido.Connect.SlackTest do
              :actor,
              :item_owner
            ]
+
+    assert {:ok,
+            %{
+              id: "slack.event.app_uninstalled",
+              kind: :webhook,
+              resource: :app,
+              verb: :watch,
+              policies: [:workspace_access],
+              scopes: [],
+              dedupe: %{key: [:team_id, :api_app_id, :event_id]},
+              verification: %{
+                kind: :slack_signed_request,
+                signature_header: "x-slack-signature",
+                timestamp_header: "x-slack-request-timestamp"
+              }
+            } = trigger} = Connect.trigger(spec, "slack.event.app_uninstalled")
+
+    assert Enum.map(trigger.signal, & &1.name) == [
+             :team_id,
+             :event_id,
+             :api_app_id,
+             :event_time,
+             :authorizations
+           ]
+
+    assert {:ok,
+            %{
+              id: "slack.event.tokens_revoked",
+              kind: :webhook,
+              resource: :token,
+              verb: :watch,
+              policies: [:workspace_access],
+              scopes: [],
+              dedupe: %{key: [:team_id, :api_app_id, :event_id]}
+            } = trigger} = Connect.trigger(spec, "slack.event.tokens_revoked")
+
+    assert Enum.map(trigger.signal, & &1.name) == [
+             :team_id,
+             :event_id,
+             :api_app_id,
+             :event_time,
+             :tokens,
+             :oauth_user_ids,
+             :bot_user_ids
+           ]
+
+    assert {:ok,
+            %{
+              id: "slack.event.scope_denied",
+              kind: :webhook,
+              resource: :scope,
+              verb: :watch,
+              policies: [:workspace_access],
+              scopes: [],
+              dedupe: %{key: [:team_id, :api_app_id, :event_id]}
+            } = trigger} = Connect.trigger(spec, "slack.event.scope_denied")
+
+    assert Enum.map(trigger.signal, & &1.name) == [
+             :team_id,
+             :event_id,
+             :api_app_id,
+             :event_time,
+             :scope,
+             :scopes,
+             :user,
+             :trigger_id,
+             :event_ts
+           ]
+
+    assert {:ok,
+            %{
+              id: "slack.event.app_home_opened",
+              kind: :webhook,
+              resource: :app_home,
+              verb: :watch,
+              policies: [:workspace_access],
+              scopes: [],
+              dedupe: %{key: [:team_id, :user, :channel, :event_ts]}
+            } = trigger} = Connect.trigger(spec, "slack.event.app_home_opened")
+
+    assert Enum.map(trigger.signal, & &1.name) == [
+             :team_id,
+             :event_id,
+             :api_app_id,
+             :user,
+             :channel,
+             :tab,
+             :view,
+             :event_ts,
+             :actor,
+             :conversation
+           ]
   end
 
   test "Slack catalog entry exposes setup, auth, and runtime capabilities" do
@@ -1369,7 +1461,11 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Sensors.FileShared,
              Jido.Connect.Slack.Sensors.FilePublic,
              Jido.Connect.Slack.Sensors.FileDeleted,
-             Jido.Connect.Slack.Sensors.FileChange
+             Jido.Connect.Slack.Sensors.FileChange,
+             Jido.Connect.Slack.Sensors.AppUninstalled,
+             Jido.Connect.Slack.Sensors.TokensRevoked,
+             Jido.Connect.Slack.Sensors.ScopeDenied,
+             Jido.Connect.Slack.Sensors.AppHomeOpened
            ]
 
     assert Jido.Connect.Slack.jido_plugin_module() == Jido.Connect.Slack.Plugin
@@ -1432,7 +1528,11 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Sensors.FileShared,
                  Jido.Connect.Slack.Sensors.FilePublic,
                  Jido.Connect.Slack.Sensors.FileDeleted,
-                 Jido.Connect.Slack.Sensors.FileChange
+                 Jido.Connect.Slack.Sensors.FileChange,
+                 Jido.Connect.Slack.Sensors.AppUninstalled,
+                 Jido.Connect.Slack.Sensors.TokensRevoked,
+                 Jido.Connect.Slack.Sensors.ScopeDenied,
+                 Jido.Connect.Slack.Sensors.AppHomeOpened
                ],
                plugin: Jido.Connect.Slack.Plugin
              }
@@ -3865,7 +3965,11 @@ defmodule Jido.Connect.SlackTest do
       {Jido.Connect.Slack.Sensors.ChannelArchive, "slack.event.channel_archive"},
       {Jido.Connect.Slack.Sensors.ChannelUnarchive, "slack.event.channel_unarchive"},
       {Jido.Connect.Slack.Sensors.MemberJoinedChannel, "slack.event.member_joined_channel"},
-      {Jido.Connect.Slack.Sensors.MemberLeftChannel, "slack.event.member_left_channel"}
+      {Jido.Connect.Slack.Sensors.MemberLeftChannel, "slack.event.member_left_channel"},
+      {Jido.Connect.Slack.Sensors.AppUninstalled, "slack.event.app_uninstalled"},
+      {Jido.Connect.Slack.Sensors.TokensRevoked, "slack.event.tokens_revoked"},
+      {Jido.Connect.Slack.Sensors.ScopeDenied, "slack.event.scope_denied"},
+      {Jido.Connect.Slack.Sensors.AppHomeOpened, "slack.event.app_home_opened"}
     ]
 
     for {sensor, trigger_id} <- sensors do
