@@ -592,6 +592,69 @@ defmodule Jido.Connect.GitHub.ClientTest do
              Client.list_releases(%{repo: "org/repo", page: 2, per_page: 10}, "token")
   end
 
+  test "create release sends publication settings and normalizes release" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/releases"
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+      assert {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "tag_name" => "v1.0.0",
+               "target_commitish" => "main",
+               "name" => "v1.0.0",
+               "body" => "Release notes",
+               "draft" => true,
+               "prerelease" => true,
+               "generate_release_notes" => true,
+               "make_latest" => "false"
+             }
+
+      Req.Test.json(conn, %{
+        id: 102,
+        tag_name: "v1.0.0",
+        name: "v1.0.0",
+        draft: true,
+        prerelease: true,
+        target_commitish: "main",
+        author: %{login: "octocat", id: 1, type: "User"},
+        html_url: "https://github.test/org/repo/releases/tag/v1.0.0",
+        tarball_url: "https://api.github.test/repos/org/repo/tarball/v1.0.0",
+        zipball_url: "https://api.github.test/repos/org/repo/zipball/v1.0.0",
+        created_at: "2026-04-29T10:00:00Z",
+        published_at: nil,
+        body: "Release notes"
+      })
+    end)
+
+    assert {:ok,
+            %{
+              id: 102,
+              tag_name: "v1.0.0",
+              name: "v1.0.0",
+              draft: true,
+              prerelease: true,
+              target_commitish: "main",
+              author: %{login: "octocat"},
+              url: "https://github.test/org/repo/releases/tag/v1.0.0",
+              body: "Release notes"
+            }} =
+             Client.create_release(
+               "org/repo",
+               %{
+                 tag_name: "v1.0.0",
+                 target_commitish: "main",
+                 name: "v1.0.0",
+                 body: "Release notes",
+                 draft: true,
+                 prerelease: true,
+                 generate_release_notes: true,
+                 make_latest: "false"
+               },
+               "token"
+             )
+  end
+
   test "list workflow run jobs sends expected request and normalizes CI status" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

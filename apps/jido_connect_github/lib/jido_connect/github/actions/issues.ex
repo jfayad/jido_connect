@@ -255,6 +255,53 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :create_release do
+      id "github.release.create"
+      resource :release
+      verb :create
+      data_classification :workspace_content
+      label "Create release"
+
+      description "Create a GitHub release with draft, prerelease, latest, and generated notes settings."
+
+      handler Jido.Connect.GitHub.Handlers.Actions.CreateRelease
+      effect :write, confirmation: :always
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :tag_name, :string, required?: true, example: "v1.0.0"
+        field :target_commitish, :string
+        field :name, :string
+        field :body, :string
+        field :draft, :boolean, default: false
+        field :prerelease, :boolean, default: false
+        field :generate_release_notes, :boolean, default: false
+        field :make_latest, :string, enum: ["true", "false", "legacy"], default: "true"
+      end
+
+      output do
+        field :id, :integer
+        field :tag_name, :string
+        field :name, :string
+        field :draft, :boolean
+        field :prerelease, :boolean
+        field :target_commitish, :string
+        field :author, :map
+        field :url, :string
+        field :tarball_url, :string
+        field :zipball_url, :string
+        field :created_at, :string
+        field :published_at, :string
+        field :body, :string
+      end
+    end
+
     action :list_workflow_run_jobs do
       id "github.workflow_run.job.list"
       resource :workflow_run_job

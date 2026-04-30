@@ -109,6 +109,14 @@ defmodule Jido.Connect.GitHub.Client do
     end
   end
 
+  def create_release(repo, attrs, access_token)
+      when is_binary(repo) and is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/repos/#{repo}/releases", json: Data.compact(attrs))
+    |> handle_release_response()
+  end
+
   def list_workflow_run_jobs(%{repo: repo, run_id: run_id} = params, access_token)
       when is_binary(repo) and is_integer(run_id) and is_binary(access_token) do
     access_token
@@ -506,6 +514,18 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_release_list_response(response), do: handle_error_response(response)
+
+  defp handle_release_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_release(body)}
+  end
+
+  defp handle_release_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub release response was invalid", body)
+  end
+
+  defp handle_release_response(response), do: handle_error_response(response)
 
   defp handle_tag_list_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_list(body) do
