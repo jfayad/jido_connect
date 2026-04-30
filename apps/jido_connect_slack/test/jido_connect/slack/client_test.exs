@@ -70,6 +70,53 @@ defmodule Jido.Connect.Slack.ClientTest do
              Client.post_message(%{channel: "C123", text: "Hello"}, "token")
   end
 
+  test "list users sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/users.list"
+
+      assert %{
+               "include_locale" => "true",
+               "limit" => "100",
+               "team_id" => "T123"
+             } = URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        ok: true,
+        members: [
+          %{
+            id: "U123",
+            team_id: "T123",
+            name: "ada",
+            real_name: "Ada Lovelace",
+            deleted: false,
+            is_bot: false,
+            is_app_user: false,
+            profile: %{email: "ada@example.com"}
+          }
+        ],
+        response_metadata: %{next_cursor: "next"}
+      })
+    end)
+
+    assert {:ok,
+            %{
+              users: [
+                %{
+                  id: "U123",
+                  team_id: "T123",
+                  name: "ada",
+                  real_name: "Ada Lovelace",
+                  profile: %{"email" => "ada@example.com"}
+                }
+              ],
+              next_cursor: "next"
+            }} =
+             Client.list_users(%{limit: 100, team_id: "T123", include_locale: true}, "token")
+  end
+
   test "auth test returns successful response maps" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

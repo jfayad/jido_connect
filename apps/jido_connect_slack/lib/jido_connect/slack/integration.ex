@@ -10,7 +10,8 @@ defmodule Jido.Connect.Slack do
     fragments: [
       Jido.Connect.Slack.Actions.Conversations,
       Jido.Connect.Slack.Actions.Identity,
-      Jido.Connect.Slack.Actions.Messages
+      Jido.Connect.Slack.Actions.Messages,
+      Jido.Connect.Slack.Actions.Users
     ]
 
   integration do
@@ -54,8 +55,18 @@ defmodule Jido.Connect.Slack do
       setup :oauth2_authorization_code
       credential_fields [:access_token]
       lease_fields [:access_token]
-      scopes ["channels:read", "groups:read", "im:read", "mpim:read", "chat:write", "team:read"]
-      default_scopes ["channels:read", "chat:write", "team:read"]
+
+      scopes [
+        "channels:read",
+        "groups:read",
+        "im:read",
+        "mpim:read",
+        "chat:write",
+        "team:read",
+        "users:read"
+      ]
+
+      default_scopes ["channels:read", "chat:write", "team:read", "users:read"]
       pkce? false
       refresh? false
       revoke? false

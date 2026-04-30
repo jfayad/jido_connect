@@ -62,6 +62,25 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def list_users(%{limit: 100}, "token") do
+      {:ok,
+       %{
+         users: [
+           %{
+             id: "U123",
+             team_id: "T123",
+             name: "ada",
+             real_name: "Ada Lovelace",
+             deleted: false,
+             is_bot: false,
+             is_app_user: false,
+             profile: %{"email" => "ada@example.com"}
+           }
+         ],
+         next_cursor: "next"
+       }}
+    end
+
     def team_info(%{team_id: "T123"}, "token") do
       {:ok,
        %{
@@ -118,6 +137,17 @@ defmodule Jido.Connect.SlackTest do
               mutation?: false
             }} =
              Connect.action(spec, "slack.team.info")
+
+    assert {:ok,
+            %{
+              id: "slack.user.list",
+              resource: :user,
+              verb: :list,
+              policies: [:workspace_access],
+              scopes: ["users:read"],
+              mutation?: false
+            }} =
+             Connect.action(spec, "slack.user.list")
   end
 
   test "Slack catalog entry exposes setup, auth, and runtime capabilities" do
@@ -140,7 +170,8 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
-             Jido.Connect.Slack.Actions.PostMessage
+             Jido.Connect.Slack.Actions.PostMessage,
+             Jido.Connect.Slack.Actions.ListUsers
            ]
 
     assert Jido.Connect.Slack.jido_sensor_modules() == []
@@ -154,7 +185,8 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.ListChannels,
                  Jido.Connect.Slack.Actions.AuthTest,
                  Jido.Connect.Slack.Actions.TeamInfo,
-                 Jido.Connect.Slack.Actions.PostMessage
+                 Jido.Connect.Slack.Actions.PostMessage,
+                 Jido.Connect.Slack.Actions.ListUsers
                ],
                sensors: [],
                plugin: Jido.Connect.Slack.Plugin
@@ -169,6 +201,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.TeamInfo} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.TeamInfo)
+
+    assert {:module, Jido.Connect.Slack.Actions.ListUsers} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.ListUsers)
 
     assert {:module, Jido.Connect.Slack.Plugin} =
              Code.ensure_loaded(Jido.Connect.Slack.Plugin)
@@ -217,6 +252,20 @@ defmodule Jido.Connect.SlackTest do
              :enterprise_name,
              :team
            ]
+
+    user_projection = Jido.Connect.Slack.Actions.ListUsers.jido_connect_projection()
+    assert user_projection.action_id == "slack.user.list"
+    assert user_projection.resource == :user
+    assert user_projection.verb == :list
+
+    assert Enum.map(user_projection.input, & &1.name) == [
+             :limit,
+             :cursor,
+             :team_id,
+             :include_locale
+           ]
+
+    assert Enum.map(user_projection.output, & &1.name) == [:users, :next_cursor]
   end
 
   test "generated list channels action delegates through integration runtime" do
@@ -288,6 +337,28 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated list users action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              users: [
+                %{
+                  id: "U123",
+                  team_id: "T123",
+                  name: "ada",
+                  real_name: "Ada Lovelace",
+                  profile: %{"email" => "ada@example.com"}
+                }
+              ],
+              next_cursor: "next"
+            }} =
+             Jido.Connect.Slack.Actions.ListUsers.run(
+               %{limit: 100},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated team info action delegates through integration runtime" do
     {context, lease} = context_and_lease()
 
@@ -314,7 +385,8 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
-             Jido.Connect.Slack.Actions.PostMessage
+             Jido.Connect.Slack.Actions.PostMessage,
+             Jido.Connect.Slack.Actions.ListUsers
            ]
 
     filtered =
@@ -350,7 +422,7 @@ defmodule Jido.Connect.SlackTest do
         owner_type: :tenant,
         owner_id: "T123",
         status: :connected,
-        scopes: ["channels:read", "chat:write", "team:read"]
+        scopes: ["channels:read", "chat:write", "team:read", "users:read"]
       })
 
     context =

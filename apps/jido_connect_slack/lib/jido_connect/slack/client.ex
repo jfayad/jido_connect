@@ -19,6 +19,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_message_response()
   end
 
+  def list_users(params, access_token) when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/users.list", params: list_users_params(params))
+    |> handle_user_list_response()
+  end
+
   def auth_test(access_token) when is_binary(access_token) do
     access_token
     |> request()
@@ -36,6 +43,12 @@ defmodule Jido.Connect.Slack.Client do
   defp list_channels_params(params) do
     params
     |> Map.take([:types, :exclude_archived, :limit, :cursor, :team_id])
+    |> Data.compact()
+  end
+
+  defp list_users_params(params) do
+    params
+    |> Map.take([:limit, :cursor, :team_id, :include_locale])
     |> Data.compact()
   end
 
@@ -86,6 +99,22 @@ defmodule Jido.Connect.Slack.Client do
 
   defp handle_message_response(response), do: handle_error_response(response)
 
+  defp handle_user_list_response({:ok, %{status: status, body: %{"ok" => true} = body}})
+       when status in 200..299 do
+    with users when is_list(users) <- Map.get(body, "members", []),
+         true <- Enum.all?(users, &is_map/1) do
+      {:ok,
+       %{
+         users: Enum.map(users, &normalize_user/1),
+         next_cursor: get_in(body, ["response_metadata", "next_cursor"]) || ""
+       }}
+    else
+      _other -> invalid_success_response("Slack user list response was invalid", body)
+    end
+  end
+
+  defp handle_user_list_response(response), do: handle_error_response(response)
+
   defp handle_map_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do
     {:ok, body}
@@ -131,6 +160,22 @@ defmodule Jido.Connect.Slack.Client do
       is_private: Data.get(channel, "is_private"),
       is_member: Data.get(channel, "is_member")
     }
+  end
+
+  defp normalize_user(user) when is_map(user) do
+    %{
+      id: Data.get(user, "id"),
+      team_id: Data.get(user, "team_id"),
+      name: Data.get(user, "name"),
+      real_name: Data.get(user, "real_name"),
+      tz: Data.get(user, "tz"),
+      deleted: Data.get(user, "deleted"),
+      is_bot: Data.get(user, "is_bot"),
+      is_app_user: Data.get(user, "is_app_user"),
+      updated: Data.get(user, "updated"),
+      profile: Data.get(user, "profile")
+    }
+    |> Data.compact()
   end
 
   defp invalid_success_response(message, body) do
