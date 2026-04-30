@@ -11,6 +11,8 @@ defmodule Jido.Connect.GitHub.Webhook do
   @pull_request_actions ~w(opened synchronize synchronized reopened closed ready_for_review converted_to_draft)
   @pull_request_review_actions ~w(submitted edited dismissed)
   @pull_request_review_comment_actions ~w(created edited deleted)
+  @workflow_run_actions ~w(requested in_progress completed)
+  @workflow_run_failure_conclusions ~w(failure startup_failure timed_out action_required cancelled)
 
   def parse_headers(headers) when is_map(headers) do
     %{
@@ -175,6 +177,21 @@ defmodule Jido.Connect.GitHub.Webhook do
     end
   end
 
+  def normalize_signal("workflow_run", payload) when is_map(payload) do
+    action = Data.get(payload, "action")
+
+    if action in @workflow_run_actions do
+      normalize_workflow_run_signal(action, payload)
+    else
+      {:error,
+       Error.provider("Unsupported GitHub workflow run webhook action",
+         provider: :github,
+         reason: :unsupported_workflow_run_action,
+         details: %{action: action}
+       )}
+    end
+  end
+
   def normalize_signal(event, _payload) do
     {:error,
      Error.provider("Unsupported GitHub webhook event",
@@ -299,6 +316,36 @@ defmodule Jido.Connect.GitHub.Webhook do
        comment: normalize_pull_request_review_comment(comment),
        sender: normalize_actor(sender),
        changes: normalize_changes(Data.get(payload, "changes"))
+     })}
+  end
+
+  defp normalize_workflow_run_signal(action, payload) do
+    workflow_run = Data.get(payload, "workflow_run") || %{}
+    repo = Data.get(payload, "repository") || %{}
+    sender = Data.get(payload, "sender") || %{}
+    conclusion = Data.get(workflow_run, "conclusion")
+
+    {:ok,
+     Data.compact(%{
+       action: action,
+       repo: Data.get(repo, "full_name"),
+       workflow_run_id: Data.get(workflow_run, "id"),
+       workflow_run_number: Data.get(workflow_run, "run_number"),
+       workflow_name: Data.get(workflow_run, "name"),
+       status: Data.get(workflow_run, "status"),
+       conclusion: conclusion,
+       ci_status: normalize_ci_status(Data.get(workflow_run, "status"), conclusion),
+       failure?: workflow_run_failure?(conclusion),
+       failure_kind: workflow_run_failure_kind(conclusion),
+       branch: Data.get(workflow_run, "head_branch"),
+       sha: Data.get(workflow_run, "head_sha"),
+       workflow_id: Data.get(workflow_run, "workflow_id"),
+       run_attempt: Data.get(workflow_run, "run_attempt"),
+       run_started_at: Data.get(workflow_run, "run_started_at"),
+       url: Data.get(workflow_run, "html_url") || Data.get(workflow_run, "url"),
+       repository: normalize_repository(repo),
+       workflow_run: normalize_workflow_run(workflow_run),
+       sender: normalize_actor(sender)
      })}
   end
 
@@ -443,6 +490,40 @@ defmodule Jido.Connect.GitHub.Webhook do
 
   defp normalize_pull_request_review_comment(_comment), do: %{}
 
+  defp normalize_workflow_run(workflow_run) when is_map(workflow_run) do
+    Data.compact(%{
+      id: Data.get(workflow_run, "id"),
+      node_id: Data.get(workflow_run, "node_id"),
+      name: Data.get(workflow_run, "name"),
+      number: Data.get(workflow_run, "run_number"),
+      run_attempt: Data.get(workflow_run, "run_attempt"),
+      status: Data.get(workflow_run, "status"),
+      conclusion: Data.get(workflow_run, "conclusion"),
+      ci_status:
+        normalize_ci_status(
+          Data.get(workflow_run, "status"),
+          Data.get(workflow_run, "conclusion")
+        ),
+      event: Data.get(workflow_run, "event"),
+      branch: Data.get(workflow_run, "head_branch"),
+      sha: Data.get(workflow_run, "head_sha"),
+      workflow_id: Data.get(workflow_run, "workflow_id"),
+      check_suite_id: Data.get(workflow_run, "check_suite_id"),
+      check_suite_node_id: Data.get(workflow_run, "check_suite_node_id"),
+      url: Data.get(workflow_run, "html_url") || Data.get(workflow_run, "url"),
+      jobs_url: Data.get(workflow_run, "jobs_url"),
+      logs_url: Data.get(workflow_run, "logs_url"),
+      created_at: Data.get(workflow_run, "created_at"),
+      updated_at: Data.get(workflow_run, "updated_at"),
+      run_started_at: Data.get(workflow_run, "run_started_at"),
+      actor: normalize_actor(Data.get(workflow_run, "actor") || %{}),
+      triggering_actor: normalize_actor(Data.get(workflow_run, "triggering_actor") || %{}),
+      head_commit: normalize_commit(Data.get(workflow_run, "head_commit"))
+    })
+  end
+
+  defp normalize_workflow_run(_workflow_run), do: %{}
+
   defp pull_request_issue?(issue) when is_map(issue), do: is_map(Data.get(issue, "pull_request"))
   defp pull_request_issue?(_issue), do: false
 
@@ -522,6 +603,42 @@ defmodule Jido.Connect.GitHub.Webhook do
   end
 
   defp normalize_change(change), do: change
+
+  defp normalize_ci_status(_status, conclusion) when conclusion in ["success", "failure"] do
+    conclusion
+  end
+
+  defp normalize_ci_status(_status, conclusion)
+       when conclusion in [
+              "cancelled",
+              "skipped",
+              "startup_failure",
+              "timed_out",
+              "action_required",
+              "neutral"
+            ] do
+    conclusion
+  end
+
+  defp normalize_ci_status(status, _conclusion)
+       when status in ["queued", "waiting", "requested"] do
+    "queued"
+  end
+
+  defp normalize_ci_status(status, _conclusion) when status in ["in_progress", "pending"] do
+    "in_progress"
+  end
+
+  defp normalize_ci_status("completed", _conclusion), do: "unknown"
+  defp normalize_ci_status(status, _conclusion) when is_binary(status), do: status
+  defp normalize_ci_status(_status, _conclusion), do: "unknown"
+
+  defp workflow_run_failure?(conclusion), do: conclusion in @workflow_run_failure_conclusions
+
+  defp workflow_run_failure_kind(conclusion) when conclusion in @workflow_run_failure_conclusions,
+    do: conclusion
+
+  defp workflow_run_failure_kind(_conclusion), do: nil
 
   defp normalize_ref("refs/heads/" <> branch) do
     %{full: "refs/heads/" <> branch, name: branch, type: "branch"}

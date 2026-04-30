@@ -443,6 +443,78 @@ defmodule Jido.Connect.GitHub.WebhookTest do
             }} = Webhook.normalize_signal("push", payload)
   end
 
+  test "normalizes GitHub workflow run lifecycle actions" do
+    assert {:ok,
+            %{
+              action: "requested",
+              repo: "org/repo",
+              workflow_run_id: 22,
+              workflow_run_number: 17,
+              workflow_name: "CI",
+              status: "requested",
+              ci_status: "queued",
+              failure?: false,
+              branch: "main",
+              sha: "head-sha",
+              workflow_id: 9001,
+              run_attempt: 1,
+              run_started_at: "2026-04-29T15:00:00Z",
+              url: "https://github.com/org/repo/actions/runs/22",
+              repository: %{full_name: "org/repo"},
+              workflow_run: %{
+                id: 22,
+                name: "CI",
+                number: 17,
+                status: "requested",
+                ci_status: "queued",
+                event: "push",
+                branch: "main",
+                sha: "head-sha",
+                actor: %{login: "author"},
+                triggering_actor: %{login: "sender"},
+                head_commit: %{id: "head-sha", message: "Run CI"}
+              },
+              sender: %{login: "sender"}
+            }} = Webhook.normalize_signal("workflow_run", workflow_run_payload("requested"))
+
+    assert {:ok, %{action: "in_progress", status: "in_progress", ci_status: "in_progress"}} =
+             Webhook.normalize_signal("workflow_run", workflow_run_payload("in_progress"))
+
+    assert {:ok,
+            %{
+              action: "completed",
+              status: "completed",
+              conclusion: "success",
+              ci_status: "success",
+              failure?: false
+            }} =
+             Webhook.normalize_signal(
+               "workflow_run",
+               workflow_run_payload("completed", %{"workflow_run" => %{"conclusion" => "success"}})
+             )
+  end
+
+  test "normalizes GitHub workflow run failure-oriented metadata" do
+    for conclusion <- ["failure", "startup_failure", "timed_out", "action_required", "cancelled"] do
+      assert {:ok,
+              %{
+                action: "completed",
+                status: "completed",
+                conclusion: ^conclusion,
+                ci_status: ^conclusion,
+                failure?: true,
+                failure_kind: ^conclusion,
+                workflow_run: %{ci_status: ^conclusion}
+              }} =
+               Webhook.normalize_signal(
+                 "workflow_run",
+                 workflow_run_payload("completed", %{
+                   "workflow_run" => %{"conclusion" => conclusion}
+                 })
+               )
+    end
+  end
+
   test "verified GitHub push deliveries include normalized signal delivery metadata" do
     body = Jason.encode!(push_payload())
     signature = "sha256=" <> hmac("secret", body)
@@ -519,6 +591,14 @@ defmodule Jido.Connect.GitHub.WebhookTest do
               details: %{action: "resolved"}
             }} =
              Webhook.normalize_signal("pull_request_review_comment", %{"action" => "resolved"})
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :unsupported_workflow_run_action,
+              details: %{action: "rerequested"}
+            }} =
+             Webhook.normalize_signal("workflow_run", %{"action" => "rerequested"})
 
     assert {:error, %Error.ProviderError{provider: :github, reason: :unsupported_event}} =
              Webhook.normalize_signal("ping", %{})
@@ -798,4 +878,52 @@ defmodule Jido.Connect.GitHub.WebhookTest do
       "head_commit" => %{"id" => "after-sha", "message" => "Ship it"}
     }
   end
+
+  defp workflow_run_payload(action, extra \\ %{}) do
+    Map.merge(
+      %{
+        "action" => action,
+        "repository" => github_repository(),
+        "workflow_run" => %{
+          "id" => 22,
+          "node_id" => "workflow-run-node",
+          "name" => "CI",
+          "run_number" => 17,
+          "run_attempt" => 1,
+          "status" => workflow_run_status(action),
+          "conclusion" => workflow_run_conclusion(action),
+          "event" => "push",
+          "head_branch" => "main",
+          "head_sha" => "head-sha",
+          "workflow_id" => 9001,
+          "check_suite_id" => 3003,
+          "check_suite_node_id" => "check-suite-node",
+          "html_url" => "https://github.com/org/repo/actions/runs/22",
+          "url" => "https://api.github.com/repos/org/repo/actions/runs/22",
+          "jobs_url" => "https://api.github.com/repos/org/repo/actions/runs/22/jobs",
+          "logs_url" => "https://api.github.com/repos/org/repo/actions/runs/22/logs",
+          "created_at" => "2026-04-29T14:59:00Z",
+          "updated_at" => "2026-04-29T15:01:00Z",
+          "run_started_at" => "2026-04-29T15:00:00Z",
+          "actor" => %{"login" => "author"},
+          "triggering_actor" => %{"login" => "sender"},
+          "head_commit" => %{"id" => "head-sha", "message" => "Run CI"}
+        },
+        "sender" => %{"login" => "sender"}
+      },
+      extra,
+      fn _key, original, override ->
+        if is_map(original) and is_map(override),
+          do: deep_merge(original, override),
+          else: override
+      end
+    )
+  end
+
+  defp workflow_run_status("requested"), do: "requested"
+  defp workflow_run_status("in_progress"), do: "in_progress"
+  defp workflow_run_status("completed"), do: "completed"
+
+  defp workflow_run_conclusion("completed"), do: "failure"
+  defp workflow_run_conclusion(_action), do: nil
 end
