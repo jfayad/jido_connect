@@ -399,6 +399,12 @@ work is complete. Do not commit, close the issue, or run \`bw sync\`.
 Run \`bw prime\` first, inspect the local code needed for this issue, implement the
 smallest coherent change, and run the narrowest useful verification.
 
+If \`bw prime\` reports uncommitted changes while this issue is already
+\`in_progress\`, do not stop to ask the user. The orchestrator is intentionally
+resuming an interrupted run for this Beadwork issue. Inspect \`git status\` and
+\`git diff\`, treat the existing changes as partial work for this issue, and
+continue by fixing or completing them. Do not touch unrelated files.
+
 ## Beadwork Issue JSON
 
 \`\`\`json
@@ -411,6 +417,26 @@ ${ISSUE_JSON}
 ${issue_context}
 \`\`\`
 PROMPT
+
+    if [[ "${ALLOW_DIRTY}" == "true" ]]; then
+      printf '\n## Resume Context\n\n'
+      printf 'This run was started with `--allow-dirty`'
+
+      if [[ "${COMMIT_ALL_DIRTY}" == "true" ]]; then
+        printf ' and `--commit-all-dirty`'
+      fi
+
+      printf '. Existing working-tree changes are expected to be part of this issue resume.\n\n'
+      printf 'Current git status:\n\n```text\n'
+      git -C "${WORKDIR}" status --short
+      printf '```\n'
+
+      if [[ -n "${LOG_FILE:-}" && -f "${LOG_FILE}" ]]; then
+        printf '\nRecent runner log:\n\n```text\n'
+        tail -n 120 "${LOG_FILE}"
+        printf '```\n'
+      fi
+    fi
 
     if [[ -n "${custom_prompt_file}" ]]; then
       printf '\n## Operator Note\n\n'
