@@ -395,6 +395,72 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "get reactions sends expected message target request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/reactions.get"
+
+      assert %{
+               "channel" => "C123",
+               "timestamp" => "1700000000.000100",
+               "full" => "true"
+             } = Plug.Conn.Query.decode(conn.query_string)
+
+      Req.Test.json(conn, %{
+        ok: true,
+        type: "message",
+        channel: "C123",
+        message: %{
+          type: "message",
+          user: "U123",
+          text: "Hello",
+          ts: "1700000000.000100",
+          reactions: [%{name: "thumbsup", count: 1, users: ["U123"]}]
+        }
+      })
+    end)
+
+    assert {:ok,
+            %{
+              type: "message",
+              channel: "C123",
+              timestamp: "1700000000.000100",
+              message: %{"text" => "Hello"},
+              reactions: [%{"name" => "thumbsup", "count" => 1, "users" => ["U123"]}]
+            }} =
+             Client.get_reactions(
+               %{channel: "C123", timestamp: "1700000000.000100", full: true},
+               "token"
+             )
+  end
+
+  test "get reactions sends expected file target request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/reactions.get"
+
+      assert %{"file" => "F123"} = Plug.Conn.Query.decode(conn.query_string)
+
+      Req.Test.json(conn, %{
+        ok: true,
+        type: "file",
+        file: %{
+          id: "F123",
+          name: "report.txt",
+          reactions: [%{name: "eyes", count: 2, users: ["U123", "U456"]}]
+        }
+      })
+    end)
+
+    assert {:ok,
+            %{
+              type: "file",
+              file_id: "F123",
+              file: %{"name" => "report.txt"},
+              reactions: [%{"name" => "eyes", "count" => 2, "users" => ["U123", "U456"]}]
+            }} = Client.get_reactions(%{file: "F123"}, "token")
+  end
+
   test "upload file uses external upload flow" do
     Req.Test.stub(__MODULE__, fn conn ->
       case conn.request_path do

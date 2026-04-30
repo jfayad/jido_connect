@@ -245,6 +245,39 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def get_reactions(
+          %{channel: "C123", timestamp: "1700000000.000100"},
+          "token"
+        ) do
+      {:ok,
+       %{
+         type: "message",
+         channel: "C123",
+         timestamp: "1700000000.000100",
+         message: %{
+           "type" => "message",
+           "text" => "Hello",
+           "ts" => "1700000000.000100",
+           "reactions" => [%{"name" => "thumbsup", "count" => 1, "users" => ["U123"]}]
+         },
+         reactions: [%{"name" => "thumbsup", "count" => 1, "users" => ["U123"]}]
+       }}
+    end
+
+    def get_reactions(%{file: "F123"}, "token") do
+      {:ok,
+       %{
+         type: "file",
+         file_id: "F123",
+         file: %{
+           "id" => "F123",
+           "name" => "report.txt",
+           "reactions" => [%{"name" => "eyes", "count" => 2, "users" => ["U123", "U456"]}]
+         },
+         reactions: [%{"name" => "eyes", "count" => 2, "users" => ["U123", "U456"]}]
+       }}
+    end
+
     def upload_file(
           %{
             channel_id: "C123",
@@ -498,6 +531,17 @@ defmodule Jido.Connect.SlackTest do
               auth_profiles: [:bot, :user]
             }} =
              Connect.action(spec, "slack.message.delete")
+
+    assert {:ok,
+            %{
+              id: "slack.reaction.list",
+              resource: :reaction,
+              verb: :list,
+              policies: [:workspace_access],
+              scopes: ["reactions:read"],
+              mutation?: false
+            }} =
+             Connect.action(spec, "slack.reaction.list")
 
     assert {:ok,
             %{
@@ -819,6 +863,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.UnscheduleMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
+             Jido.Connect.Slack.Actions.ListReactions,
              Jido.Connect.Slack.Actions.AddReaction,
              Jido.Connect.Slack.Actions.RemoveReaction,
              Jido.Connect.Slack.Actions.ListUsers,
@@ -856,6 +901,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.UnscheduleMessage,
                  Jido.Connect.Slack.Actions.UpdateMessage,
                  Jido.Connect.Slack.Actions.DeleteMessage,
+                 Jido.Connect.Slack.Actions.ListReactions,
                  Jido.Connect.Slack.Actions.AddReaction,
                  Jido.Connect.Slack.Actions.RemoveReaction,
                  Jido.Connect.Slack.Actions.ListUsers,
@@ -916,6 +962,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.DeleteMessage} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.DeleteMessage)
+
+    assert {:module, Jido.Connect.Slack.Actions.ListReactions} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.ListReactions)
 
     assert {:module, Jido.Connect.Slack.Actions.AddReaction} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.AddReaction)
@@ -1101,6 +1150,38 @@ defmodule Jido.Connect.SlackTest do
     assert delete_projection.auth_profile == :bot
     assert delete_projection.auth_profiles == [:bot, :user]
     assert Jido.Connect.Slack.Actions.DeleteMessage.name() == "slack_message_delete"
+
+    list_reactions_projection = Jido.Connect.Slack.Actions.ListReactions.jido_connect_projection()
+
+    assert list_reactions_projection.action_id == "slack.reaction.list"
+    assert list_reactions_projection.label == "List reactions"
+    assert list_reactions_projection.resource == :reaction
+    assert list_reactions_projection.verb == :list
+    assert list_reactions_projection.scopes == ["reactions:read"]
+
+    assert Enum.map(list_reactions_projection.input, & &1.name) == [
+             :channel,
+             :timestamp,
+             :file,
+             :file_comment,
+             :full
+           ]
+
+    assert Enum.map(list_reactions_projection.output, & &1.name) == [
+             :type,
+             :channel,
+             :timestamp,
+             :file_id,
+             :file_comment_id,
+             :message,
+             :file,
+             :file_comment,
+             :reactions
+           ]
+
+    assert list_reactions_projection.risk == :read
+    assert list_reactions_projection.confirmation == :none
+    assert Jido.Connect.Slack.Actions.ListReactions.name() == "slack_reaction_list"
 
     reaction_projection = Jido.Connect.Slack.Actions.AddReaction.jido_connect_projection()
 
@@ -1725,6 +1806,35 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated list reactions action delegates message and file targets through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              type: "message",
+              channel: "C123",
+              timestamp: "1700000000.000100",
+              message: %{"text" => "Hello"},
+              reactions: [%{"name" => "thumbsup", "count" => 1, "users" => ["U123"]}]
+            }} =
+             Jido.Connect.Slack.Actions.ListReactions.run(
+               %{channel: "C123", timestamp: "1700000000.000100"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:ok,
+            %{
+              type: "file",
+              file_id: "F123",
+              file: %{"name" => "report.txt"},
+              reactions: [%{"name" => "eyes", "count" => 2, "users" => ["U123", "U456"]}]
+            }} =
+             Jido.Connect.Slack.Actions.ListReactions.run(
+               %{file: "F123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated upload file action delegates through integration runtime" do
     {context, lease} = context_and_lease()
 
@@ -1815,6 +1925,41 @@ defmodule Jido.Connect.SlackTest do
             }} =
              Jido.Connect.Slack.Actions.RemoveReaction.run(
                %{channel: "C123", timestamp: "1700000000.000100", name: ":thumbsup:"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "generated list reactions action validates target shape" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              details: %{field: :target}
+            }} =
+             Jido.Connect.Slack.Actions.ListReactions.run(
+               %{},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              subject: "1700000000",
+              details: %{field: :timestamp}
+            }} =
+             Jido.Connect.Slack.Actions.ListReactions.run(
+               %{channel: "C123", timestamp: "1700000000"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              details: %{field: :target}
+            }} =
+             Jido.Connect.Slack.Actions.ListReactions.run(
+               %{channel: "C123", timestamp: "1700000000.000100", file: "F123"},
                %{integration_context: context, credential_lease: lease}
              )
   end
@@ -2012,6 +2157,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.UnscheduleMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
+             Jido.Connect.Slack.Actions.ListReactions,
              Jido.Connect.Slack.Actions.AddReaction,
              Jido.Connect.Slack.Actions.RemoveReaction,
              Jido.Connect.Slack.Actions.ListUsers,
@@ -2138,6 +2284,7 @@ defmodule Jido.Connect.SlackTest do
           "channels:history",
           "chat:write",
           "files:write",
+          "reactions:read",
           "reactions:write",
           "team:read",
           "users:read",

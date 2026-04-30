@@ -92,6 +92,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_remove_reaction_response(attrs)
   end
 
+  def get_reactions(params, access_token) when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/reactions.get", params: get_reactions_params(params))
+    |> handle_get_reactions_response(params)
+  end
+
   def upload_file(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
     content = Data.get(attrs, :content, "")
 
@@ -222,6 +229,12 @@ defmodule Jido.Connect.Slack.Client do
   defp reaction_params(params) do
     params
     |> Map.take([:channel, :timestamp, :name])
+    |> Data.compact()
+  end
+
+  defp get_reactions_params(params) do
+    params
+    |> Map.take([:channel, :timestamp, :file, :file_comment, :full])
     |> Data.compact()
   end
 
@@ -451,6 +464,73 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_remove_reaction_response(response, _attrs), do: handle_error_response(response)
+
+  defp handle_get_reactions_response(
+         {:ok, %{status: status, body: %{"ok" => true} = body}},
+         params
+       )
+       when status in 200..299 do
+    with type when is_binary(type) <- Data.get(body, "type"),
+         {:ok, target} <- reactions_target(type, body) do
+      {:ok,
+       target
+       |> Map.merge(%{
+         type: type,
+         channel: Data.get(body, "channel", Data.get(params, :channel)),
+         timestamp: Data.get(body, "timestamp", Data.get(params, :timestamp)),
+         file_id: Data.get(params, :file),
+         file_comment_id: Data.get(params, :file_comment)
+       })
+       |> Map.put(:reactions, target_reactions(target))
+       |> Data.compact()}
+    else
+      _other -> invalid_success_response("Slack reactions response was invalid", body)
+    end
+  end
+
+  defp handle_get_reactions_response(response, _params), do: handle_error_response(response)
+
+  defp reactions_target("message", body) do
+    case Data.get(body, "message") do
+      message when is_map(message) -> {:ok, %{message: message}}
+      _other -> {:error, :invalid_target}
+    end
+  end
+
+  defp reactions_target("file", body) do
+    case Data.get(body, "file") do
+      file when is_map(file) ->
+        {:ok, %{file: file, file_id: Data.get(file, "id")}}
+
+      _other ->
+        {:error, :invalid_target}
+    end
+  end
+
+  defp reactions_target("file_comment", body) do
+    with file when is_map(file) <- Data.get(body, "file"),
+         file_comment when is_map(file_comment) <- Data.get(body, "comment") do
+      {:ok,
+       %{
+         file: file,
+         file_comment: file_comment,
+         file_id: Data.get(file, "id"),
+         file_comment_id: Data.get(file_comment, "id")
+       }}
+    else
+      _other -> {:error, :invalid_target}
+    end
+  end
+
+  defp reactions_target(_type, _body), do: {:error, :invalid_target}
+
+  defp target_reactions(%{message: message}), do: Data.get(message, "reactions", [])
+
+  defp target_reactions(%{file_comment: file_comment}),
+    do: Data.get(file_comment, "reactions", [])
+
+  defp target_reactions(%{file: file}), do: Data.get(file, "reactions", [])
+  defp target_reactions(_target), do: []
 
   defp normalize_post_at(post_at) when is_integer(post_at), do: post_at
 

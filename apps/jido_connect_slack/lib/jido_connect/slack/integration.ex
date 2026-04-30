@@ -71,6 +71,7 @@ defmodule Jido.Connect.Slack do
         "app_mentions:read",
         "chat:write",
         "files:write",
+        "reactions:read",
         "reactions:write",
         "team:read",
         "users:read"
@@ -82,6 +83,7 @@ defmodule Jido.Connect.Slack do
         "app_mentions:read",
         "chat:write",
         "files:write",
+        "reactions:read",
         "reactions:write",
         "team:read",
         "users:read"

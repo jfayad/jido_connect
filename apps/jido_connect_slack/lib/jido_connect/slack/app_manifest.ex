@@ -13,6 +13,7 @@ defmodule Jido.Connect.Slack.AppManifest do
     "channels:history",
     "chat:write",
     "files:write",
+    "reactions:read",
     "reactions:write"
   ]
   @event_scopes [
