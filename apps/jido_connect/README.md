@@ -60,6 +60,12 @@ returns provider entries; `Catalog.tools/1` returns a flattened action/trigger
 catalog for search and tool pickers, including filters such as `:tag`,
 `:resource`, `:verb`, `:auth_kind`, `:auth_profile`, and `:scope`.
 
+Host apps can install only the provider packages they need. For example, a
+Phoenix app that wants GitHub but not Slack should depend on
+`jido_connect_github`; the provider package depends on `jido_connect` and
+self-registers `Jido.Connect.GitHub` for catalog discovery. If Slack is not in
+the host dependency graph, Slack is not compiled or listed by discovery.
+
 Provider packages self-register catalog modules with application metadata:
 
 ```elixir
@@ -75,6 +81,26 @@ end
 `Jido.Connect.Catalog.Manifest` from the DSL. Connector authors should not
 maintain a second manifest by hand; the compiled spec and generated projection
 stay the source of truth.
+
+For local development against the umbrella before Hex publishing, use explicit
+path dependencies to the app folders:
+
+```elixir
+{:jido_connect, path: "../jido_connect/apps/jido_connect"},
+{:jido_connect_github, path: "../jido_connect/apps/jido_connect_github"}
+```
+
+Once published, prefer the provider package directly:
+
+```elixir
+{:jido_connect_github, "~> 0.1"}
+```
+
+Manual catalog registration remains available for private providers:
+
+```elixir
+config :jido_connect, catalog_modules: [MyApp.Connectors.Internal]
+```
 
 Authenticated generated actions and sensors require both a connection and a
 matching credential lease. The connection is durable host-owned metadata; the

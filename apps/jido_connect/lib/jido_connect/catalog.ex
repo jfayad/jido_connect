@@ -4,6 +4,15 @@ defmodule Jido.Connect.Catalog do
 
   This gives demo apps and host UIs a stable, storage-free way to render
   available providers, auth modes, generated tools, and maturity metadata.
+
+  Provider packages self-register their provider module with application env
+  `:jido_connect_providers`. Host apps can install only the provider packages
+  they want, and discovery will see only loaded provider applications plus any
+  modules configured with `config :jido_connect, :catalog_modules, [...]`.
+
+  Use `discover/1` for lenient runtime catalog views and
+  `discover_with_diagnostics/1` for CI, demos, and admin screens that should
+  report broken or missing connectors.
   """
 
   alias Jido.Connect.Catalog.{

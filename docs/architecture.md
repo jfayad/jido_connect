@@ -125,3 +125,16 @@ derives auth, action, and trigger capabilities from the DSL.
 Use `Jido.Connect.Catalog.discover/1` for provider-level discovery and
 `Jido.Connect.Catalog.tools/1` for a flattened action/trigger catalog across
 installed providers.
+
+Provider packages self-register their provider modules through application env
+under `:jido_connect_providers`. This means host apps choose the catalog by
+choosing dependencies: installing only `jido_connect_github` exposes GitHub
+entries, while Slack remains absent unless `jido_connect_slack` is also in the
+dependency graph. Hosts can still add private or local providers with
+`config :jido_connect, catalog_modules: [...]`.
+
+`discover/1` is intentionally lenient and returns valid entries only.
+`discover_with_diagnostics/1` returns both valid entries and structured
+diagnostics for modules that fail to load, omit `integration/0`, or raise while
+building catalog metadata. Demo apps, CI checks, and admin UIs should prefer the
+diagnostic form.
