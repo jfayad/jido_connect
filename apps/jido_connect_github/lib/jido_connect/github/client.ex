@@ -111,6 +111,14 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_workflow_run_rerun_response()
   end
 
+  def cancel_workflow_run(repo, run_id, access_token)
+      when is_binary(repo) and is_integer(run_id) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/repos/#{repo}/actions/runs/#{run_id}/cancel")
+    |> handle_workflow_run_cancel_response()
+  end
+
   def dispatch_workflow(repo, workflow, attrs, access_token)
       when is_binary(repo) and is_binary(workflow) and is_map(attrs) and is_binary(access_token) do
     access_token
@@ -505,6 +513,17 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_workflow_run_rerun_response(response), do: handle_error_response(response)
+
+  defp handle_workflow_run_cancel_response({:ok, %{status: 202}}) do
+    {:ok, %{cancel_requested: true}}
+  end
+
+  defp handle_workflow_run_cancel_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub workflow run cancel response was invalid", body)
+  end
+
+  defp handle_workflow_run_cancel_response(response), do: handle_error_response(response)
 
   defp handle_workflow_dispatch_response({:ok, %{status: 204}}), do: {:ok, %{dispatched: true}}
 

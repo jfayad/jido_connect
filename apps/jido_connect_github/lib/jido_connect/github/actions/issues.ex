@@ -292,6 +292,34 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :cancel_workflow_run do
+      id "github.workflow_run.cancel"
+      resource :workflow_run
+      verb :cancel
+      data_classification :workspace_metadata
+      label "Cancel workflow run"
+      description "Cancel an in-progress GitHub Actions workflow run."
+      handler Jido.Connect.GitHub.Handlers.Actions.CancelWorkflowRun
+      effect :write, confirmation: :always
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :run_id, :integer, required?: true
+      end
+
+      output do
+        field :cancel_requested, :boolean
+        field :repo, :string
+        field :run_id, :integer
+      end
+    end
+
     action :dispatch_workflow do
       id "github.workflow.dispatch"
       resource :workflow

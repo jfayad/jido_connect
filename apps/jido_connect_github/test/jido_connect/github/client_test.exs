@@ -635,6 +635,19 @@ defmodule Jido.Connect.GitHub.ClientTest do
              Client.rerun_workflow_run("org/repo", 22, %{failed_only: true}, "token")
   end
 
+  test "cancel workflow run sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/actions/runs/22/cancel"
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Plug.Conn.send_resp(conn, 202, "")
+    end)
+
+    assert {:ok, %{cancel_requested: true}} =
+             Client.cancel_workflow_run("org/repo", 22, "token")
+  end
+
   test "dispatch workflow sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

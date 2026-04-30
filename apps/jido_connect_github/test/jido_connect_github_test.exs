@@ -289,6 +289,10 @@ defmodule Jido.Connect.GitHubTest do
       {:ok, %{rerun_requested: true}}
     end
 
+    def cancel_workflow_run("org/repo", 22, "token") do
+      {:ok, %{cancel_requested: true}}
+    end
+
     def create_issue("org/repo", %{title: "Bug", body: nil, labels: []}, "token") do
       {:ok, %{number: 2, url: "https://github.test/2", title: "Bug", state: "open"}}
     end
@@ -675,6 +679,19 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.workflow_run.cancel",
+              resource: :workflow_run,
+              verb: :cancel,
+              mutation?: true,
+              confirmation: :always,
+              auth_profiles: [:user, :installation],
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.workflow_run.cancel")
+
+    assert {:ok,
+            %{
               id: "github.workflow.dispatch",
               resource: :workflow,
               verb: :dispatch,
@@ -828,6 +845,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
              Jido.Connect.GitHub.Actions.ListWorkflowRunJobs,
              Jido.Connect.GitHub.Actions.RerunWorkflowRun,
+             Jido.Connect.GitHub.Actions.CancelWorkflowRun,
              Jido.Connect.GitHub.Actions.DispatchWorkflow,
              Jido.Connect.GitHub.Actions.GetPullRequest,
              Jido.Connect.GitHub.Actions.ListPullRequestFiles,
@@ -866,6 +884,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.ListWorkflowRuns,
                  Jido.Connect.GitHub.Actions.ListWorkflowRunJobs,
                  Jido.Connect.GitHub.Actions.RerunWorkflowRun,
+                 Jido.Connect.GitHub.Actions.CancelWorkflowRun,
                  Jido.Connect.GitHub.Actions.DispatchWorkflow,
                  Jido.Connect.GitHub.Actions.GetPullRequest,
                  Jido.Connect.GitHub.Actions.ListPullRequestFiles,
@@ -1305,6 +1324,31 @@ defmodule Jido.Connect.GitHubTest do
 
     assert Jido.Connect.GitHub.Actions.RerunWorkflowRun.name() ==
              "github_workflow_run_rerun"
+  end
+
+  test "generated workflow run cancel action metadata tracks confirmation" do
+    projection = Jido.Connect.GitHub.Actions.CancelWorkflowRun.jido_connect_projection()
+
+    assert projection.action_id == "github.workflow_run.cancel"
+    assert projection.label == "Cancel workflow run"
+    assert Enum.map(projection.input, & &1.name) == [:repo, :run_id]
+
+    assert Enum.map(projection.output, & &1.name) == [
+             :cancel_requested,
+             :repo,
+             :run_id
+           ]
+
+    assert projection.risk == :write
+    assert projection.confirmation == :always
+    assert projection.resource == :workflow_run
+    assert projection.verb == :cancel
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+
+    assert Jido.Connect.GitHub.Actions.CancelWorkflowRun.name() ==
+             "github_workflow_run_cancel"
   end
 
   test "generated workflow dispatch action metadata tracks ref and typed inputs" do
@@ -2415,6 +2459,24 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "generated workflow run cancel action delegates with confirmation metadata" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              cancel_requested: true,
+              repo: "org/repo",
+              run_id: 22
+            }} =
+             Jido.Connect.GitHub.Actions.CancelWorkflowRun.run(
+               %{repo: "org/repo", run_id: 22},
+               %{
+                 integration_context: context,
+                 credential_lease: lease
+               }
+             )
+  end
+
   test "generated issue search action delegates with query helpers and pagination" do
     {context, lease} = context_and_lease()
 
@@ -2510,6 +2572,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
              Jido.Connect.GitHub.Actions.ListWorkflowRunJobs,
              Jido.Connect.GitHub.Actions.RerunWorkflowRun,
+             Jido.Connect.GitHub.Actions.CancelWorkflowRun,
              Jido.Connect.GitHub.Actions.DispatchWorkflow,
              Jido.Connect.GitHub.Actions.GetPullRequest,
              Jido.Connect.GitHub.Actions.ListPullRequestFiles,
@@ -2579,6 +2642,12 @@ defmodule Jido.Connect.GitHubTest do
 
     assert workflow_rerun_installation_missing_scopes.state == :missing_scopes
     assert workflow_rerun_installation_missing_scopes.missing_scopes == ["actions:write"]
+
+    workflow_cancel_installation_missing_scopes =
+      availability_for(installation_tools, "github.workflow_run.cancel")
+
+    assert workflow_cancel_installation_missing_scopes.state == :missing_scopes
+    assert workflow_cancel_installation_missing_scopes.missing_scopes == ["actions:write"]
 
     workflow_dispatch_installation_missing_scopes =
       availability_for(installation_tools, "github.workflow.dispatch")
