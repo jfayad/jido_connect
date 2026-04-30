@@ -58,15 +58,26 @@ defmodule Jido.Connect.Slack do
 
       scopes [
         "channels:read",
+        "channels:history",
         "groups:read",
+        "groups:history",
         "im:read",
+        "im:history",
         "mpim:read",
+        "mpim:history",
         "chat:write",
         "team:read",
         "users:read"
       ]
 
-      default_scopes ["channels:read", "chat:write", "team:read", "users:read"]
+      default_scopes [
+        "channels:read",
+        "channels:history",
+        "chat:write",
+        "team:read",
+        "users:read"
+      ]
+
       pkce? false
       refresh? false
       revoke? false

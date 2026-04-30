@@ -33,5 +33,47 @@ defmodule Jido.Connect.Slack.Actions.Conversations do
         field :next_cursor, :string
       end
     end
+
+    action :get_thread_replies do
+      id "slack.thread.replies"
+      resource :thread
+      verb :read
+      data_classification :message_content
+      label "Get thread replies"
+      description "Fetch replies for a Slack message thread."
+      handler Jido.Connect.Slack.Handlers.Actions.GetThreadReplies
+      effect :read
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["channels:history"], resolver: Jido.Connect.Slack.ScopeResolver
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+        field :ts, :string, required?: true, description: "Slack parent message timestamp."
+
+        field :conversation_type, :string,
+          description:
+            "Optional Slack conversation type: public_channel, private_channel, im, or mpim."
+
+        field :limit, :integer, default: 100
+        field :cursor, :string
+        field :oldest, :string
+        field :latest, :string
+        field :inclusive, :boolean, default: false
+      end
+
+      output do
+        field :channel, :string
+        field :thread_ts, :string
+        field :messages, {:array, :map}
+        field :reply_count, :integer
+        field :latest_reply, :string
+        field :next_cursor, :string
+        field :has_more, :boolean
+      end
+    end
   end
 end

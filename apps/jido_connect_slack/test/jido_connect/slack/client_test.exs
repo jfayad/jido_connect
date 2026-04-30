@@ -49,6 +49,65 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "get thread replies sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/conversations.replies"
+
+      assert %{
+               "channel" => "C123",
+               "cursor" => "page-1",
+               "inclusive" => "true",
+               "limit" => "50",
+               "ts" => "1700000000.000100"
+             } = URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        ok: true,
+        messages: [
+          %{
+            type: "message",
+            user: "U123",
+            text: "Root",
+            ts: "1700000000.000100",
+            reply_count: 1,
+            latest_reply: "1700000001.000200"
+          },
+          %{
+            type: "message",
+            user: "U456",
+            text: "Reply",
+            ts: "1700000001.000200",
+            thread_ts: "1700000000.000100"
+          }
+        ],
+        has_more: true,
+        response_metadata: %{next_cursor: "page-2"}
+      })
+    end)
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              thread_ts: "1700000000.000100",
+              messages: [%{"text" => "Root"}, %{"text" => "Reply"}],
+              next_cursor: "page-2",
+              has_more: true
+            }} =
+             Client.get_thread_replies(
+               %{
+                 channel: "C123",
+                 ts: "1700000000.000100",
+                 limit: 50,
+                 cursor: "page-1",
+                 inclusive: true
+               },
+               "token"
+             )
+  end
+
   test "post message sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

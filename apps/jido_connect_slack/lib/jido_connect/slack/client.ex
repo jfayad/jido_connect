@@ -12,6 +12,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_channel_list_response()
   end
 
+  def get_thread_replies(params, access_token) when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/conversations.replies", params: thread_replies_params(params))
+    |> handle_thread_replies_response(params)
+  end
+
   def post_message(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
     access_token
     |> request()
@@ -75,6 +82,12 @@ defmodule Jido.Connect.Slack.Client do
     |> Data.compact()
   end
 
+  defp thread_replies_params(params) do
+    params
+    |> Map.take([:channel, :ts, :limit, :cursor, :oldest, :latest, :inclusive])
+    |> Data.compact()
+  end
+
   defp list_users_params(params) do
     params
     |> Map.take([:limit, :cursor, :team_id, :include_locale])
@@ -127,6 +140,28 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_channel_list_response(response), do: handle_error_response(response)
+
+  defp handle_thread_replies_response(
+         {:ok, %{status: status, body: %{"ok" => true} = body}},
+         params
+       )
+       when status in 200..299 do
+    with messages when is_list(messages) <- Map.get(body, "messages", []),
+         true <- Enum.all?(messages, &is_map/1) do
+      {:ok,
+       %{
+         channel: Data.get(params, :channel),
+         thread_ts: Data.get(params, :ts),
+         messages: messages,
+         next_cursor: get_in(body, ["response_metadata", "next_cursor"]) || "",
+         has_more: Data.get(body, "has_more", false)
+       }}
+    else
+      _other -> invalid_success_response("Slack thread replies response was invalid", body)
+    end
+  end
+
+  defp handle_thread_replies_response(response, _params), do: handle_error_response(response)
 
   defp handle_message_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do

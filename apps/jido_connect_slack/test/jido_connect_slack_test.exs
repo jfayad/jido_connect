@@ -36,6 +36,50 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def get_thread_replies(
+          %{channel: "C123", ts: "1700000000.000100", limit: 100},
+          "token"
+        ) do
+      {:ok,
+       %{
+         channel: "C123",
+         thread_ts: "1700000000.000100",
+         messages: [
+           %{
+             type: "message",
+             user: "U123",
+             text: "Root",
+             ts: "1700000000.000100",
+             reply_count: 1,
+             latest_reply: "1700000001.000200"
+           },
+           %{
+             type: "message",
+             user: "U456",
+             text: "Reply",
+             ts: "1700000001.000200",
+             thread_ts: "1700000000.000100"
+           }
+         ],
+         next_cursor: "next",
+         has_more: true
+       }}
+    end
+
+    def get_thread_replies(
+          %{channel: "G123", ts: "1700000000.000100"},
+          "token"
+        ) do
+      {:ok,
+       %{
+         channel: "G123",
+         thread_ts: "1700000000.000100",
+         messages: [],
+         next_cursor: "",
+         has_more: false
+       }}
+    end
+
     def post_message(
           %{channel: "C123", text: "Hello", reply_broadcast: false},
           "token"
@@ -230,6 +274,17 @@ defmodule Jido.Connect.SlackTest do
             }} =
              Connect.action(spec, "slack.channel.list")
 
+    assert {:ok,
+            %{
+              id: "slack.thread.replies",
+              resource: :thread,
+              verb: :read,
+              policies: [:workspace_access],
+              scopes: ["channels:history"],
+              mutation?: false
+            }} =
+             Connect.action(spec, "slack.thread.replies")
+
     assert {:ok, %{id: "slack.message.post", mutation?: true, confirmation: :required_for_ai}} =
              Connect.action(spec, "slack.message.post")
 
@@ -320,6 +375,7 @@ defmodule Jido.Connect.SlackTest do
 
     assert Jido.Connect.Slack.jido_action_modules() == [
              Jido.Connect.Slack.Actions.ListChannels,
+             Jido.Connect.Slack.Actions.GetThreadReplies,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
@@ -339,6 +395,7 @@ defmodule Jido.Connect.SlackTest do
              generated_modules: %{
                actions: [
                  Jido.Connect.Slack.Actions.ListChannels,
+                 Jido.Connect.Slack.Actions.GetThreadReplies,
                  Jido.Connect.Slack.Actions.AuthTest,
                  Jido.Connect.Slack.Actions.TeamInfo,
                  Jido.Connect.Slack.Actions.PostMessage,
@@ -355,6 +412,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.ListChannels} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.ListChannels)
+
+    assert {:module, Jido.Connect.Slack.Actions.GetThreadReplies} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.GetThreadReplies)
 
     assert {:module, Jido.Connect.Slack.Actions.AuthTest} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.AuthTest)
@@ -447,6 +507,33 @@ defmodule Jido.Connect.SlackTest do
 
     list_projection = Jido.Connect.Slack.Actions.ListChannels.jido_connect_projection()
     assert list_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
+
+    replies_projection = Jido.Connect.Slack.Actions.GetThreadReplies.jido_connect_projection()
+    assert replies_projection.action_id == "slack.thread.replies"
+    assert replies_projection.resource == :thread
+    assert replies_projection.verb == :read
+    assert replies_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
+
+    assert Enum.map(replies_projection.input, & &1.name) == [
+             :channel,
+             :ts,
+             :conversation_type,
+             :limit,
+             :cursor,
+             :oldest,
+             :latest,
+             :inclusive
+           ]
+
+    assert Enum.map(replies_projection.output, & &1.name) == [
+             :channel,
+             :thread_ts,
+             :messages,
+             :reply_count,
+             :latest_reply,
+             :next_cursor,
+             :has_more
+           ]
 
     auth_projection = Jido.Connect.Slack.Actions.AuthTest.jido_connect_projection()
     assert auth_projection.action_id == "slack.auth.test"
@@ -566,6 +653,56 @@ defmodule Jido.Connect.SlackTest do
     assert {:ok, %{channels: [%{id: "G123", name: "private"}], next_cursor: ""}} =
              Jido.Connect.Slack.Actions.ListChannels.run(
                %{types: "private_channel"},
+               %{integration_context: private_context, credential_lease: lease}
+             )
+  end
+
+  test "generated get thread replies action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              thread_ts: "1700000000.000100",
+              messages: [
+                %{text: "Root", ts: "1700000000.000100", reply_count: 1},
+                %{text: "Reply", thread_ts: "1700000000.000100"}
+              ],
+              reply_count: 1,
+              latest_reply: "1700000001.000200",
+              next_cursor: "next",
+              has_more: true
+            }} =
+             Jido.Connect.Slack.Actions.GetThreadReplies.run(
+               %{channel: "C123", ts: "1700000000.000100", limit: 100},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "get thread replies resolves history scopes from conversation type" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["groups:history"]
+            }} =
+             Jido.Connect.Slack.Actions.GetThreadReplies.run(
+               %{channel: "G123", ts: "1700000000.000100"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    private_context = %{
+      context
+      | connection: %{
+          context.connection
+          | scopes: context.connection.scopes ++ ["groups:history"]
+        }
+    }
+
+    assert {:ok, %{channel: "G123", thread_ts: "1700000000.000100"}} =
+             Jido.Connect.Slack.Actions.GetThreadReplies.run(
+               %{channel: "G123", ts: "1700000000.000100"},
                %{integration_context: private_context, credential_lease: lease}
              )
   end
@@ -809,6 +946,7 @@ defmodule Jido.Connect.SlackTest do
 
     assert spec.actions == [
              Jido.Connect.Slack.Actions.ListChannels,
+             Jido.Connect.Slack.Actions.GetThreadReplies,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
@@ -855,7 +993,14 @@ defmodule Jido.Connect.SlackTest do
         owner_type: if(profile == :user, do: :user, else: :tenant),
         owner_id: if(profile == :user, do: "user_1", else: "T123"),
         status: :connected,
-        scopes: ["channels:read", "chat:write", "team:read", "users:read", "users:read.email"]
+        scopes: [
+          "channels:read",
+          "channels:history",
+          "chat:write",
+          "team:read",
+          "users:read",
+          "users:read.email"
+        ]
       })
 
     context =

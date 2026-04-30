@@ -12,7 +12,12 @@ defmodule Jido.Connect.Slack.AppManifestTest do
              "https://demo.ngrok-free.app/integrations/slack/oauth/callback"
            ]
 
-    assert get_in(manifest, [:oauth_config, :scopes, :bot]) == ["channels:read", "chat:write"]
+    assert get_in(manifest, [:oauth_config, :scopes, :bot]) == [
+             "channels:read",
+             "channels:history",
+             "chat:write"
+           ]
+
     refute get_in(manifest, [:settings, :event_subscriptions])
     refute get_in(manifest, [:settings, :interactivity])
   end
@@ -26,6 +31,7 @@ defmodule Jido.Connect.Slack.AppManifestTest do
 
     assert get_in(manifest, [:oauth_config, :scopes, :bot]) == [
              "channels:read",
+             "channels:history",
              "chat:write",
              "app_mentions:read"
            ]
