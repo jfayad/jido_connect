@@ -113,6 +113,38 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "list conversation members sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/conversations.members"
+
+      assert %{
+               "channel" => "C123",
+               "cursor" => "page-1",
+               "limit" => "100"
+             } = URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        ok: true,
+        members: ["U123", "U456"],
+        response_metadata: %{next_cursor: "page-2"}
+      })
+    end)
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              members: ["U123", "U456"],
+              next_cursor: "page-2"
+            }} =
+             Client.list_conversation_members(
+               %{channel: "C123", limit: 100, cursor: "page-1"},
+               "token"
+             )
+  end
+
   test "post message sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

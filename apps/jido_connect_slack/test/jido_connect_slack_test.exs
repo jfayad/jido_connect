@@ -80,6 +80,24 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def list_conversation_members(%{channel: "C123", limit: 100}, "token") do
+      {:ok,
+       %{
+         channel: "C123",
+         members: ["U123", "U456"],
+         next_cursor: "next"
+       }}
+    end
+
+    def list_conversation_members(%{channel: "G123"}, "token") do
+      {:ok,
+       %{
+         channel: "G123",
+         members: ["U789"],
+         next_cursor: ""
+       }}
+    end
+
     def post_message(
           %{channel: "C123", text: "Hello", reply_broadcast: false},
           "token"
@@ -313,6 +331,17 @@ defmodule Jido.Connect.SlackTest do
               mutation?: false
             }} =
              Connect.action(spec, "slack.thread.replies")
+
+    assert {:ok,
+            %{
+              id: "slack.conversation.members",
+              resource: :conversation_member,
+              verb: :list,
+              policies: [:workspace_access],
+              scopes: ["channels:read"],
+              mutation?: false
+            }} =
+             Connect.action(spec, "slack.conversation.members")
 
     assert {:ok, %{id: "slack.message.post", mutation?: true, confirmation: :required_for_ai}} =
              Connect.action(spec, "slack.message.post")
@@ -628,6 +657,7 @@ defmodule Jido.Connect.SlackTest do
     assert Jido.Connect.Slack.jido_action_modules() == [
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.GetThreadReplies,
+             Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
@@ -659,6 +689,7 @@ defmodule Jido.Connect.SlackTest do
                actions: [
                  Jido.Connect.Slack.Actions.ListChannels,
                  Jido.Connect.Slack.Actions.GetThreadReplies,
+                 Jido.Connect.Slack.Actions.ListConversationMembers,
                  Jido.Connect.Slack.Actions.UploadFile,
                  Jido.Connect.Slack.Actions.AuthTest,
                  Jido.Connect.Slack.Actions.TeamInfo,
@@ -688,6 +719,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.GetThreadReplies} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.GetThreadReplies)
+
+    assert {:module, Jido.Connect.Slack.Actions.ListConversationMembers} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.ListConversationMembers)
 
     assert {:module, Jido.Connect.Slack.Actions.UploadFile} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.UploadFile)
@@ -901,6 +935,27 @@ defmodule Jido.Connect.SlackTest do
              :has_more
            ]
 
+    members_projection =
+      Jido.Connect.Slack.Actions.ListConversationMembers.jido_connect_projection()
+
+    assert members_projection.action_id == "slack.conversation.members"
+    assert members_projection.resource == :conversation_member
+    assert members_projection.verb == :list
+    assert members_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
+
+    assert Enum.map(members_projection.input, & &1.name) == [
+             :channel,
+             :conversation_type,
+             :limit,
+             :cursor
+           ]
+
+    assert Enum.map(members_projection.output, & &1.name) == [
+             :channel,
+             :members,
+             :next_cursor
+           ]
+
     auth_projection = Jido.Connect.Slack.Actions.AuthTest.jido_connect_projection()
     assert auth_projection.action_id == "slack.auth.test"
     assert auth_projection.resource == :auth
@@ -1019,6 +1074,44 @@ defmodule Jido.Connect.SlackTest do
     assert {:ok, %{channels: [%{id: "G123", name: "private"}], next_cursor: ""}} =
              Jido.Connect.Slack.Actions.ListChannels.run(
                %{types: "private_channel"},
+               %{integration_context: private_context, credential_lease: lease}
+             )
+  end
+
+  test "generated list conversation members action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{channel: "C123", members: ["U123", "U456"], next_cursor: "next"}} =
+             Jido.Connect.Slack.Actions.ListConversationMembers.run(
+               %{channel: "C123", limit: 100},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "list conversation members resolves scopes from conversation type" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["groups:read"]
+            }} =
+             Jido.Connect.Slack.Actions.ListConversationMembers.run(
+               %{channel: "G123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    private_context = %{
+      context
+      | connection: %{
+          context.connection
+          | scopes: context.connection.scopes ++ ["groups:read"]
+        }
+    }
+
+    assert {:ok, %{channel: "G123", members: ["U789"]}} =
+             Jido.Connect.Slack.Actions.ListConversationMembers.run(
+               %{channel: "G123"},
                %{integration_context: private_context, credential_lease: lease}
              )
   end
@@ -1385,6 +1478,7 @@ defmodule Jido.Connect.SlackTest do
     assert spec.actions == [
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.GetThreadReplies,
+             Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,

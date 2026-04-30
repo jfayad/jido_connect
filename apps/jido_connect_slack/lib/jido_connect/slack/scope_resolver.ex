@@ -33,9 +33,20 @@ defmodule Jido.Connect.Slack.ScopeResolver do
     required_scopes(%{id: "slack.channel.list"}, input, connection)
   end
 
+  def required_scopes(%{id: "slack.conversation.members"}, input, _connection) do
+    input
+    |> requested_conversation_type()
+    |> then(&Map.get(@conversation_type_scopes, &1, "channels:read"))
+    |> List.wrap()
+  end
+
+  def required_scopes(%{action_id: "slack.conversation.members"}, input, connection) do
+    required_scopes(%{id: "slack.conversation.members"}, input, connection)
+  end
+
   def required_scopes(%{id: "slack.thread.replies"}, input, _connection) do
     input
-    |> requested_thread_type()
+    |> requested_conversation_type()
     |> then(&Map.get(@conversation_history_scopes, &1, "channels:history"))
     |> List.wrap()
   end
@@ -59,7 +70,7 @@ defmodule Jido.Connect.Slack.ScopeResolver do
     end
   end
 
-  defp requested_thread_type(input) do
+  defp requested_conversation_type(input) do
     case Map.get(input, :conversation_type, Map.get(input, "conversation_type")) do
       nil -> type_from_channel(Map.get(input, :channel, Map.get(input, "channel")))
       type -> type |> to_string() |> String.trim()

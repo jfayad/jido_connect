@@ -75,5 +75,39 @@ defmodule Jido.Connect.Slack.Actions.Conversations do
         field :has_more, :boolean
       end
     end
+
+    action :list_conversation_members do
+      id "slack.conversation.members"
+      resource :conversation_member
+      verb :list
+      data_classification :workspace_metadata
+      label "List conversation members"
+      description "List Slack user IDs that belong to a conversation."
+      handler Jido.Connect.Slack.Handlers.Actions.ListConversationMembers
+      effect :read
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["channels:read"], resolver: Jido.Connect.Slack.ScopeResolver
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+
+        field :conversation_type, :string,
+          description:
+            "Optional Slack conversation type: public_channel, private_channel, im, or mpim."
+
+        field :limit, :integer, default: 100
+        field :cursor, :string
+      end
+
+      output do
+        field :channel, :string
+        field :members, {:array, :string}
+        field :next_cursor, :string
+      end
+    end
   end
 end
