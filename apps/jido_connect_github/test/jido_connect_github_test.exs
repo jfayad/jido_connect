@@ -649,6 +649,39 @@ defmodule Jido.Connect.GitHubTest do
          }
        ]}
     end
+
+    def list_updated_pull_requests("org/repo", nil, "token") do
+      {:ok,
+       [
+         %{
+           number: 7,
+           url: "https://github.test/pulls/7",
+           title: "Seventh",
+           state: "open",
+           updated_at: "2026-04-29T10:00:00Z"
+         }
+       ]}
+    end
+
+    def list_updated_pull_requests("org/repo", "2026-04-29T10:00:00Z", "token") do
+      {:ok,
+       [
+         %{
+           number: 7,
+           url: "https://github.test/pulls/7",
+           title: "Seventh duplicate",
+           state: "open",
+           updated_at: "2026-04-29T10:00:00Z"
+         },
+         %{
+           number: 8,
+           url: "https://github.test/pulls/8",
+           title: "Eighth",
+           state: "open",
+           updated_at: "2026-04-29T10:02:00Z"
+         }
+       ]}
+    end
   end
 
   test "GitHub integration declares first actions and poll trigger" do
@@ -1015,6 +1048,17 @@ defmodule Jido.Connect.GitHubTest do
               scope_resolver: Jido.Connect.GitHub.ScopeResolver
             }} =
              Connect.trigger(spec, "github.issue.new")
+
+    assert {:ok,
+            %{
+              id: "github.pull_request.updated",
+              kind: :poll,
+              checkpoint: :updated_at,
+              dedupe: %{key: [:repo, :pull_number, :updated_at]},
+              auth_profiles: [:user, :installation],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.trigger(spec, "github.pull_request.updated")
   end
 
   test "GitHub catalog entry exposes setup, auth, and runtime capabilities" do
@@ -1072,7 +1116,8 @@ defmodule Jido.Connect.GitHubTest do
            ]
 
     assert Jido.Connect.GitHub.jido_sensor_modules() == [
-             Jido.Connect.GitHub.Sensors.NewIssues
+             Jido.Connect.GitHub.Sensors.NewIssues,
+             Jido.Connect.GitHub.Sensors.UpdatedPullRequests
            ]
 
     assert Jido.Connect.GitHub.jido_plugin_module() == Jido.Connect.GitHub.Plugin
@@ -1115,7 +1160,10 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.CreateIssueComment,
                  Jido.Connect.GitHub.Actions.ListIssueComments
                ],
-               sensors: [Jido.Connect.GitHub.Sensors.NewIssues],
+               sensors: [
+                 Jido.Connect.GitHub.Sensors.NewIssues,
+                 Jido.Connect.GitHub.Sensors.UpdatedPullRequests
+               ],
                plugin: Jido.Connect.GitHub.Plugin
              }
            } = Jido.Connect.GitHub.jido_connect_manifest()
@@ -1207,6 +1255,9 @@ defmodule Jido.Connect.GitHubTest do
     assert {:module, Jido.Connect.GitHub.Sensors.NewIssues} =
              Code.ensure_loaded(Jido.Connect.GitHub.Sensors.NewIssues)
 
+    assert {:module, Jido.Connect.GitHub.Sensors.UpdatedPullRequests} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Sensors.UpdatedPullRequests)
+
     assert {:module, Jido.Connect.GitHub.Plugin} =
              Code.ensure_loaded(Jido.Connect.GitHub.Plugin)
 
@@ -1239,6 +1290,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.CreateIssueComment, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListIssueComments, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Sensors.NewIssues, :init, 2)
+    assert function_exported?(Jido.Connect.GitHub.Sensors.UpdatedPullRequests, :init, 2)
     assert function_exported?(Jido.Connect.GitHub.Plugin, :plugin_spec, 1)
   end
 
@@ -3138,6 +3190,57 @@ defmodule Jido.Connect.GitHubTest do
     assert signal.type == "github.issue.new"
     assert signal.source == "/jido/connect/github"
     assert signal.data.issue_number == 3
+  end
+
+  test "pull request update poll advances checkpoint and skips checkpoint duplicates" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              signals: [
+                %{
+                  repo: "org/repo",
+                  pull_number: 8,
+                  title: "Eighth",
+                  state: "open",
+                  updated_at: "2026-04-29T10:02:00Z"
+                }
+              ],
+              checkpoint: "2026-04-29T10:02:00Z"
+            }} =
+             Connect.poll(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request.updated",
+               %{repo: "org/repo"},
+               %{
+                 context: context,
+                 credential_lease: lease,
+                 checkpoint: "2026-04-29T10:00:00Z"
+               }
+             )
+  end
+
+  test "generated pull request update sensor continues checkpoint between ticks" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, state, [{:schedule, 300_000}]} =
+             Jido.Connect.GitHub.Sensors.UpdatedPullRequests.init(%{repo: "org/repo"}, %{
+               integration_context: context,
+               credential_lease: lease
+             })
+
+    assert {:ok, state, [{:emit, signal}, {:schedule, 300_000}]} =
+             Jido.Connect.GitHub.Sensors.UpdatedPullRequests.handle_event(:tick, state)
+
+    assert signal.type == "github.pull_request.updated"
+    assert signal.data.pull_number == 7
+    assert state.checkpoint == "2026-04-29T10:00:00Z"
+
+    assert {:ok, state, [{:emit, next_signal}, {:schedule, 300_000}]} =
+             Jido.Connect.GitHub.Sensors.UpdatedPullRequests.handle_event(:tick, state)
+
+    assert next_signal.data.pull_number == 8
+    assert state.checkpoint == "2026-04-29T10:02:00Z"
   end
 
   test "generated plugin lists and filters generated actions" do

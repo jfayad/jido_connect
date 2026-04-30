@@ -351,6 +351,21 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_list_response()
   end
 
+  def list_updated_pull_requests(repo, checkpoint, access_token) when is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(
+      url: "/search/issues",
+      params: [
+        q: updated_pull_request_query(repo, checkpoint),
+        sort: "updated",
+        order: "asc",
+        per_page: 100
+      ]
+    )
+    |> handle_updated_pull_request_list_response()
+  end
+
   def fetch_authenticated_user(access_token) when is_binary(access_token) do
     access_token
     |> request()
@@ -526,6 +541,24 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_search_issue_response(response), do: handle_error_response(response)
+
+  defp handle_updated_pull_request_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    case Data.get(body, "items") do
+      items when is_list(items) ->
+        {:ok, Enum.map(items, &normalize_pull_request_search_result/1)}
+
+      _other ->
+        invalid_success_response("GitHub pull request search response was invalid", body)
+    end
+  end
+
+  defp handle_updated_pull_request_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub pull request search response was invalid", body)
+  end
+
+  defp handle_updated_pull_request_list_response(response), do: handle_error_response(response)
 
   defp handle_search_repository_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
@@ -927,6 +960,17 @@ defmodule Jido.Connect.GitHub.Client do
       base: normalize_pull_request_ref(Data.get(pull_request, "base")),
       updated_at: Data.get(pull_request, "updated_at")
     }
+  end
+
+  defp normalize_pull_request_search_result(pull_request) when is_map(pull_request) do
+    %{
+      number: Data.get(pull_request, "number"),
+      url: Data.get(pull_request, "html_url") || Data.get(pull_request, "url"),
+      title: Data.get(pull_request, "title"),
+      state: Data.get(pull_request, "state"),
+      updated_at: Data.get(pull_request, "updated_at")
+    }
+    |> Data.compact()
   end
 
   defp normalize_search_issue(issue) when is_map(issue) do
@@ -1392,6 +1436,14 @@ defmodule Jido.Connect.GitHub.Client do
       page: Map.get(params, :page, 1)
     ]
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp updated_pull_request_query(repo, checkpoint) when checkpoint in [nil, ""] do
+    "repo:#{repo} is:pr"
+  end
+
+  defp updated_pull_request_query(repo, checkpoint) do
+    "repo:#{repo} is:pr updated:>=#{checkpoint}"
   end
 
   defp search_issue_params(params) do

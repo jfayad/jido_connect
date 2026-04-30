@@ -1634,6 +1634,27 @@ defmodule Jido.Connect.GitHub.ClientTest do
           }
         ])
 
+      %{method: "GET", request_path: "/search/issues"} = conn ->
+        assert %{
+                 "order" => "asc",
+                 "per_page" => "100",
+                 "q" => "repo:org/repo is:pr updated:>=2026-04-29T10:00:00Z",
+                 "sort" => "updated"
+               } = URI.decode_query(conn.query_string)
+
+        Req.Test.json(conn, %{
+          total_count: 1,
+          items: [
+            %{
+              number: 7,
+              html_url: "https://github.test/pulls/7",
+              title: "Seventh",
+              state: "open",
+              updated_at: "2026-04-29T10:02:00Z"
+            }
+          ]
+        })
+
       %{method: "GET", request_path: "/user"} = conn ->
         Req.Test.json(conn, %{login: "octocat"})
 
@@ -1643,6 +1664,9 @@ defmodule Jido.Connect.GitHub.ClientTest do
 
     assert {:ok, [%{number: 3, updated_at: "2026-04-24T21:00:00Z"}]} =
              Client.list_new_issues("org/repo", "2026-04-24T20:00:00Z", "token")
+
+    assert {:ok, [%{number: 7, updated_at: "2026-04-29T10:02:00Z"}]} =
+             Client.list_updated_pull_requests("org/repo", "2026-04-29T10:00:00Z", "token")
 
     assert {:ok, %{"login" => "octocat"}} = Client.fetch_authenticated_user("token")
     assert {:ok, %{"id" => 42}} = Client.fetch_installation(42, "token")
