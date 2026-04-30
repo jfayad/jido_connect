@@ -756,6 +756,56 @@ defmodule Jido.Connect.GitHub.ClientTest do
              Client.create_issue_comment("org/repo", 2, "Ship it", "token")
   end
 
+  test "list issue comments sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/repos/org/repo/issues/2/comments"
+
+      assert %{
+               "page" => "2",
+               "per_page" => "10",
+               "since" => "2026-04-29T10:00:00Z"
+             } = URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, [
+        %{
+          id: 3,
+          html_url: "https://github.test/comments/3",
+          body: "Ship it",
+          user: %{login: "octocat", id: 1, type: "User"},
+          author_association: "MEMBER",
+          created_at: "2026-04-29T10:01:00Z",
+          updated_at: "2026-04-29T10:02:00Z"
+        }
+      ])
+    end)
+
+    assert {:ok,
+            [
+              %{
+                id: 3,
+                url: "https://github.test/comments/3",
+                body: "Ship it",
+                user: %{login: "octocat"},
+                author_association: "MEMBER",
+                created_at: "2026-04-29T10:01:00Z",
+                updated_at: "2026-04-29T10:02:00Z"
+              }
+            ]} =
+             Client.list_issue_comments(
+               %{
+                 repo: "org/repo",
+                 issue_number: 2,
+                 since: "2026-04-29T10:00:00Z",
+                 page: 2,
+                 per_page: 10
+               },
+               "token"
+             )
+  end
+
   test "close issue sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "PATCH"

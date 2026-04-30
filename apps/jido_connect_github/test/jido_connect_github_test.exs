@@ -292,6 +292,30 @@ defmodule Jido.Connect.GitHubTest do
       {:ok, %{id: 3, url: "https://github.test/comments/3", body: "Ship it"}}
     end
 
+    def list_issue_comments(
+          %{
+            repo: "org/repo",
+            issue_number: 2,
+            since: "2026-04-29T10:00:00Z",
+            page: 2,
+            per_page: 10
+          },
+          "token"
+        ) do
+      {:ok,
+       [
+         %{
+           id: 3,
+           url: "https://github.test/comments/3",
+           body: "Ship it",
+           user: %{login: "octocat"},
+           author_association: "MEMBER",
+           created_at: "2026-04-29T10:01:00Z",
+           updated_at: "2026-04-29T10:02:00Z"
+         }
+       ]}
+    end
+
     def list_new_issues("org/repo", nil, "token") do
       {:ok,
        [
@@ -498,6 +522,15 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.issue_comment.list",
+              resource: :comment,
+              verb: :list,
+              mutation?: false,
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} = Connect.action(spec, "github.issue_comment.list")
+
+    assert {:ok,
+            %{
               id: "github.issue.new",
               kind: :poll,
               checkpoint: :updated_at,
@@ -542,7 +575,8 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
              Jido.Connect.GitHub.Actions.MergePullRequest,
              Jido.Connect.GitHub.Actions.UpdateIssue,
-             Jido.Connect.GitHub.Actions.CreateIssueComment
+             Jido.Connect.GitHub.Actions.CreateIssueComment,
+             Jido.Connect.GitHub.Actions.ListIssueComments
            ]
 
     assert Jido.Connect.GitHub.jido_sensor_modules() == [
@@ -571,7 +605,8 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.UpdatePullRequest,
                  Jido.Connect.GitHub.Actions.MergePullRequest,
                  Jido.Connect.GitHub.Actions.UpdateIssue,
-                 Jido.Connect.GitHub.Actions.CreateIssueComment
+                 Jido.Connect.GitHub.Actions.CreateIssueComment,
+                 Jido.Connect.GitHub.Actions.ListIssueComments
                ],
                sensors: [Jido.Connect.GitHub.Sensors.NewIssues],
                plugin: Jido.Connect.GitHub.Plugin
@@ -595,6 +630,9 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:module, Jido.Connect.GitHub.Actions.CreateIssueComment} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.CreateIssueComment)
+
+    assert {:module, Jido.Connect.GitHub.Actions.ListIssueComments} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListIssueComments)
 
     assert {:module, Jido.Connect.GitHub.Actions.ListPullRequests} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListPullRequests)
@@ -644,6 +682,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.MergePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdateIssue, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.CreateIssueComment, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.ListIssueComments, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Sensors.NewIssues, :init, 2)
     assert function_exported?(Jido.Connect.GitHub.Plugin, :plugin_spec, 1)
   end
@@ -684,6 +723,31 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.CreateIssueComment.name() == "github_issue_comment_create"
+  end
+
+  test "generated issue comment list action metadata tracks pagination fields" do
+    projection = Jido.Connect.GitHub.Actions.ListIssueComments.jido_connect_projection()
+
+    assert projection.action_id == "github.issue_comment.list"
+    assert projection.label == "List issue comments"
+
+    assert Enum.map(projection.input, & &1.name) == [
+             :repo,
+             :issue_number,
+             :since,
+             :page,
+             :per_page
+           ]
+
+    assert Enum.map(projection.output, & &1.name) == [:comments]
+    assert projection.data_classification == :message_content
+    assert projection.risk == :read
+    assert projection.resource == :comment
+    assert projection.verb == :list
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.ListIssueComments.name() == "github_issue_comment_list"
   end
 
   test "generated update issue action metadata tracks editable fields" do
@@ -1369,6 +1433,37 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "invokes GitHub list issue comments action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              comments: [
+                %{
+                  id: 3,
+                  body: "Ship it",
+                  user: %{login: "octocat"},
+                  author_association: "MEMBER",
+                  created_at: "2026-04-29T10:01:00Z",
+                  updated_at: "2026-04-29T10:02:00Z"
+                }
+              ]
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.issue_comment.list",
+               %{
+                 repo: "org/repo",
+                 issue_number: 2,
+                 since: "2026-04-29T10:00:00Z",
+                 page: 2,
+                 per_page: 10
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   test "generated action delegates to integration invoke runtime" do
     {context, lease} = context_and_lease()
 
@@ -1536,7 +1631,8 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
              Jido.Connect.GitHub.Actions.MergePullRequest,
              Jido.Connect.GitHub.Actions.UpdateIssue,
-             Jido.Connect.GitHub.Actions.CreateIssueComment
+             Jido.Connect.GitHub.Actions.CreateIssueComment,
+             Jido.Connect.GitHub.Actions.ListIssueComments
            ]
 
     filtered =

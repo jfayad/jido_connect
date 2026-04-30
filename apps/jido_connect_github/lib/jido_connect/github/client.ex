@@ -154,6 +154,17 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_comment_response()
   end
 
+  def list_issue_comments(%{repo: repo, issue_number: issue_number} = params, access_token)
+      when is_binary(repo) and is_integer(issue_number) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(
+      url: "/repos/#{repo}/issues/#{issue_number}/comments",
+      params: issue_comment_list_params(params)
+    )
+    |> handle_comment_list_response()
+  end
+
   def close_issue(repo, number, access_token)
       when is_integer(number) and is_binary(access_token) do
     access_token
@@ -398,6 +409,18 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_comment_response(response), do: handle_error_response(response)
 
+  defp handle_comment_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_list(body) do
+    {:ok, Enum.map(body, &normalize_comment/1)}
+  end
+
+  defp handle_comment_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub issue comment list response was invalid", body)
+  end
+
+  defp handle_comment_list_response(response), do: handle_error_response(response)
+
   defp handle_map_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     {:ok, body}
@@ -508,8 +531,13 @@ defmodule Jido.Connect.GitHub.Client do
     %{
       id: Data.get(comment, "id"),
       url: Data.get(comment, "html_url") || Data.get(comment, "url"),
-      body: Data.get(comment, "body")
+      body: Data.get(comment, "body"),
+      user: normalize_user(Data.get(comment, "user")),
+      author_association: Data.get(comment, "author_association"),
+      created_at: Data.get(comment, "created_at"),
+      updated_at: Data.get(comment, "updated_at")
     }
+    |> Data.compact()
   end
 
   defp normalize_pull_request_merge(result) when is_map(result) do
@@ -750,6 +778,15 @@ defmodule Jido.Connect.GitHub.Client do
       branch: Map.get(params, :branch),
       status: Map.get(params, :status),
       event: Map.get(params, :event),
+      per_page: Map.get(params, :per_page, 30),
+      page: Map.get(params, :page, 1)
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp issue_comment_list_params(params) do
+    [
+      since: Map.get(params, :since),
       per_page: Map.get(params, :per_page, 30),
       page: Map.get(params, :page, 1)
     ]
