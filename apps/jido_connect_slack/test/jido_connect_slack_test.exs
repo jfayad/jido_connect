@@ -478,6 +478,70 @@ defmodule Jido.Connect.SlackTest do
              :thread_ts,
              :event_ts
            ]
+
+    assert {:ok,
+            %{
+              id: "slack.event.message.im",
+              kind: :webhook,
+              resource: :message,
+              verb: :watch,
+              policies: [:workspace_access],
+              scopes: ["im:history"],
+              dedupe: %{key: [:team_id, :channel, :ts]},
+              verification: %{
+                kind: :slack_signed_request,
+                signature_header: "x-slack-signature",
+                timestamp_header: "x-slack-request-timestamp"
+              }
+            } = trigger} = Connect.trigger(spec, "slack.event.message.im")
+
+    assert Enum.map(trigger.signal, & &1.name) == [
+             :team_id,
+             :event_id,
+             :channel,
+             :channel_type,
+             :user,
+             :user_team,
+             :source_team,
+             :text,
+             :ts,
+             :thread_ts,
+             :event_ts,
+             :sender,
+             :conversation
+           ]
+
+    assert {:ok,
+            %{
+              id: "slack.event.message.mpim",
+              kind: :webhook,
+              resource: :message,
+              verb: :watch,
+              policies: [:workspace_access],
+              scopes: ["mpim:history"],
+              dedupe: %{key: [:team_id, :channel, :ts]},
+              verification: %{
+                kind: :slack_signed_request,
+                signature_header: "x-slack-signature",
+                timestamp_header: "x-slack-request-timestamp"
+              }
+            } = trigger} = Connect.trigger(spec, "slack.event.message.mpim")
+
+    assert Enum.map(trigger.signal, & &1.name) == [
+             :team_id,
+             :event_id,
+             :channel,
+             :channel_type,
+             :user,
+             :user_team,
+             :source_team,
+             :text,
+             :ts,
+             :thread_ts,
+             :event_ts,
+             :sender,
+             :conversation
+           ]
   end
 
   test "Slack catalog entry exposes setup, auth, and runtime capabilities" do
@@ -514,7 +578,9 @@ defmodule Jido.Connect.SlackTest do
     assert Jido.Connect.Slack.jido_sensor_modules() == [
              Jido.Connect.Slack.Sensors.AppMention,
              Jido.Connect.Slack.Sensors.PublicChannelMessage,
-             Jido.Connect.Slack.Sensors.PrivateChannelMessage
+             Jido.Connect.Slack.Sensors.PrivateChannelMessage,
+             Jido.Connect.Slack.Sensors.DirectMessage,
+             Jido.Connect.Slack.Sensors.MultiPersonDirectMessage
            ]
 
     assert Jido.Connect.Slack.jido_plugin_module() == Jido.Connect.Slack.Plugin
@@ -540,7 +606,9 @@ defmodule Jido.Connect.SlackTest do
                sensors: [
                  Jido.Connect.Slack.Sensors.AppMention,
                  Jido.Connect.Slack.Sensors.PublicChannelMessage,
-                 Jido.Connect.Slack.Sensors.PrivateChannelMessage
+                 Jido.Connect.Slack.Sensors.PrivateChannelMessage,
+                 Jido.Connect.Slack.Sensors.DirectMessage,
+                 Jido.Connect.Slack.Sensors.MultiPersonDirectMessage
                ],
                plugin: Jido.Connect.Slack.Plugin
              }
@@ -591,10 +659,24 @@ defmodule Jido.Connect.SlackTest do
     assert {:module, Jido.Connect.Slack.Sensors.PrivateChannelMessage} =
              Code.ensure_loaded(Jido.Connect.Slack.Sensors.PrivateChannelMessage)
 
+    assert {:module, Jido.Connect.Slack.Sensors.DirectMessage} =
+             Code.ensure_loaded(Jido.Connect.Slack.Sensors.DirectMessage)
+
+    assert {:module, Jido.Connect.Slack.Sensors.MultiPersonDirectMessage} =
+             Code.ensure_loaded(Jido.Connect.Slack.Sensors.MultiPersonDirectMessage)
+
     assert function_exported?(Jido.Connect.Slack.Actions.ListChannels, :run, 2)
     assert function_exported?(Jido.Connect.Slack.Sensors.AppMention, :handle_event, 2)
     assert function_exported?(Jido.Connect.Slack.Sensors.PublicChannelMessage, :handle_event, 2)
     assert function_exported?(Jido.Connect.Slack.Sensors.PrivateChannelMessage, :handle_event, 2)
+    assert function_exported?(Jido.Connect.Slack.Sensors.DirectMessage, :handle_event, 2)
+
+    assert function_exported?(
+             Jido.Connect.Slack.Sensors.MultiPersonDirectMessage,
+             :handle_event,
+             2
+           )
+
     assert function_exported?(Jido.Connect.Slack.Plugin, :plugin_spec, 1)
   end
 
@@ -1283,6 +1365,31 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok, ^state} =
              Jido.Connect.Slack.Sensors.PrivateChannelMessage.handle_event(:anything, state)
+  end
+
+  test "generated direct message sensor exposes trigger metadata and ignores direct events" do
+    assert Jido.Connect.Slack.Sensors.DirectMessage.trigger_id() == "slack.event.message.im"
+    assert Jido.Connect.Slack.Sensors.DirectMessage.signal_type() == "slack.event.message.im"
+    assert Jido.Connect.Slack.Sensors.DirectMessage.signal_source() == "/jido/connect/slack"
+
+    assert {:ok, state} = Jido.Connect.Slack.Sensors.DirectMessage.init(%{}, %{})
+    assert {:ok, ^state} = Jido.Connect.Slack.Sensors.DirectMessage.handle_event(:anything, state)
+  end
+
+  test "generated multi-person direct message sensor exposes trigger metadata and ignores direct events" do
+    assert Jido.Connect.Slack.Sensors.MultiPersonDirectMessage.trigger_id() ==
+             "slack.event.message.mpim"
+
+    assert Jido.Connect.Slack.Sensors.MultiPersonDirectMessage.signal_type() ==
+             "slack.event.message.mpim"
+
+    assert Jido.Connect.Slack.Sensors.MultiPersonDirectMessage.signal_source() ==
+             "/jido/connect/slack"
+
+    assert {:ok, state} = Jido.Connect.Slack.Sensors.MultiPersonDirectMessage.init(%{}, %{})
+
+    assert {:ok, ^state} =
+             Jido.Connect.Slack.Sensors.MultiPersonDirectMessage.handle_event(:anything, state)
   end
 
   defp context_and_lease(opts \\ []) do

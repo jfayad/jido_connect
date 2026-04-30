@@ -38,12 +38,20 @@ defmodule Jido.Connect.Slack.AppManifestTest do
              "files:write",
              "reactions:write",
              "app_mentions:read",
-             "groups:history"
+             "groups:history",
+             "im:history",
+             "mpim:history"
            ]
 
     assert get_in(manifest, [:settings, :event_subscriptions]) == %{
              request_url: "https://demo.ngrok-free.app/integrations/slack/events",
-             bot_events: ["app_mention", "message.channels", "message.groups"]
+             bot_events: [
+               "app_mention",
+               "message.channels",
+               "message.groups",
+               "message.im",
+               "message.mpim"
+             ]
            }
 
     assert get_in(manifest, [:settings, :interactivity]) == %{

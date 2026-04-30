@@ -42,6 +42,8 @@ Event subscriptions use Slack's event-specific history scopes:
 - `app_mention` requires `app_mentions:read`
 - `message.channels` requires `channels:history`
 - `message.groups` requires `groups:history`
+- `message.im` requires `im:history`
+- `message.mpim` requires `mpim:history`
 
 Local env keys:
 

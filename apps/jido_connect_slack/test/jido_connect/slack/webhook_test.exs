@@ -242,6 +242,99 @@ defmodule Jido.Connect.Slack.WebhookTest do
              Webhook.normalize_signal("message.groups", public_payload)
   end
 
+  test "normalizes direct message events with user and conversation metadata" do
+    payload = %{
+      "type" => "event_callback",
+      "team_id" => "T123",
+      "event_id" => "Ev901",
+      "event" => %{
+        "type" => "message",
+        "channel" => "D123",
+        "channel_type" => "im",
+        "user" => "U123",
+        "user_team" => "T123",
+        "source_team" => "T123",
+        "text" => "direct hello",
+        "ts" => "1700000000.000400",
+        "thread_ts" => "1700000000.000100",
+        "event_ts" => "1700000000.000400"
+      }
+    }
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev901",
+              channel: "D123",
+              channel_type: "im",
+              user: "U123",
+              user_team: "T123",
+              source_team: "T123",
+              text: "direct hello",
+              ts: "1700000000.000400",
+              thread_ts: "1700000000.000100",
+              event_ts: "1700000000.000400",
+              sender: %{id: "U123", team_id: "T123"},
+              conversation: %{id: "D123", type: "im"}
+            }} = Webhook.normalize_signal("message.im", payload)
+
+    assert {:ok, %{channel: "D123", conversation: %{type: "im"}}} =
+             Webhook.normalize_signal("message", payload)
+
+    assert {:ok, %{channel: "D123", conversation: %{type: "im"}}} =
+             Webhook.normalize_event(payload)
+
+    group_payload = put_in(payload, ["event", "channel_type"], "group")
+
+    assert {:error, %Error.ProviderError{provider: :slack, reason: :unsupported_channel_type}} =
+             Webhook.normalize_signal("message.im", group_payload)
+  end
+
+  test "normalizes multi-person direct message events with user and conversation metadata" do
+    payload = %{
+      "type" => "event_callback",
+      "team_id" => "T123",
+      "event_id" => "Ev902",
+      "event" => %{
+        "type" => "message",
+        "channel" => "GMP123",
+        "channel_type" => "mpim",
+        "user" => "U123",
+        "user_team" => "T123",
+        "source_team" => "T456",
+        "text" => "group direct hello",
+        "ts" => "1700000000.000500",
+        "thread_ts" => "1700000000.000100",
+        "event_ts" => "1700000000.000500"
+      }
+    }
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev902",
+              channel: "GMP123",
+              channel_type: "mpim",
+              user: "U123",
+              user_team: "T123",
+              source_team: "T456",
+              text: "group direct hello",
+              ts: "1700000000.000500",
+              thread_ts: "1700000000.000100",
+              event_ts: "1700000000.000500",
+              sender: %{id: "U123", team_id: "T123"},
+              conversation: %{id: "GMP123", type: "mpim"}
+            }} = Webhook.normalize_signal("message.mpim", payload)
+
+    assert {:ok, %{channel: "GMP123", conversation: %{type: "mpim"}}} =
+             Webhook.normalize_signal("message", payload)
+
+    im_payload = put_in(payload, ["event", "channel_type"], "im")
+
+    assert {:error, %Error.ProviderError{provider: :slack, reason: :unsupported_channel_type}} =
+             Webhook.normalize_signal("message.mpim", im_payload)
+  end
+
   test "invalid JSON payloads are provider errors" do
     body = "not json"
     timestamp = "1700000000"

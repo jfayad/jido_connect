@@ -111,7 +111,7 @@ defmodule Jido.Connect.Slack.Webhook do
         %{"type" => "event_callback", "event" => %{"type" => "message"} = event} = payload
       ) do
     with :ok <- reject_message_subtype(event),
-         :ok <- require_message_channel_type(event, [nil, "channel", "group"]) do
+         :ok <- require_message_channel_type(event, [nil, "channel", "group", "im", "mpim"]) do
       {:ok, message_signal(payload, event)}
     end
   end
@@ -122,6 +122,14 @@ defmodule Jido.Connect.Slack.Webhook do
 
   def normalize_signal("message.groups", payload) do
     normalize_message_signal(payload, ["group"])
+  end
+
+  def normalize_signal("message.im", payload) do
+    normalize_message_signal(payload, ["im"])
+  end
+
+  def normalize_signal("message.mpim", payload) do
+    normalize_message_signal(payload, ["mpim"])
   end
 
   def normalize_signal(event, _payload) do
@@ -208,16 +216,48 @@ defmodule Jido.Connect.Slack.Webhook do
   end
 
   defp message_signal(payload, event) do
+    signal =
+      Data.compact(%{
+        team_id: Data.get(payload, "team_id"),
+        event_id: Data.get(payload, "event_id"),
+        channel: Data.get(event, "channel"),
+        channel_type: Data.get(event, "channel_type"),
+        user: Data.get(event, "user"),
+        text: Data.get(event, "text"),
+        ts: Data.get(event, "ts"),
+        thread_ts: Data.get(event, "thread_ts"),
+        event_ts: Data.get(event, "event_ts")
+      })
+
+    case Data.get(event, "channel_type") do
+      channel_type when channel_type in ["im", "mpim"] ->
+        Map.merge(signal, direct_message_metadata(event))
+
+      _other ->
+        signal
+    end
+  end
+
+  defp direct_message_metadata(event) do
     Data.compact(%{
-      team_id: Data.get(payload, "team_id"),
-      event_id: Data.get(payload, "event_id"),
-      channel: Data.get(event, "channel"),
-      channel_type: Data.get(event, "channel_type"),
-      user: Data.get(event, "user"),
-      text: Data.get(event, "text"),
-      ts: Data.get(event, "ts"),
-      thread_ts: Data.get(event, "thread_ts"),
-      event_ts: Data.get(event, "event_ts")
+      user_team: Data.get(event, "user_team"),
+      source_team: Data.get(event, "source_team"),
+      sender: sender_metadata(event),
+      conversation: conversation_metadata(event)
+    })
+  end
+
+  defp sender_metadata(event) do
+    Data.compact(%{
+      id: Data.get(event, "user"),
+      team_id: Data.get(event, "user_team") || Data.get(event, "source_team")
+    })
+  end
+
+  defp conversation_metadata(event) do
+    Data.compact(%{
+      id: Data.get(event, "channel"),
+      type: Data.get(event, "channel_type")
     })
   end
 

@@ -111,5 +111,87 @@ defmodule Jido.Connect.Slack.Triggers.Events do
         field :event_ts, :string
       end
     end
+
+    webhook :direct_message do
+      id "slack.event.message.im"
+      resource :message
+      verb :watch
+      data_classification :workspace_content
+      label "Direct message"
+
+      description "Receive Slack Events API message.im callbacks for plain direct messages. Requires Slack im:history for direct message history events."
+
+      verification %{
+        kind: :slack_signed_request,
+        signature_header: "x-slack-signature",
+        timestamp_header: "x-slack-request-timestamp"
+      }
+
+      dedupe %{key: [:team_id, :channel, :ts]}
+      handler Jido.Connect.Slack.Handlers.Triggers.DirectMessageEvent
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["im:history"]
+      end
+
+      signal do
+        field :team_id, :string
+        field :event_id, :string
+        field :channel, :string
+        field :channel_type, :string
+        field :user, :string
+        field :user_team, :string
+        field :source_team, :string
+        field :text, :string
+        field :ts, :string
+        field :thread_ts, :string
+        field :event_ts, :string
+        field :sender, :map
+        field :conversation, :map
+      end
+    end
+
+    webhook :multi_person_direct_message do
+      id "slack.event.message.mpim"
+      resource :message
+      verb :watch
+      data_classification :workspace_content
+      label "Multi-person direct message"
+
+      description "Receive Slack Events API message.mpim callbacks for plain multi-person direct messages. Requires Slack mpim:history for multi-person direct message history events."
+
+      verification %{
+        kind: :slack_signed_request,
+        signature_header: "x-slack-signature",
+        timestamp_header: "x-slack-request-timestamp"
+      }
+
+      dedupe %{key: [:team_id, :channel, :ts]}
+      handler Jido.Connect.Slack.Handlers.Triggers.MultiPersonDirectMessageEvent
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["mpim:history"]
+      end
+
+      signal do
+        field :team_id, :string
+        field :event_id, :string
+        field :channel, :string
+        field :channel_type, :string
+        field :user, :string
+        field :user_team, :string
+        field :source_team, :string
+        field :text, :string
+        field :ts, :string
+        field :thread_ts, :string
+        field :event_ts, :string
+        field :sender, :map
+        field :conversation, :map
+      end
+    end
   end
 end
