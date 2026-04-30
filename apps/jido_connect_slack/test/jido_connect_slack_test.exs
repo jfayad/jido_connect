@@ -1358,7 +1358,12 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Sensors.MultiPersonDirectMessage,
              Jido.Connect.Slack.Sensors.ThreadReply,
              Jido.Connect.Slack.Sensors.ReactionAdded,
-             Jido.Connect.Slack.Sensors.ReactionRemoved
+             Jido.Connect.Slack.Sensors.ReactionRemoved,
+             Jido.Connect.Slack.Sensors.FileCreated,
+             Jido.Connect.Slack.Sensors.FileShared,
+             Jido.Connect.Slack.Sensors.FilePublic,
+             Jido.Connect.Slack.Sensors.FileDeleted,
+             Jido.Connect.Slack.Sensors.FileChange
            ]
 
     assert Jido.Connect.Slack.jido_plugin_module() == Jido.Connect.Slack.Plugin
@@ -1410,7 +1415,12 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Sensors.MultiPersonDirectMessage,
                  Jido.Connect.Slack.Sensors.ThreadReply,
                  Jido.Connect.Slack.Sensors.ReactionAdded,
-                 Jido.Connect.Slack.Sensors.ReactionRemoved
+                 Jido.Connect.Slack.Sensors.ReactionRemoved,
+                 Jido.Connect.Slack.Sensors.FileCreated,
+                 Jido.Connect.Slack.Sensors.FileShared,
+                 Jido.Connect.Slack.Sensors.FilePublic,
+                 Jido.Connect.Slack.Sensors.FileDeleted,
+                 Jido.Connect.Slack.Sensors.FileChange
                ],
                plugin: Jido.Connect.Slack.Plugin
              }

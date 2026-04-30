@@ -26,6 +26,7 @@ defmodule Jido.Connect.Slack.AppManifest do
     "groups:history",
     "im:history",
     "mpim:history",
+    "files:read",
     "reactions:read"
   ]
 
@@ -127,6 +128,11 @@ defmodule Jido.Connect.Slack.AppManifest do
         "message.groups",
         "message.im",
         "message.mpim",
+        "file_created",
+        "file_shared",
+        "file_public",
+        "file_deleted",
+        "file_change",
         "reaction_added",
         "reaction_removed"
       ]

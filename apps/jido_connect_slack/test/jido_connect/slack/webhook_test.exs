@@ -476,6 +476,91 @@ defmodule Jido.Connect.Slack.WebhookTest do
              Webhook.normalize_event(payload)
   end
 
+  test "normalizes file created events with file metadata" do
+    payload = file_event_payload("file_created", "Ev906", %{"user_id" => "U123"})
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev906",
+              file_id: "F123",
+              file: %{"id" => "F123"},
+              user_id: "U123",
+              actor: %{id: "U123", team_id: "T123"}
+            }} = Webhook.normalize_signal("file_created", payload)
+
+    assert {:ok, %{file_id: "F123"}} = Webhook.normalize_event(payload)
+  end
+
+  test "normalizes file shared events with channel and actor metadata" do
+    payload =
+      file_event_payload("file_shared", "Ev907", %{
+        "channel_id" => "C123",
+        "user_id" => "U123",
+        "event_ts" => "1700000000.001000"
+      })
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev907",
+              file_id: "F123",
+              file: %{"id" => "F123"},
+              user_id: "U123",
+              channel_id: "C123",
+              event_ts: "1700000000.001000",
+              actor: %{id: "U123", team_id: "T123"}
+            }} = Webhook.normalize_signal("file_shared", payload)
+
+    assert {:ok, %{channel_id: "C123"}} = Webhook.normalize_event(payload)
+  end
+
+  test "normalizes file public events" do
+    payload = file_event_payload("file_public", "Ev908")
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev908",
+              file_id: "F123",
+              file: %{"id" => "F123"}
+            }} = Webhook.normalize_signal("file_public", payload)
+  end
+
+  test "normalizes file deleted events without requiring embedded file metadata" do
+    payload =
+      file_event_payload("file_deleted", "Ev909", %{"event_ts" => "1700000000.001100"})
+      |> update_in(["event"], &Map.delete(&1, "file"))
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev909",
+              file_id: "F123",
+              event_ts: "1700000000.001100"
+            }} = Webhook.normalize_signal("file_deleted", payload)
+
+    assert {:ok, signal} = Webhook.normalize_event(payload)
+    refute Map.has_key?(signal, :file)
+  end
+
+  test "normalizes file change events" do
+    payload =
+      file_event_payload("file_change", "Ev910", %{
+        "event_ts" => "1700000000.001200",
+        "file" => %{"id" => "F123", "name" => "report.pdf"}
+      })
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev910",
+              file_id: "F123",
+              file: %{"id" => "F123", "name" => "report.pdf"},
+              event_ts: "1700000000.001200"
+            }} = Webhook.normalize_signal("file_change", payload)
+  end
+
   test "invalid JSON payloads are provider errors" do
     body = "not json"
     timestamp = "1700000000"
@@ -502,5 +587,22 @@ defmodule Jido.Connect.Slack.WebhookTest do
       |> Base.encode16(case: :lower)
 
     "v0=#{signature}"
+  end
+
+  defp file_event_payload(type, event_id, event_attrs \\ %{}) do
+    %{
+      "type" => "event_callback",
+      "team_id" => "T123",
+      "event_id" => event_id,
+      "event" =>
+        Map.merge(
+          %{
+            "type" => type,
+            "file_id" => "F123",
+            "file" => %{"id" => "F123"}
+          },
+          event_attrs
+        )
+    }
   end
 end
