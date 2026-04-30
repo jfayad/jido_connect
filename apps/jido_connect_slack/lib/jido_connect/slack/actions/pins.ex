@@ -31,5 +31,33 @@ defmodule Jido.Connect.Slack.Actions.Pins do
         field :timestamp, :string
       end
     end
+
+    action :remove_pin do
+      id "slack.pin.remove"
+      resource :pin
+      verb :delete
+      data_classification :workspace_metadata
+      label "Unpin message"
+      description "Remove a pinned Slack message from a channel by channel and timestamp."
+      handler Jido.Connect.Slack.Handlers.Actions.RemovePin
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["pins:write"]
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+        field :timestamp, :string, required?: true, description: "Slack message timestamp."
+      end
+
+      output do
+        field :type, :string
+        field :channel, :string
+        field :timestamp, :string
+      end
+    end
   end
 end
