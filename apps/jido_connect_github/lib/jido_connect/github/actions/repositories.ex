@@ -59,6 +59,38 @@ defmodule Jido.Connect.GitHub.Actions.Repositories do
       end
     end
 
+    action :get_repository do
+      id "github.repo.get"
+      resource :repository
+      verb :get
+      data_classification :workspace_metadata
+      label "Get repository"
+      description "Fetch GitHub repository metadata by owner and name."
+      handler Jido.Connect.GitHub.Handlers.Actions.GetRepository
+      effect :read
+
+      access do
+        auth [:user, :installation], default: :user
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :owner, :string, required?: true, example: "org"
+        field :name, :string, required?: true, example: "repo"
+      end
+
+      output do
+        field :id, :integer
+        field :name, :string
+        field :full_name, :string
+        field :owner, :map
+        field :private, :boolean
+        field :default_branch, :string
+        field :permissions, :map
+        field :url, :string
+      end
+    end
+
     action :read_file do
       id "github.file.read"
       resource :file

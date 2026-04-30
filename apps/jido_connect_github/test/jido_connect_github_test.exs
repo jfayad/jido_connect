@@ -39,6 +39,20 @@ defmodule Jido.Connect.GitHubTest do
        }}
     end
 
+    def get_repository("org", "repo", "token") do
+      {:ok,
+       %{
+         id: 10,
+         name: "repo",
+         full_name: "org/repo",
+         owner: %{login: "org", type: "Organization"},
+         private: true,
+         default_branch: "main",
+         permissions: %{admin: false, push: true, pull: true},
+         url: "https://github.test/org/repo"
+       }}
+    end
+
     def list_issues("org/repo", "open", "token") do
       {:ok, [%{number: 1, url: "https://github.test/1", title: "First", state: "open"}]}
     end
@@ -406,6 +420,17 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.repo.get",
+              resource: :repository,
+              verb: :get,
+              mutation?: false,
+              auth_profiles: [:user, :installation],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.repo.get")
+
+    assert {:ok,
+            %{
               id: "github.file.read",
               resource: :file,
               verb: :read,
@@ -634,6 +659,7 @@ defmodule Jido.Connect.GitHubTest do
     assert Jido.Connect.GitHub.jido_action_modules() == [
              Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
+             Jido.Connect.GitHub.Actions.GetRepository,
              Jido.Connect.GitHub.Actions.ReadFile,
              Jido.Connect.GitHub.Actions.UpdateFile,
              Jido.Connect.GitHub.Actions.ListIssues,
@@ -667,6 +693,7 @@ defmodule Jido.Connect.GitHubTest do
                actions: [
                  Jido.Connect.GitHub.Actions.ListRepositories,
                  Jido.Connect.GitHub.Actions.ListInstallationRepositories,
+                 Jido.Connect.GitHub.Actions.GetRepository,
                  Jido.Connect.GitHub.Actions.ReadFile,
                  Jido.Connect.GitHub.Actions.UpdateFile,
                  Jido.Connect.GitHub.Actions.ListIssues,
@@ -699,6 +726,9 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:module, Jido.Connect.GitHub.Actions.ListInstallationRepositories} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListInstallationRepositories)
+
+    assert {:module, Jido.Connect.GitHub.Actions.GetRepository} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.GetRepository)
 
     assert {:module, Jido.Connect.GitHub.Actions.ReadFile} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ReadFile)
@@ -757,6 +787,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListInstallationRepositories, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.GetRepository, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ReadFile, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdateFile, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.AddIssueLabels, :run, 2)
@@ -1306,6 +1337,25 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "invokes GitHub get repository action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              id: 10,
+              name: "repo",
+              full_name: "org/repo",
+              permissions: %{pull: true}
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.repo.get",
+               %{owner: "org", name: "repo"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   test "invokes GitHub update issue action through injected client and lease" do
     {context, lease} = context_and_lease()
 
@@ -1501,6 +1551,15 @@ defmodule Jido.Connect.GitHubTest do
                "github.file.read",
                %{repo: "org/repo", path: "README.md", ref: "main"},
                context: read_context,
+               credential_lease: lease
+             )
+
+    assert {:ok, %{full_name: "org/repo"}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.repo.get",
+               %{owner: "org", name: "repo"},
+               context: context,
                credential_lease: lease
              )
 
@@ -1814,6 +1873,22 @@ defmodule Jido.Connect.GitHubTest do
              })
   end
 
+  test "generated get repository action delegates to integration invoke runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              id: 10,
+              full_name: "org/repo",
+              owner: %{login: "org"},
+              permissions: %{pull: true}
+            }} =
+             Jido.Connect.GitHub.Actions.GetRepository.run(%{owner: "org", name: "repo"}, %{
+               integration_context: context,
+               credential_lease: lease
+             })
+  end
+
   test "generated installation repository action delegates to integration invoke runtime" do
     {context, lease} =
       context_and_lease(
@@ -1944,6 +2019,7 @@ defmodule Jido.Connect.GitHubTest do
     assert spec.actions == [
              Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
+             Jido.Connect.GitHub.Actions.GetRepository,
              Jido.Connect.GitHub.Actions.ReadFile,
              Jido.Connect.GitHub.Actions.UpdateFile,
              Jido.Connect.GitHub.Actions.ListIssues,

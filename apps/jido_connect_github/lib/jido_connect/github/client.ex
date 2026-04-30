@@ -33,6 +33,14 @@ defmodule Jido.Connect.GitHub.Client do
     |> response_handler.()
   end
 
+  def get_repository(owner, name, access_token)
+      when is_binary(owner) and is_binary(name) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/repos/#{owner}/#{name}")
+    |> handle_repository_response()
+  end
+
   def read_file(repo, path, ref, access_token)
       when is_binary(repo) and is_binary(path) and is_binary(access_token) do
     access_token
@@ -301,6 +309,18 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_user_repository_list_response(response), do: handle_error_response(response)
 
+  defp handle_repository_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_repository(body)}
+  end
+
+  defp handle_repository_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub repository response was invalid", body)
+  end
+
+  defp handle_repository_response(response), do: handle_error_response(response)
+
   defp handle_file_content_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     case Data.get(body, "type") do
@@ -537,6 +557,7 @@ defmodule Jido.Connect.GitHub.Client do
       owner: normalize_repository_owner(Data.get(repository, "owner")),
       private: Data.get(repository, "private"),
       default_branch: Data.get(repository, "default_branch"),
+      permissions: Data.get(repository, "permissions"),
       url: Data.get(repository, "html_url") || Data.get(repository, "url")
     }
   end

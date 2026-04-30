@@ -110,6 +110,40 @@ defmodule Jido.Connect.GitHub.ClientTest do
             }} = Client.list_repositories(%{page: 1, per_page: 30}, "token")
   end
 
+  test "get repository sends expected request and normalizes metadata" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/repos/org/repo"
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        id: 10,
+        name: "repo",
+        full_name: "org/repo",
+        private: true,
+        default_branch: "main",
+        permissions: %{admin: false, push: true, pull: true},
+        html_url: "https://github.test/org/repo",
+        owner: %{
+          login: "org",
+          id: 7,
+          type: "Organization",
+          html_url: "https://github.test/org"
+        }
+      })
+    end)
+
+    assert {:ok,
+            %{
+              id: 10,
+              name: "repo",
+              full_name: "org/repo",
+              permissions: %{"pull" => true},
+              owner: %{login: "org"},
+              url: "https://github.test/org/repo"
+            }} = Client.get_repository("org", "repo", "token")
+  end
+
   test "read file sends expected request and decodes UTF-8 content" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"
@@ -1019,6 +1053,9 @@ defmodule Jido.Connect.GitHub.ClientTest do
     assert {:error, %Error.ProviderError{status: 404, details: %{message: "Not Found"}}} =
              Client.list_issues("org/missing", "open", "token")
 
+    assert {:error, %Error.ProviderError{status: 404, details: %{message: "Not Found"}}} =
+             Client.get_repository("org", "missing", "token")
+
     assert {:error, %Error.ProviderError{status: 422, details: %{message: "Validation Failed"}}} =
              Client.create_issue("org/repo", %{title: ""}, "token")
 
@@ -1068,5 +1105,18 @@ defmodule Jido.Connect.GitHub.ClientTest do
                %{auth_profile: :installation, page: 1, per_page: 30},
                "token"
              )
+  end
+
+  test "normalizes malformed repository get responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      Req.Test.json(conn, ["unexpected"])
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :invalid_response,
+              details: %{body: ["unexpected"]}
+            }} = Client.get_repository("org", "repo", "token")
   end
 end
