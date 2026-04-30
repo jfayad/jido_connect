@@ -16,6 +16,7 @@ defmodule Jido.Connect.GitHub.ScopeResolver do
       "github.workflow.dispatch" -> ["metadata:read", "actions:write"]
       "github.pull_request.create" -> ["metadata:read", "pull_requests:write"]
       "github.pull_request.merge" -> ["metadata:read", "pull_requests:write", "contents:write"]
+      "github.pull_request.reviewers.request" -> ["metadata:read", "pull_requests:write"]
       "github.pull_request.update" -> ["metadata:read", "pull_requests:write"]
       "github.pull_request.list" -> ["metadata:read", "pull_requests:read"]
       "github.issue.new" -> ["metadata:read", "issues:read"]

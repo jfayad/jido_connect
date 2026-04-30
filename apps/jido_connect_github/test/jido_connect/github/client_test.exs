@@ -682,6 +682,68 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "request pull request reviewers sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/pulls/5/requested_reviewers"
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "reviewers" => ["octocat"],
+               "team_reviewers" => ["core"]
+             }
+
+      Req.Test.json(conn, %{
+        number: 5,
+        html_url: "https://github.test/pull/5",
+        title: "Feature",
+        state: "open",
+        requested_reviewers: [
+          %{login: "octocat", id: 1, type: "User", html_url: "https://github.test/octocat"}
+        ],
+        requested_teams: [
+          %{
+            id: 2,
+            name: "Core",
+            slug: "core",
+            description: "Core maintainers",
+            privacy: "closed",
+            html_url: "https://github.test/orgs/org/teams/core"
+          }
+        ]
+      })
+    end)
+
+    assert {:ok,
+            %{
+              number: 5,
+              url: "https://github.test/pull/5",
+              title: "Feature",
+              state: "open",
+              requested_reviewers: [
+                %{login: "octocat", id: 1, type: "User", url: "https://github.test/octocat"}
+              ],
+              requested_teams: [
+                %{
+                  id: 2,
+                  name: "Core",
+                  slug: "core",
+                  description: "Core maintainers",
+                  privacy: "closed",
+                  url: "https://github.test/orgs/org/teams/core"
+                }
+              ]
+            }} =
+             Client.request_pull_request_reviewers(
+               "org/repo",
+               5,
+               %{reviewers: ["octocat"], team_reviewers: ["core"]},
+               "token"
+             )
+  end
+
   test "create issue sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

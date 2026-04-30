@@ -287,6 +287,23 @@ defmodule Jido.Connect.GitHubTest do
        }}
     end
 
+    def request_pull_request_reviewers(
+          "org/repo",
+          5,
+          %{reviewers: ["octocat"], team_reviewers: ["core"]},
+          "token"
+        ) do
+      {:ok,
+       %{
+         number: 5,
+         url: "https://github.test/pull/5",
+         title: "Feature",
+         state: "open",
+         requested_reviewers: [%{login: "octocat", id: 1, type: "User"}],
+         requested_teams: [%{slug: "core", name: "Core", id: 2}]
+       }}
+    end
+
     def merge_pull_request(
           "org/repo",
           5,
@@ -534,6 +551,17 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.pull_request.reviewers.request",
+              resource: :pull_request,
+              verb: :update,
+              mutation?: true,
+              confirmation: :required_for_ai,
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} = Connect.action(spec, "github.pull_request.reviewers.request")
+
+    assert {:ok,
+            %{
               id: "github.pull_request.merge",
               resource: :pull_request,
               verb: :merge,
@@ -619,6 +647,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.GetPullRequest,
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
+             Jido.Connect.GitHub.Actions.RequestPullRequestReviewers,
              Jido.Connect.GitHub.Actions.MergePullRequest,
              Jido.Connect.GitHub.Actions.UpdateIssue,
              Jido.Connect.GitHub.Actions.CreateIssueComment,
@@ -651,6 +680,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.GetPullRequest,
                  Jido.Connect.GitHub.Actions.CreatePullRequest,
                  Jido.Connect.GitHub.Actions.UpdatePullRequest,
+                 Jido.Connect.GitHub.Actions.RequestPullRequestReviewers,
                  Jido.Connect.GitHub.Actions.MergePullRequest,
                  Jido.Connect.GitHub.Actions.UpdateIssue,
                  Jido.Connect.GitHub.Actions.CreateIssueComment,
@@ -709,6 +739,9 @@ defmodule Jido.Connect.GitHubTest do
     assert {:module, Jido.Connect.GitHub.Actions.UpdatePullRequest} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.UpdatePullRequest)
 
+    assert {:module, Jido.Connect.GitHub.Actions.RequestPullRequestReviewers} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.RequestPullRequestReviewers)
+
     assert {:module, Jido.Connect.GitHub.Actions.MergePullRequest} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.MergePullRequest)
 
@@ -735,6 +768,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.GetPullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.CreatePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdatePullRequest, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.RequestPullRequestReviewers, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.MergePullRequest, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdateIssue, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.CreateIssueComment, :run, 2)
@@ -1111,6 +1145,40 @@ defmodule Jido.Connect.GitHubTest do
     assert Jido.Connect.GitHub.Actions.UpdatePullRequest.name() == "github_pull_request_update"
   end
 
+  test "generated request pull request reviewers action metadata tracks reviewer fields" do
+    projection = Jido.Connect.GitHub.Actions.RequestPullRequestReviewers.jido_connect_projection()
+
+    assert projection.action_id == "github.pull_request.reviewers.request"
+    assert projection.label == "Request pull request reviewers"
+
+    assert Enum.map(projection.input, & &1.name) == [
+             :repo,
+             :pull_number,
+             :reviewers,
+             :team_reviewers
+           ]
+
+    assert Enum.map(projection.output, & &1.name) == [
+             :number,
+             :url,
+             :title,
+             :state,
+             :requested_reviewers,
+             :requested_teams
+           ]
+
+    assert projection.risk == :write
+    assert projection.confirmation == :required_for_ai
+    assert projection.resource == :pull_request
+    assert projection.verb == :update
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+
+    assert Jido.Connect.GitHub.Actions.RequestPullRequestReviewers.name() ==
+             "github_pull_request_reviewers_request"
+  end
+
   test "generated merge pull request action metadata tracks merge guard fields" do
     projection = Jido.Connect.GitHub.Actions.MergePullRequest.jido_connect_projection()
 
@@ -1371,6 +1439,44 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "invokes GitHub request pull request reviewers action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              number: 5,
+              title: "Feature",
+              state: "open",
+              requested_reviewers: [%{login: "octocat"}],
+              requested_teams: [%{slug: "core"}]
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request.reviewers.request",
+               %{
+                 repo: "org/repo",
+                 pull_number: 5,
+                 reviewers: ["octocat"],
+                 team_reviewers: ["core"]
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "rejects empty reviewer lists before requesting pull request reviewers" do
+    {context, lease} = context_and_lease()
+
+    assert {:error, %Connect.Error.ValidationError{reason: :empty_reviewers, subject: :reviewers}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request.reviewers.request",
+               %{repo: "org/repo", pull_number: 5, reviewers: [], team_reviewers: []},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   test "GitHub App installation connections use installation-specific scopes" do
     {context, lease} =
       context_and_lease(profile: :installation, scopes: ["metadata:read", "issues:read"])
@@ -1499,6 +1605,19 @@ defmodule Jido.Connect.GitHubTest do
                Jido.Connect.GitHub.integration(),
                "github.pull_request.update",
                %{repo: "org/repo", pull_number: 5, title: "Updated feature"},
+               context: missing_write,
+               credential_lease: lease
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["pull_requests:write"]
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.pull_request.reviewers.request",
+               %{repo: "org/repo", pull_number: 5, reviewers: ["octocat"]},
                context: missing_write,
                credential_lease: lease
              )
@@ -1838,6 +1957,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.GetPullRequest,
              Jido.Connect.GitHub.Actions.CreatePullRequest,
              Jido.Connect.GitHub.Actions.UpdatePullRequest,
+             Jido.Connect.GitHub.Actions.RequestPullRequestReviewers,
              Jido.Connect.GitHub.Actions.MergePullRequest,
              Jido.Connect.GitHub.Actions.UpdateIssue,
              Jido.Connect.GitHub.Actions.CreateIssueComment,

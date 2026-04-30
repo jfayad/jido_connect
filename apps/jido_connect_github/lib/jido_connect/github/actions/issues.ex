@@ -355,6 +355,39 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :request_pull_request_reviewers do
+      id "github.pull_request.reviewers.request"
+      resource :pull_request
+      verb :update
+      data_classification :workspace_content
+      label "Request pull request reviewers"
+      description "Request users or teams to review a GitHub pull request."
+      handler Jido.Connect.GitHub.Handlers.Actions.RequestPullRequestReviewers
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :pull_number, :integer, required?: true
+        field :reviewers, {:array, :string}, default: []
+        field :team_reviewers, {:array, :string}, default: []
+      end
+
+      output do
+        field :number, :integer
+        field :url, :string
+        field :title, :string
+        field :state, :string
+        field :requested_reviewers, {:array, :map}
+        field :requested_teams, {:array, :map}
+      end
+    end
+
     action :merge_pull_request do
       id "github.pull_request.merge"
       resource :pull_request

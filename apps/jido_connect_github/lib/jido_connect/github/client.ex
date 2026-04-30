@@ -123,6 +123,17 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_pull_request_response()
   end
 
+  def request_pull_request_reviewers(repo, pull_number, attrs, access_token)
+      when is_integer(pull_number) and is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(
+      url: "/repos/#{repo}/pulls/#{pull_number}/requested_reviewers",
+      json: Data.compact(attrs)
+    )
+    |> handle_pull_request_reviewers_response()
+  end
+
   def merge_pull_request(repo, pull_number, attrs, access_token)
       when is_integer(pull_number) and is_map(attrs) and is_binary(access_token) do
     access_token
@@ -406,6 +417,18 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_pull_request_merge_response(response), do: handle_error_response(response)
 
+  defp handle_pull_request_reviewers_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_pull_request_reviewers(body)}
+  end
+
+  defp handle_pull_request_reviewers_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub pull request reviewers response was invalid", body)
+  end
+
+  defp handle_pull_request_reviewers_response(response), do: handle_error_response(response)
+
   defp handle_issue_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     {:ok, normalize_issue(body)}
@@ -598,6 +621,16 @@ defmodule Jido.Connect.GitHub.Client do
     |> Data.compact()
   end
 
+  defp normalize_pull_request_reviewers(pull_request) when is_map(pull_request) do
+    pull_request
+    |> normalize_pull_request()
+    |> Map.put(
+      :requested_reviewers,
+      normalize_users(Data.get(pull_request, "requested_reviewers"))
+    )
+    |> Map.put(:requested_teams, normalize_teams(Data.get(pull_request, "requested_teams")))
+  end
+
   defp normalize_workflow_run(workflow_run) when is_map(workflow_run) do
     %{
       id: Data.get(workflow_run, "id"),
@@ -759,6 +792,23 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp normalize_user(_user), do: nil
+
+  defp normalize_teams(teams) when is_list(teams), do: Enum.map(teams, &normalize_team/1)
+  defp normalize_teams(_teams), do: []
+
+  defp normalize_team(team) when is_map(team) do
+    %{
+      id: Data.get(team, "id"),
+      name: Data.get(team, "name"),
+      slug: Data.get(team, "slug"),
+      description: Data.get(team, "description"),
+      privacy: Data.get(team, "privacy"),
+      url: Data.get(team, "html_url") || Data.get(team, "url")
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_team(_team), do: nil
 
   defp normalize_milestone(milestone) when is_map(milestone) do
     %{
