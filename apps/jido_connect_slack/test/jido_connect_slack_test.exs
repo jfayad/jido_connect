@@ -3864,101 +3864,53 @@ defmodule Jido.Connect.SlackTest do
     assert missing_scopes.missing_scopes == ["channels:read"]
   end
 
-  test "generated app mention sensor exposes trigger metadata and ignores direct events" do
-    assert Jido.Connect.Slack.Sensors.AppMention.trigger_id() == "slack.event.app_mention"
-    assert Jido.Connect.Slack.Sensors.AppMention.signal_type() == "slack.event.app_mention"
-    assert Jido.Connect.Slack.Sensors.AppMention.signal_source() == "/jido/connect/slack"
-
-    assert {:ok, state} = Jido.Connect.Slack.Sensors.AppMention.init(%{}, %{})
-    assert {:ok, ^state} = Jido.Connect.Slack.Sensors.AppMention.handle_event(:anything, state)
+  test "generated app mention sensor exposes trigger metadata and metadata-only runtime mode" do
+    assert_metadata_only_sensor(Jido.Connect.Slack.Sensors.AppMention, "slack.event.app_mention")
   end
 
-  test "generated private channel message sensor exposes trigger metadata and ignores direct events" do
-    assert Jido.Connect.Slack.Sensors.PrivateChannelMessage.trigger_id() ==
-             "slack.event.message.groups"
-
-    assert Jido.Connect.Slack.Sensors.PrivateChannelMessage.signal_type() ==
-             "slack.event.message.groups"
-
-    assert Jido.Connect.Slack.Sensors.PrivateChannelMessage.signal_source() ==
-             "/jido/connect/slack"
-
-    assert {:ok, state} = Jido.Connect.Slack.Sensors.PrivateChannelMessage.init(%{}, %{})
-
-    assert {:ok, ^state} =
-             Jido.Connect.Slack.Sensors.PrivateChannelMessage.handle_event(:anything, state)
+  test "generated private channel message sensor exposes metadata-only runtime mode" do
+    assert_metadata_only_sensor(
+      Jido.Connect.Slack.Sensors.PrivateChannelMessage,
+      "slack.event.message.groups"
+    )
   end
 
-  test "generated direct message sensor exposes trigger metadata and ignores direct events" do
-    assert Jido.Connect.Slack.Sensors.DirectMessage.trigger_id() == "slack.event.message.im"
-    assert Jido.Connect.Slack.Sensors.DirectMessage.signal_type() == "slack.event.message.im"
-    assert Jido.Connect.Slack.Sensors.DirectMessage.signal_source() == "/jido/connect/slack"
-
-    assert {:ok, state} = Jido.Connect.Slack.Sensors.DirectMessage.init(%{}, %{})
-    assert {:ok, ^state} = Jido.Connect.Slack.Sensors.DirectMessage.handle_event(:anything, state)
+  test "generated direct message sensor exposes metadata-only runtime mode" do
+    assert_metadata_only_sensor(
+      Jido.Connect.Slack.Sensors.DirectMessage,
+      "slack.event.message.im"
+    )
   end
 
-  test "generated multi-person direct message sensor exposes trigger metadata and ignores direct events" do
-    assert Jido.Connect.Slack.Sensors.MultiPersonDirectMessage.trigger_id() ==
-             "slack.event.message.mpim"
-
-    assert Jido.Connect.Slack.Sensors.MultiPersonDirectMessage.signal_type() ==
-             "slack.event.message.mpim"
-
-    assert Jido.Connect.Slack.Sensors.MultiPersonDirectMessage.signal_source() ==
-             "/jido/connect/slack"
-
-    assert {:ok, state} = Jido.Connect.Slack.Sensors.MultiPersonDirectMessage.init(%{}, %{})
-
-    assert {:ok, ^state} =
-             Jido.Connect.Slack.Sensors.MultiPersonDirectMessage.handle_event(:anything, state)
+  test "generated multi-person direct message sensor exposes metadata-only runtime mode" do
+    assert_metadata_only_sensor(
+      Jido.Connect.Slack.Sensors.MultiPersonDirectMessage,
+      "slack.event.message.mpim"
+    )
   end
 
-  test "generated thread reply sensor exposes trigger metadata and ignores direct events" do
-    assert Jido.Connect.Slack.Sensors.ThreadReply.trigger_id() ==
-             "slack.event.message.thread_reply"
-
-    assert Jido.Connect.Slack.Sensors.ThreadReply.signal_type() ==
-             "slack.event.message.thread_reply"
-
-    assert Jido.Connect.Slack.Sensors.ThreadReply.signal_source() ==
-             "/jido/connect/slack"
-
-    assert {:ok, state} = Jido.Connect.Slack.Sensors.ThreadReply.init(%{}, %{})
-    assert {:ok, ^state} = Jido.Connect.Slack.Sensors.ThreadReply.handle_event(:anything, state)
+  test "generated thread reply sensor exposes metadata-only runtime mode" do
+    assert_metadata_only_sensor(
+      Jido.Connect.Slack.Sensors.ThreadReply,
+      "slack.event.message.thread_reply"
+    )
   end
 
-  test "generated reaction added sensor exposes trigger metadata and ignores direct events" do
-    assert Jido.Connect.Slack.Sensors.ReactionAdded.trigger_id() ==
-             "slack.event.reaction_added"
-
-    assert Jido.Connect.Slack.Sensors.ReactionAdded.signal_type() ==
-             "slack.event.reaction_added"
-
-    assert Jido.Connect.Slack.Sensors.ReactionAdded.signal_source() ==
-             "/jido/connect/slack"
-
-    assert {:ok, state} = Jido.Connect.Slack.Sensors.ReactionAdded.init(%{}, %{})
-    assert {:ok, ^state} = Jido.Connect.Slack.Sensors.ReactionAdded.handle_event(:anything, state)
+  test "generated reaction added sensor exposes metadata-only runtime mode" do
+    assert_metadata_only_sensor(
+      Jido.Connect.Slack.Sensors.ReactionAdded,
+      "slack.event.reaction_added"
+    )
   end
 
-  test "generated reaction removed sensor exposes trigger metadata and ignores direct events" do
-    assert Jido.Connect.Slack.Sensors.ReactionRemoved.trigger_id() ==
-             "slack.event.reaction_removed"
-
-    assert Jido.Connect.Slack.Sensors.ReactionRemoved.signal_type() ==
-             "slack.event.reaction_removed"
-
-    assert Jido.Connect.Slack.Sensors.ReactionRemoved.signal_source() ==
-             "/jido/connect/slack"
-
-    assert {:ok, state} = Jido.Connect.Slack.Sensors.ReactionRemoved.init(%{}, %{})
-
-    assert {:ok, ^state} =
-             Jido.Connect.Slack.Sensors.ReactionRemoved.handle_event(:anything, state)
+  test "generated reaction removed sensor exposes metadata-only runtime mode" do
+    assert_metadata_only_sensor(
+      Jido.Connect.Slack.Sensors.ReactionRemoved,
+      "slack.event.reaction_removed"
+    )
   end
 
-  test "generated channel lifecycle sensors expose trigger metadata and ignore direct events" do
+  test "generated channel lifecycle sensors expose metadata-only runtime mode" do
     sensors = [
       {Jido.Connect.Slack.Sensors.ChannelCreated, "slack.event.channel_created"},
       {Jido.Connect.Slack.Sensors.ChannelRename, "slack.event.channel_rename"},
@@ -3973,13 +3925,27 @@ defmodule Jido.Connect.SlackTest do
     ]
 
     for {sensor, trigger_id} <- sensors do
-      assert sensor.trigger_id() == trigger_id
-      assert sensor.signal_type() == trigger_id
-      assert sensor.signal_source() == "/jido/connect/slack"
-
-      assert {:ok, state} = sensor.init(%{}, %{})
-      assert {:ok, ^state} = sensor.handle_event(:anything, state)
+      assert_metadata_only_sensor(sensor, trigger_id)
     end
+  end
+
+  defp assert_metadata_only_sensor(sensor, trigger_id) do
+    assert sensor.trigger_id() == trigger_id
+    assert sensor.signal_type() == trigger_id
+    assert sensor.signal_source() == "/jido/connect/slack"
+    assert sensor.runtime_mode() == :metadata_only
+
+    assert %{runtime_mode: :metadata_only} = sensor.jido_connect_projection()
+    assert {:ok, state} = sensor.init(%{}, %{})
+
+    assert {:error,
+            %Connect.Error.ExecutionError{
+              phase: :webhook_runtime,
+              details: %{
+                trigger_id: ^trigger_id,
+                runtime_mode: :metadata_only
+              }
+            }} = sensor.handle_event(:anything, state)
   end
 
   defp context_and_lease(opts \\ []) do

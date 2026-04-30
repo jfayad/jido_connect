@@ -2,6 +2,7 @@ defmodule Jido.Connect.JidoSensorRuntime do
   @moduledoc false
 
   alias Jido.Connect
+  alias Jido.Connect.Error
   alias Jido.Connect.Jido.RuntimeContext
   alias Jido.Connect.Jido.SensorProjection
 
@@ -10,7 +11,8 @@ defmodule Jido.Connect.JidoSensorRuntime do
       projection: projection,
       config: config,
       context: context,
-      checkpoint: context_value(context, :checkpoint)
+      checkpoint: context_value(context, :checkpoint),
+      runtime_mode: projection.runtime_mode
     }
 
     case projection.kind do
@@ -48,6 +50,19 @@ defmodule Jido.Connect.JidoSensorRuntime do
     else
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  def handle_event(%SensorProjection{runtime_mode: :metadata_only} = projection, event, _state) do
+    {:error,
+     Error.execution("Generated webhook sensor is metadata-only",
+       phase: :webhook_runtime,
+       details: %{
+         trigger_id: projection.trigger_id,
+         kind: projection.kind,
+         runtime_mode: projection.runtime_mode,
+         event: inspect(event)
+       }
+     )}
   end
 
   def handle_event(_projection, _event, state), do: {:ok, state}

@@ -253,6 +253,7 @@ defmodule Jido.Connect.RuntimeFixtures do
       verb: :watch,
       data_classification: :workspace_metadata,
       kind: :poll,
+      runtime_mode: :poll,
       config: [field(:repo)],
       signal: [field(:repo)],
       config_schema: Zoi.object(%{repo: Zoi.string()}),

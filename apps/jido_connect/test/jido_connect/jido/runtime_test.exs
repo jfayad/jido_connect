@@ -137,9 +137,17 @@ defmodule Jido.Connect.Jido.RuntimeTest do
     assert {:ok, _state, [{:emit, _selector_signal}, {:schedule, 1_000}]} =
              Connect.JidoSensorRuntime.handle_event(sensor, :tick, selector_state)
 
-    webhook = %{sensor | kind: :webhook}
+    webhook = %{sensor | kind: :webhook, runtime_mode: :metadata_only}
     assert {:ok, %{projection: ^webhook}} = Connect.JidoSensorRuntime.init(webhook, %{}, %{})
-    assert {:ok, :state} = Connect.JidoSensorRuntime.handle_event(webhook, :anything, :state)
+
+    assert {:error,
+            %Connect.Error.ExecutionError{
+              phase: :webhook_runtime,
+              details: %{
+                trigger_id: "demo.repo.changed",
+                runtime_mode: :metadata_only
+              }
+            }} = Connect.JidoSensorRuntime.handle_event(webhook, :anything, :state)
   end
 
   test "plugin runtime filters subscriptions and availability" do

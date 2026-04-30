@@ -51,6 +51,7 @@ defmodule Jido.Connect.Jido.ModuleGenerator do
         def trigger_id, do: @projection.trigger_id
         def signal_type, do: @projection.signal_type
         def signal_source, do: @projection.signal_source
+        def runtime_mode, do: @projection.runtime_mode
 
         @impl Jido.Sensor
         def init(config, context) do

@@ -136,3 +136,15 @@ Every `use Jido.Connect` provider compiles thin generated modules:
 
 Generated modules expose `jido_connect_projection/0` for stable host
 introspection and delegate execution to `Jido.Connect` runtimes.
+
+Poll sensors are operational generated modules: Jido schedules ticks, core
+delegates to `Jido.Connect.poll/4`, and the runtime emits `Jido.Signal`s while
+carrying the in-memory checkpoint forward.
+
+Webhook sensors are generated as metadata-only projections until a host delivery
+contract is attached. Provider packages should verify signatures and normalize
+webhook bodies with their pure webhook helper modules, then the host can route
+the resulting `Jido.Connect.WebhookDelivery` or normalized signal into its own
+HTTP, idempotency, and persistence flow. Calling a metadata-only generated
+webhook sensor directly returns a structured execution error instead of silently
+pretending the event was handled.

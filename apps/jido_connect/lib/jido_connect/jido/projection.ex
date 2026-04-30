@@ -59,6 +59,7 @@ defmodule Jido.Connect.Jido.SensorProjection do
               verb: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
               data_classification: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
               kind: Zoi.enum([:webhook, :poll]),
+              runtime_mode: Zoi.enum([:poll, :metadata_only]) |> Zoi.default(:poll),
               config: Zoi.list(Field.schema()) |> Zoi.default([]),
               signal: Zoi.list(Field.schema()) |> Zoi.default([]),
               config_schema: Zoi.any(),

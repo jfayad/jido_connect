@@ -46,6 +46,7 @@ defmodule Jido.Connect.Jido.ProjectionBuilder do
           verb: trigger.verb,
           data_classification: trigger.data_classification,
           kind: trigger.kind,
+          runtime_mode: sensor_runtime_mode(trigger.kind),
           config: trigger.config,
           signal: trigger.signal,
           config_schema: trigger.config_schema,
@@ -77,4 +78,7 @@ defmodule Jido.Connect.Jido.ProjectionBuilder do
     |> to_string()
     |> String.replace(~r/[^a-zA-Z0-9_]/, "_")
   end
+
+  defp sensor_runtime_mode(:poll), do: :poll
+  defp sensor_runtime_mode(:webhook), do: :metadata_only
 end
