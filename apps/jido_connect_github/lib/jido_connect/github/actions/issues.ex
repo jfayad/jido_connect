@@ -227,6 +227,34 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :list_releases do
+      id "github.release.list"
+      resource :release
+      verb :list
+      data_classification :workspace_metadata
+      label "List releases"
+      description "List GitHub releases and repository tags with pagination."
+      handler Jido.Connect.GitHub.Handlers.Actions.ListReleases
+      effect :read
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :page, :integer, default: 1
+        field :per_page, :integer, default: 30
+      end
+
+      output do
+        field :releases, {:array, :map}
+        field :tags, {:array, :map}
+      end
+    end
+
     action :list_workflow_run_jobs do
       id "github.workflow_run.job.list"
       resource :workflow_run_job

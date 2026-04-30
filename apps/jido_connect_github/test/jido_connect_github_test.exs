@@ -246,6 +246,33 @@ defmodule Jido.Connect.GitHubTest do
        }}
     end
 
+    def list_releases(%{repo: "org/repo", page: 2, per_page: 10}, "token") do
+      {:ok,
+       %{
+         releases: [
+           %{
+             id: 101,
+             tag_name: "v1.0.0",
+             name: "v1.0.0",
+             draft: false,
+             prerelease: false,
+             target_commitish: "main",
+             author: %{login: "octocat"},
+             url: "https://github.test/org/repo/releases/tag/v1.0.0",
+             created_at: "2026-04-29T10:00:00Z",
+             published_at: "2026-04-29T10:05:00Z"
+           }
+         ],
+         tags: [
+           %{
+             name: "v1.0.0",
+             sha: "abc123",
+             url: "https://api.github.test/repos/org/repo/git/refs/tags/v1.0.0"
+           }
+         ]
+       }}
+    end
+
     def list_workflow_run_jobs(
           %{repo: "org/repo", run_id: 22, filter: "latest", page: 2, per_page: 10},
           "token"
@@ -654,6 +681,18 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.release.list",
+              resource: :release,
+              verb: :list,
+              mutation?: false,
+              auth_profiles: [:user, :installation],
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.release.list")
+
+    assert {:ok,
+            %{
               id: "github.workflow_run.job.list",
               resource: :workflow_run_job,
               verb: :list,
@@ -843,6 +882,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListPullRequests,
              Jido.Connect.GitHub.Actions.SearchIssues,
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
+             Jido.Connect.GitHub.Actions.ListReleases,
              Jido.Connect.GitHub.Actions.ListWorkflowRunJobs,
              Jido.Connect.GitHub.Actions.RerunWorkflowRun,
              Jido.Connect.GitHub.Actions.CancelWorkflowRun,
@@ -882,6 +922,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.ListPullRequests,
                  Jido.Connect.GitHub.Actions.SearchIssues,
                  Jido.Connect.GitHub.Actions.ListWorkflowRuns,
+                 Jido.Connect.GitHub.Actions.ListReleases,
                  Jido.Connect.GitHub.Actions.ListWorkflowRunJobs,
                  Jido.Connect.GitHub.Actions.RerunWorkflowRun,
                  Jido.Connect.GitHub.Actions.CancelWorkflowRun,
@@ -941,6 +982,9 @@ defmodule Jido.Connect.GitHubTest do
     assert {:module, Jido.Connect.GitHub.Actions.ListWorkflowRuns} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListWorkflowRuns)
 
+    assert {:module, Jido.Connect.GitHub.Actions.ListReleases} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListReleases)
+
     assert {:module, Jido.Connect.GitHub.Actions.ListWorkflowRunJobs} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListWorkflowRunJobs)
 
@@ -988,6 +1032,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListPullRequests, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.SearchIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListWorkflowRuns, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.ListReleases, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListWorkflowRunJobs, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.DispatchWorkflow, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.GetPullRequest, :run, 2)
@@ -1298,6 +1343,22 @@ defmodule Jido.Connect.GitHubTest do
 
     assert Jido.Connect.GitHub.Actions.ListWorkflowRunJobs.name() ==
              "github_workflow_run_job_list"
+  end
+
+  test "generated release list action metadata tracks pagination fields" do
+    projection = Jido.Connect.GitHub.Actions.ListReleases.jido_connect_projection()
+
+    assert projection.action_id == "github.release.list"
+    assert projection.label == "List releases"
+    assert Enum.map(projection.input, & &1.name) == [:repo, :page, :per_page]
+    assert Enum.map(projection.output, & &1.name) == [:releases, :tags]
+    assert projection.risk == :read
+    assert projection.resource == :release
+    assert projection.verb == :list
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.ListReleases.name() == "github_release_list"
   end
 
   test "generated workflow run rerun action metadata tracks confirmation" do
@@ -2412,6 +2473,31 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "generated release action delegates to integration invoke runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              releases: [
+                %{
+                  id: 101,
+                  tag_name: "v1.0.0",
+                  draft: false,
+                  prerelease: false,
+                  author: %{login: "octocat"}
+                }
+              ],
+              tags: [%{name: "v1.0.0", sha: "abc123"}]
+            }} =
+             Jido.Connect.GitHub.Actions.ListReleases.run(
+               %{repo: "org/repo", page: 2, per_page: 10},
+               %{
+                 integration_context: context,
+                 credential_lease: lease
+               }
+             )
+  end
+
   test "generated workflow run job action delegates with normalized CI status" do
     {context, lease} = context_and_lease()
 
@@ -2570,6 +2656,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListPullRequests,
              Jido.Connect.GitHub.Actions.SearchIssues,
              Jido.Connect.GitHub.Actions.ListWorkflowRuns,
+             Jido.Connect.GitHub.Actions.ListReleases,
              Jido.Connect.GitHub.Actions.ListWorkflowRunJobs,
              Jido.Connect.GitHub.Actions.RerunWorkflowRun,
              Jido.Connect.GitHub.Actions.CancelWorkflowRun,
@@ -2636,6 +2723,12 @@ defmodule Jido.Connect.GitHubTest do
 
     assert workflow_job_installation_missing_scopes.state == :missing_scopes
     assert workflow_job_installation_missing_scopes.missing_scopes == ["actions:read"]
+
+    release_installation_missing_scopes =
+      availability_for(installation_tools, "github.release.list")
+
+    assert release_installation_missing_scopes.state == :missing_scopes
+    assert release_installation_missing_scopes.missing_scopes == ["contents:read"]
 
     workflow_rerun_installation_missing_scopes =
       availability_for(installation_tools, "github.workflow_run.rerun")

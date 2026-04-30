@@ -527,6 +527,71 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "list releases sends expected requests and normalizes releases and tags" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert %{"page" => "2", "per_page" => "10"} = URI.decode_query(conn.query_string)
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      case conn.request_path do
+        "/repos/org/repo/releases" ->
+          Req.Test.json(conn, [
+            %{
+              id: 101,
+              tag_name: "v1.0.0",
+              name: "v1.0.0",
+              draft: false,
+              prerelease: false,
+              target_commitish: "main",
+              author: %{login: "octocat", id: 1, type: "User"},
+              html_url: "https://github.test/org/repo/releases/tag/v1.0.0",
+              tarball_url: "https://api.github.test/repos/org/repo/tarball/v1.0.0",
+              zipball_url: "https://api.github.test/repos/org/repo/zipball/v1.0.0",
+              created_at: "2026-04-29T10:00:00Z",
+              published_at: "2026-04-29T10:05:00Z",
+              body: "Release notes"
+            }
+          ])
+
+        "/repos/org/repo/tags" ->
+          Req.Test.json(conn, [
+            %{
+              name: "v1.0.0",
+              commit: %{
+                sha: "abc123",
+                url: "https://api.github.test/repos/org/repo/git/commits/abc123"
+              }
+            }
+          ])
+      end
+    end)
+
+    assert {:ok,
+            %{
+              releases: [
+                %{
+                  id: 101,
+                  tag_name: "v1.0.0",
+                  name: "v1.0.0",
+                  draft: false,
+                  prerelease: false,
+                  target_commitish: "main",
+                  author: %{login: "octocat"},
+                  url: "https://github.test/org/repo/releases/tag/v1.0.0",
+                  body: "Release notes"
+                }
+              ],
+              tags: [
+                %{
+                  name: "v1.0.0",
+                  sha: "abc123",
+                  url: "https://api.github.test/repos/org/repo/git/commits/abc123"
+                }
+              ]
+            }} =
+             Client.list_releases(%{repo: "org/repo", page: 2, per_page: 10}, "token")
+  end
+
   test "list workflow run jobs sends expected request and normalizes CI status" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

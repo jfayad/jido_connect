@@ -92,6 +92,23 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_workflow_run_list_response()
   end
 
+  def list_releases(%{repo: repo} = params, access_token)
+      when is_binary(repo) and is_binary(access_token) do
+    request_params = release_list_params(params)
+    req = request(access_token)
+
+    with {:ok, releases} <-
+           req
+           |> Req.get(url: "/repos/#{repo}/releases", params: request_params)
+           |> handle_release_list_response(),
+         {:ok, tags} <-
+           req
+           |> Req.get(url: "/repos/#{repo}/tags", params: request_params)
+           |> handle_tag_list_response() do
+      {:ok, %{releases: releases, tags: tags}}
+    end
+  end
+
   def list_workflow_run_jobs(%{repo: repo, run_id: run_id} = params, access_token)
       when is_binary(repo) and is_integer(run_id) and is_binary(access_token) do
     access_token
@@ -478,6 +495,30 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_workflow_run_list_response(response), do: handle_error_response(response)
 
+  defp handle_release_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_list(body) do
+    {:ok, Enum.map(body, &normalize_release/1)}
+  end
+
+  defp handle_release_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub release list response was invalid", body)
+  end
+
+  defp handle_release_list_response(response), do: handle_error_response(response)
+
+  defp handle_tag_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_list(body) do
+    {:ok, Enum.map(body, &normalize_tag/1)}
+  end
+
+  defp handle_tag_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub tag list response was invalid", body)
+  end
+
+  defp handle_tag_list_response(response), do: handle_error_response(response)
+
   defp handle_workflow_run_job_list_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     case Data.get(body, "jobs") do
@@ -828,6 +869,36 @@ defmodule Jido.Connect.GitHub.Client do
     |> Data.compact()
   end
 
+  defp normalize_release(release) when is_map(release) do
+    %{
+      id: Data.get(release, "id"),
+      tag_name: Data.get(release, "tag_name"),
+      name: Data.get(release, "name"),
+      draft: Data.get(release, "draft"),
+      prerelease: Data.get(release, "prerelease"),
+      target_commitish: Data.get(release, "target_commitish"),
+      author: normalize_user(Data.get(release, "author")),
+      url: Data.get(release, "html_url") || Data.get(release, "url"),
+      tarball_url: Data.get(release, "tarball_url"),
+      zipball_url: Data.get(release, "zipball_url"),
+      created_at: Data.get(release, "created_at"),
+      published_at: Data.get(release, "published_at"),
+      body: Data.get(release, "body")
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_tag(tag) when is_map(tag) do
+    commit = Data.get(tag, "commit")
+
+    %{
+      name: Data.get(tag, "name"),
+      sha: Data.get(commit || %{}, "sha"),
+      url: Data.get(commit || %{}, "url") || Data.get(tag, "zipball_url") || Data.get(tag, "url")
+    }
+    |> Data.compact()
+  end
+
   defp normalize_workflow_run_job(job) when is_map(job) do
     %{
       id: Data.get(job, "id"),
@@ -1100,6 +1171,14 @@ defmodule Jido.Connect.GitHub.Client do
       branch: Map.get(params, :branch),
       status: Map.get(params, :status),
       event: Map.get(params, :event),
+      per_page: Map.get(params, :per_page, 30),
+      page: Map.get(params, :page, 1)
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
+  defp release_list_params(params) do
+    [
       per_page: Map.get(params, :per_page, 30),
       page: Map.get(params, :page, 1)
     ]
