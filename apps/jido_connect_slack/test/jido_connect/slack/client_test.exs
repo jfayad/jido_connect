@@ -305,6 +305,39 @@ defmodule Jido.Connect.Slack.ClientTest do
              Client.archive_conversation(%{channel: "C123"}, "token")
   end
 
+  test "unarchive conversation sends expected request and normalizes output" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/conversations.unarchive"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{"channel" => "C123"} = Jason.decode!(body)
+
+      Req.Test.json(conn, %{ok: true})
+    end)
+
+    assert {:ok, %{channel: "C123"}} =
+             Client.unarchive_conversation(%{channel: "C123"}, "token")
+  end
+
+  test "unarchive conversation normalizes Slack errors" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/conversations.unarchive"
+
+      Req.Test.json(conn, %{ok: false, error: "not_archived"})
+    end)
+
+    assert {:error,
+            %Jido.Connect.Error.ProviderError{
+              provider: :slack,
+              status: 200,
+              reason: "not_archived"
+            }} =
+             Client.unarchive_conversation(%{channel: "C123"}, "token")
+  end
+
   test "open conversation sends expected request and normalizes output" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

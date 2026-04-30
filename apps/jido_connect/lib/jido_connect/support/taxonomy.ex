@@ -51,6 +51,7 @@ defmodule Jido.Connect.Taxonomy do
     :send,
     :share,
     :sync,
+    :unarchive,
     :update,
     :upload,
     :watch

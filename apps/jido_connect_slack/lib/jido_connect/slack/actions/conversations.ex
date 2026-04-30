@@ -164,6 +164,35 @@ defmodule Jido.Connect.Slack.Actions.Conversations do
       end
     end
 
+    action :unarchive_channel do
+      id "slack.channel.unarchive"
+      resource :channel
+      verb :unarchive
+      data_classification :workspace_metadata
+      label "Unarchive channel"
+      description "Unarchive a Slack conversation."
+      handler Jido.Connect.Slack.Handlers.Actions.UnarchiveChannel
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["channels:manage"], resolver: Jido.Connect.Slack.ScopeResolver
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+
+        field :conversation_type, :string,
+          description:
+            "Optional Slack conversation type: public_channel, private_channel, im, or mpim."
+      end
+
+      output do
+        field :channel, :string
+      end
+    end
+
     action :open_conversation do
       id "slack.conversation.open"
       resource :conversation
