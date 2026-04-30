@@ -8,7 +8,7 @@ defmodule Jido.Connect.Slack.AppManifest do
   ready to answer Slack's verification requests.
   """
 
-  @default_scopes ["channels:read", "channels:history", "chat:write"]
+  @default_scopes ["channels:read", "channels:history", "chat:write", "reactions:write"]
   @event_scopes ["app_mentions:read"]
 
   @type option ::

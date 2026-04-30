@@ -15,7 +15,8 @@ defmodule Jido.Connect.Slack.AppManifestTest do
     assert get_in(manifest, [:oauth_config, :scopes, :bot]) == [
              "channels:read",
              "channels:history",
-             "chat:write"
+             "chat:write",
+             "reactions:write"
            ]
 
     refute get_in(manifest, [:settings, :event_subscriptions])
@@ -33,6 +34,7 @@ defmodule Jido.Connect.Slack.AppManifestTest do
              "channels:read",
              "channels:history",
              "chat:write",
+             "reactions:write",
              "app_mentions:read"
            ]
 

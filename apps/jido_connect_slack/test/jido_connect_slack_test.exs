@@ -116,6 +116,18 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def add_reaction(
+          %{channel: "C123", timestamp: "1700000000.000100", name: "thumbsup"},
+          "token"
+        ) do
+      {:ok,
+       %{
+         channel: "C123",
+         timestamp: "1700000000.000100",
+         name: "thumbsup"
+       }}
+    end
+
     def auth_test("token") do
       {:ok,
        %{
@@ -304,6 +316,18 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok,
             %{
+              id: "slack.reaction.add",
+              resource: :reaction,
+              verb: :create,
+              policies: [:workspace_access],
+              scopes: ["reactions:write"],
+              mutation?: true,
+              confirmation: :required_for_ai
+            }} =
+             Connect.action(spec, "slack.reaction.add")
+
+    assert {:ok,
+            %{
               id: "slack.auth.test",
               resource: :auth,
               verb: :read,
@@ -381,6 +405,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.PostMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
+             Jido.Connect.Slack.Actions.AddReaction,
              Jido.Connect.Slack.Actions.ListUsers,
              Jido.Connect.Slack.Actions.UserInfo,
              Jido.Connect.Slack.Actions.LookupUserByEmail
@@ -401,6 +426,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.PostMessage,
                  Jido.Connect.Slack.Actions.UpdateMessage,
                  Jido.Connect.Slack.Actions.DeleteMessage,
+                 Jido.Connect.Slack.Actions.AddReaction,
                  Jido.Connect.Slack.Actions.ListUsers,
                  Jido.Connect.Slack.Actions.UserInfo,
                  Jido.Connect.Slack.Actions.LookupUserByEmail
@@ -436,6 +462,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.DeleteMessage} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.DeleteMessage)
+
+    assert {:module, Jido.Connect.Slack.Actions.AddReaction} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.AddReaction)
 
     assert {:module, Jido.Connect.Slack.Plugin} =
              Code.ensure_loaded(Jido.Connect.Slack.Plugin)
@@ -504,6 +533,30 @@ defmodule Jido.Connect.SlackTest do
     assert delete_projection.auth_profile == :bot
     assert delete_projection.auth_profiles == [:bot, :user]
     assert Jido.Connect.Slack.Actions.DeleteMessage.name() == "slack_message_delete"
+
+    reaction_projection = Jido.Connect.Slack.Actions.AddReaction.jido_connect_projection()
+
+    assert reaction_projection.action_id == "slack.reaction.add"
+    assert reaction_projection.label == "Add reaction"
+    assert reaction_projection.resource == :reaction
+    assert reaction_projection.verb == :create
+    assert reaction_projection.scopes == ["reactions:write"]
+
+    assert Enum.map(reaction_projection.input, & &1.name) == [
+             :channel,
+             :timestamp,
+             :name
+           ]
+
+    assert Enum.map(reaction_projection.output, & &1.name) == [
+             :channel,
+             :timestamp,
+             :name
+           ]
+
+    assert reaction_projection.risk == :write
+    assert reaction_projection.confirmation == :required_for_ai
+    assert Jido.Connect.Slack.Actions.AddReaction.name() == "slack_reaction_add"
 
     list_projection = Jido.Connect.Slack.Actions.ListChannels.jido_connect_projection()
     assert list_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
@@ -765,6 +818,58 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated add reaction action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              timestamp: "1700000000.000100",
+              name: "thumbsup"
+            }} =
+             Jido.Connect.Slack.Actions.AddReaction.run(
+               %{channel: "C123", timestamp: "1700000000.000100", name: "thumbsup"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "generated add reaction action validates channel timestamp and name" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              subject: "general",
+              details: %{field: :channel}
+            }} =
+             Jido.Connect.Slack.Actions.AddReaction.run(
+               %{channel: "general", timestamp: "1700000000.000100", name: "thumbsup"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              subject: "1700000000",
+              details: %{field: :timestamp}
+            }} =
+             Jido.Connect.Slack.Actions.AddReaction.run(
+               %{channel: "C123", timestamp: "1700000000", name: "thumbsup"},
+               %{integration_context: context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              subject: ":thumbsup:",
+              details: %{field: :name}
+            }} =
+             Jido.Connect.Slack.Actions.AddReaction.run(
+               %{channel: "C123", timestamp: "1700000000.000100", name: ":thumbsup:"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated auth test action delegates through integration runtime" do
     {context, lease} = context_and_lease()
 
@@ -952,6 +1057,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.PostMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
+             Jido.Connect.Slack.Actions.AddReaction,
              Jido.Connect.Slack.Actions.ListUsers,
              Jido.Connect.Slack.Actions.UserInfo,
              Jido.Connect.Slack.Actions.LookupUserByEmail
@@ -997,6 +1103,7 @@ defmodule Jido.Connect.SlackTest do
           "channels:read",
           "channels:history",
           "chat:write",
+          "reactions:write",
           "team:read",
           "users:read",
           "users:read.email"

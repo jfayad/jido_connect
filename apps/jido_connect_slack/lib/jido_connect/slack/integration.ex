@@ -11,6 +11,7 @@ defmodule Jido.Connect.Slack do
       Jido.Connect.Slack.Actions.Conversations,
       Jido.Connect.Slack.Actions.Identity,
       Jido.Connect.Slack.Actions.Messages,
+      Jido.Connect.Slack.Actions.Reactions,
       Jido.Connect.Slack.Actions.Users
     ]
 
@@ -66,6 +67,7 @@ defmodule Jido.Connect.Slack do
         "mpim:read",
         "mpim:history",
         "chat:write",
+        "reactions:write",
         "team:read",
         "users:read"
       ]
@@ -74,6 +76,7 @@ defmodule Jido.Connect.Slack do
         "channels:read",
         "channels:history",
         "chat:write",
+        "reactions:write",
         "team:read",
         "users:read"
       ]

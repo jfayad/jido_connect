@@ -163,5 +163,5 @@ defmodule Jido.Connect.Slack.OAuth do
      )}
   end
 
-  defp default_scopes, do: ["channels:read", "chat:write"]
+  defp default_scopes, do: ["channels:read", "chat:write", "reactions:write"]
 end

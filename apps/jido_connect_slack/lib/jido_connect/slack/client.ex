@@ -40,6 +40,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_delete_message_response()
   end
 
+  def add_reaction(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/reactions.add", json: reaction_params(attrs))
+    |> handle_add_reaction_response(attrs)
+  end
+
   def list_users(params, access_token) when is_map(params) and is_binary(access_token) do
     access_token
     |> request()
@@ -111,6 +118,12 @@ defmodule Jido.Connect.Slack.Client do
       nil -> %{}
       team_id -> %{team: team_id}
     end
+  end
+
+  defp reaction_params(params) do
+    params
+    |> Map.take([:channel, :timestamp, :name])
+    |> Data.compact()
   end
 
   defp request(access_token) do
@@ -185,6 +198,18 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_delete_message_response(response), do: handle_error_response(response)
+
+  defp handle_add_reaction_response({:ok, %{status: status, body: %{"ok" => true}}}, attrs)
+       when status in 200..299 do
+    {:ok,
+     %{
+       channel: Data.get(attrs, :channel),
+       timestamp: Data.get(attrs, :timestamp),
+       name: Data.get(attrs, :name)
+     }}
+  end
+
+  defp handle_add_reaction_response(response, _attrs), do: handle_error_response(response)
 
   defp handle_user_list_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do
