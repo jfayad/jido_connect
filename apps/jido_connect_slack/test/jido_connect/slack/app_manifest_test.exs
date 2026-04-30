@@ -16,6 +16,7 @@ defmodule Jido.Connect.Slack.AppManifestTest do
              "channels:read",
              "channels:history",
              "chat:write",
+             "files:write",
              "reactions:write"
            ]
 
@@ -34,6 +35,7 @@ defmodule Jido.Connect.Slack.AppManifestTest do
              "channels:read",
              "channels:history",
              "chat:write",
+             "files:write",
              "reactions:write",
              "app_mentions:read"
            ]

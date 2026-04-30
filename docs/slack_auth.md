@@ -57,6 +57,7 @@ event delivery dedupe. The provider package owns:
 - `Jido.Connect.Slack.Client.post_message/2`
 - `Jido.Connect.Slack.Client.update_message/2`
 - `Jido.Connect.Slack.Client.delete_message/2`
+- `Jido.Connect.Slack.Client.upload_file/2`
 - `Jido.Connect.Slack.Webhook.verify_request/4`
 
 Generated actions stay thin. Message deletion is exposed as

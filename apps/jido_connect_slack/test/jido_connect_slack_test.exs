@@ -128,6 +128,23 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def upload_file(
+          %{
+            channel_id: "C123",
+            filename: "report.txt",
+            content: "Hello file",
+            title: "Report",
+            initial_comment: "Here is the report"
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         file_id: "F123",
+         files: [%{"id" => "F123", "title" => "Report"}]
+       }}
+    end
+
     def auth_test("token") do
       {:ok,
        %{
@@ -400,6 +417,7 @@ defmodule Jido.Connect.SlackTest do
     assert Jido.Connect.Slack.jido_action_modules() == [
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.GetThreadReplies,
+             Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
@@ -421,6 +439,7 @@ defmodule Jido.Connect.SlackTest do
                actions: [
                  Jido.Connect.Slack.Actions.ListChannels,
                  Jido.Connect.Slack.Actions.GetThreadReplies,
+                 Jido.Connect.Slack.Actions.UploadFile,
                  Jido.Connect.Slack.Actions.AuthTest,
                  Jido.Connect.Slack.Actions.TeamInfo,
                  Jido.Connect.Slack.Actions.PostMessage,
@@ -441,6 +460,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.GetThreadReplies} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.GetThreadReplies)
+
+    assert {:module, Jido.Connect.Slack.Actions.UploadFile} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.UploadFile)
 
     assert {:module, Jido.Connect.Slack.Actions.AuthTest} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.AuthTest)
@@ -557,6 +579,34 @@ defmodule Jido.Connect.SlackTest do
     assert reaction_projection.risk == :write
     assert reaction_projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.AddReaction.name() == "slack_reaction_add"
+
+    upload_projection = Jido.Connect.Slack.Actions.UploadFile.jido_connect_projection()
+
+    assert upload_projection.action_id == "slack.file.upload"
+    assert upload_projection.label == "Upload file"
+    assert upload_projection.resource == :file
+    assert upload_projection.verb == :upload
+    assert upload_projection.scopes == ["files:write"]
+
+    assert Enum.map(upload_projection.input, & &1.name) == [
+             :channel_id,
+             :filename,
+             :content,
+             :title,
+             :initial_comment,
+             :thread_ts,
+             :alt_txt,
+             :snippet_type
+           ]
+
+    assert Enum.map(upload_projection.output, & &1.name) == [
+             :file_id,
+             :files
+           ]
+
+    assert upload_projection.risk == :write
+    assert upload_projection.confirmation == :required_for_ai
+    assert Jido.Connect.Slack.Actions.UploadFile.name() == "slack_file_upload"
 
     list_projection = Jido.Connect.Slack.Actions.ListChannels.jido_connect_projection()
     assert list_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
@@ -833,6 +883,26 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated upload file action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              file_id: "F123",
+              files: [%{"id" => "F123", "title" => "Report"}]
+            }} =
+             Jido.Connect.Slack.Actions.UploadFile.run(
+               %{
+                 channel_id: "C123",
+                 filename: "report.txt",
+                 content: "Hello file",
+                 title: "Report",
+                 initial_comment: "Here is the report"
+               },
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated add reaction action validates channel timestamp and name" do
     {context, lease} = context_and_lease()
 
@@ -1052,6 +1122,7 @@ defmodule Jido.Connect.SlackTest do
     assert spec.actions == [
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.GetThreadReplies,
+             Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
@@ -1103,6 +1174,7 @@ defmodule Jido.Connect.SlackTest do
           "channels:read",
           "channels:history",
           "chat:write",
+          "files:write",
           "reactions:write",
           "team:read",
           "users:read",

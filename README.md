@@ -15,7 +15,7 @@ Current slice:
 - GitHub actions for `github.issue.list` and `github.issue.create`
 - GitHub poll trigger contract for `github.issue.new`
 - Slack actions for `slack.channel.list`, `slack.message.post`,
-  `slack.message.update`, and `slack.message.delete`
+  `slack.message.update`, `slack.message.delete`, and `slack.file.upload`
 - MCP actions for `mcp.tools.list` and `mcp.tool.call`
 - Catalog discovery through `Jido.Connect.Catalog`
 - Generic ngrok tunnel helper: `mix jido.connect.ngrok`

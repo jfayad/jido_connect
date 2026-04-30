@@ -9,8 +9,13 @@ defmodule Jido.Connect.Slack.ClientTest do
   setup do
     Application.put_env(:jido_connect_slack, :slack_req_options, plug: {Req.Test, __MODULE__})
 
+    Application.put_env(:jido_connect_slack, :slack_upload_req_options,
+      plug: {Req.Test, __MODULE__}
+    )
+
     on_exit(fn ->
       Application.delete_env(:jido_connect_slack, :slack_req_options)
+      Application.delete_env(:jido_connect_slack, :slack_upload_req_options)
     end)
   end
 
@@ -205,6 +210,125 @@ defmodule Jido.Connect.Slack.ClientTest do
     assert {:ok, %{channel: "C123", timestamp: "1700000000.000100", name: "thumbsup"}} =
              Client.add_reaction(
                %{channel: "C123", timestamp: "1700000000.000100", name: "thumbsup"},
+               "token"
+             )
+  end
+
+  test "upload file uses external upload flow" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      case conn.request_path do
+        "/api/files.getUploadURLExternal" ->
+          assert conn.method == "POST"
+
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+          assert %{
+                   "filename" => "report.txt",
+                   "length" => 10,
+                   "alt_txt" => "Report text",
+                   "snippet_type" => "text"
+                 } = Jason.decode!(body)
+
+          assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+          Req.Test.json(conn, %{
+            ok: true,
+            upload_url: "https://uploads.slack.test/upload/123",
+            file_id: "F123"
+          })
+
+        "/upload/123" ->
+          assert conn.method == "POST"
+          assert ["application/octet-stream"] = Plug.Conn.get_req_header(conn, "content-type")
+
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+          assert body == "Hello file"
+
+          Req.Test.text(conn, "OK")
+
+        "/api/files.completeUploadExternal" ->
+          assert conn.method == "POST"
+
+          {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+          assert %{
+                   "channel_id" => "C123",
+                   "initial_comment" => "Here is the report",
+                   "thread_ts" => "1700000000.000100",
+                   "files" => [%{"id" => "F123", "title" => "Report"}]
+                 } = Jason.decode!(body)
+
+          assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+          Req.Test.json(conn, %{
+            ok: true,
+            files: [%{id: "F123", title: "Report"}]
+          })
+      end
+    end)
+
+    assert {:ok, %{file_id: "F123", files: [%{"id" => "F123", "title" => "Report"}]}} =
+             Client.upload_file(
+               %{
+                 channel_id: "C123",
+                 filename: "report.txt",
+                 content: "Hello file",
+                 title: "Report",
+                 initial_comment: "Here is the report",
+                 thread_ts: "1700000000.000100",
+                 alt_txt: "Report text",
+                 snippet_type: "text"
+               },
+               "token"
+             )
+  end
+
+  test "upload file normalizes malformed upload URL responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/files.getUploadURLExternal"
+
+      Req.Test.json(conn, %{ok: true, file_id: "F123"})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :slack,
+              reason: :invalid_response,
+              details: %{body: %{"ok" => true, "file_id" => "F123"}}
+            }} =
+             Client.upload_file(
+               %{channel_id: "C123", filename: "report.txt", content: "Hello file"},
+               "token"
+             )
+  end
+
+  test "upload file normalizes malformed complete upload responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      case conn.request_path do
+        "/api/files.getUploadURLExternal" ->
+          Req.Test.json(conn, %{
+            ok: true,
+            upload_url: "https://uploads.slack.test/upload/123",
+            file_id: "F123"
+          })
+
+        "/upload/123" ->
+          Req.Test.text(conn, "OK")
+
+        "/api/files.completeUploadExternal" ->
+          Req.Test.json(conn, %{ok: true, files: %{"id" => "F123"}})
+      end
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :slack,
+              reason: :invalid_response,
+              details: %{body: %{"ok" => true, "files" => %{"id" => "F123"}}}
+            }} =
+             Client.upload_file(
+               %{channel_id: "C123", filename: "report.txt", content: "Hello file"},
                "token"
              )
   end

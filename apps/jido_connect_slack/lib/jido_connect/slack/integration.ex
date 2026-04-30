@@ -9,6 +9,7 @@ defmodule Jido.Connect.Slack do
   use Jido.Connect,
     fragments: [
       Jido.Connect.Slack.Actions.Conversations,
+      Jido.Connect.Slack.Actions.Files,
       Jido.Connect.Slack.Actions.Identity,
       Jido.Connect.Slack.Actions.Messages,
       Jido.Connect.Slack.Actions.Reactions,
@@ -67,6 +68,7 @@ defmodule Jido.Connect.Slack do
         "mpim:read",
         "mpim:history",
         "chat:write",
+        "files:write",
         "reactions:write",
         "team:read",
         "users:read"
@@ -76,6 +78,7 @@ defmodule Jido.Connect.Slack do
         "channels:read",
         "channels:history",
         "chat:write",
+        "files:write",
         "reactions:write",
         "team:read",
         "users:read"

@@ -47,6 +47,30 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_add_reaction_response(attrs)
   end
 
+  def upload_file(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
+    content = Data.get(attrs, :content, "")
+
+    with {:ok, upload} <-
+           access_token
+           |> request()
+           |> Req.post(
+             url: "/files.getUploadURLExternal",
+             json: upload_url_params(attrs, content)
+           )
+           |> handle_upload_url_response(),
+         {:ok, _response} <- post_file_content(Data.get(upload, :upload_url), content),
+         {:ok, complete} <-
+           access_token
+           |> request()
+           |> Req.post(
+             url: "/files.completeUploadExternal",
+             json: complete_upload_params(attrs, upload)
+           )
+           |> handle_complete_upload_response(upload) do
+      {:ok, complete}
+    end
+  end
+
   def list_users(params, access_token) when is_map(params) and is_binary(access_token) do
     access_token
     |> request()
@@ -124,6 +148,39 @@ defmodule Jido.Connect.Slack.Client do
     params
     |> Map.take([:channel, :timestamp, :name])
     |> Data.compact()
+  end
+
+  defp upload_url_params(params, content) do
+    params
+    |> Map.take([:filename, :alt_txt, :snippet_type])
+    |> Map.put(:length, byte_size(content))
+    |> Data.compact()
+  end
+
+  defp complete_upload_params(params, upload) do
+    file =
+      %{id: Data.get(upload, :file_id), title: Data.get(params, :title)}
+      |> Data.compact()
+
+    params
+    |> Map.take([:channel_id, :initial_comment, :thread_ts])
+    |> Map.put(:files, [file])
+    |> Data.compact()
+  end
+
+  defp post_file_content(upload_url, content) when is_binary(upload_url) and is_binary(content) do
+    Req.new(url: upload_url, headers: [{"content-type", "application/octet-stream"}])
+    |> Req.merge(Application.get_env(:jido_connect_slack, :slack_upload_req_options, []))
+    |> Req.post(body: content)
+    |> handle_file_content_response()
+  end
+
+  defp post_file_content(_upload_url, _content) do
+    {:error,
+     Error.provider("Slack upload URL response was invalid",
+       provider: :slack,
+       reason: :invalid_response
+     )}
   end
 
   defp request(access_token) do
@@ -210,6 +267,50 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_add_reaction_response(response, _attrs), do: handle_error_response(response)
+
+  defp handle_upload_url_response({:ok, %{status: status, body: %{"ok" => true} = body}})
+       when status in 200..299 do
+    with upload_url when is_binary(upload_url) <- Data.get(body, "upload_url"),
+         file_id when is_binary(file_id) <- Data.get(body, "file_id") do
+      {:ok, %{upload_url: upload_url, file_id: file_id}}
+    else
+      _other -> invalid_success_response("Slack upload URL response was invalid", body)
+    end
+  end
+
+  defp handle_upload_url_response(response), do: handle_error_response(response)
+
+  defp handle_file_content_response({:ok, %{status: status} = response})
+       when status in 200..299 do
+    {:ok, response}
+  end
+
+  defp handle_file_content_response({:ok, %{status: status, body: body}}) do
+    Http.provider_error({:ok, %{status: status, body: body}},
+      provider: :slack,
+      message: "Slack file upload failed"
+    )
+  end
+
+  defp handle_file_content_response({:error, _reason} = response) do
+    Http.provider_error(response, provider: :slack, message: "Slack file upload failed")
+  end
+
+  defp handle_complete_upload_response(
+         {:ok, %{status: status, body: %{"ok" => true} = body}},
+         upload
+       )
+       when status in 200..299 do
+    files = Data.get(body, "files", [])
+
+    if is_list(files) and Enum.all?(files, &is_map/1) do
+      {:ok, %{file_id: Data.get(upload, :file_id), files: files}}
+    else
+      invalid_success_response("Slack complete upload response was invalid", body)
+    end
+  end
+
+  defp handle_complete_upload_response(response, _upload), do: handle_error_response(response)
 
   defp handle_user_list_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do
