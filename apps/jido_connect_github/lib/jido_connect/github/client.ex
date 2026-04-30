@@ -146,6 +146,14 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_issue_response()
   end
 
+  def add_issue_labels(repo, issue_number, labels, access_token)
+      when is_integer(issue_number) and is_list(labels) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/repos/#{repo}/issues/#{issue_number}/labels", json: %{labels: labels})
+    |> handle_label_list_response()
+  end
+
   def create_issue_comment(repo, issue_number, body, access_token)
       when is_integer(issue_number) and is_binary(access_token) do
     access_token
@@ -397,6 +405,18 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_issue_response(response), do: handle_error_response(response)
+
+  defp handle_label_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_list(body) do
+    {:ok, normalize_labels(body)}
+  end
+
+  defp handle_label_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub label list response was invalid", body)
+  end
+
+  defp handle_label_list_response(response), do: handle_error_response(response)
 
   defp handle_comment_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do

@@ -737,6 +737,36 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "add issue labels sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/issues/2/labels"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert %{"labels" => ["bug", "triage"]} = Jason.decode!(body)
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, [
+        %{
+          name: "bug",
+          color: "d73a4a",
+          description: "Something is not working"
+        },
+        %{
+          name: "triage",
+          color: "ededed",
+          description: nil
+        }
+      ])
+    end)
+
+    assert {:ok,
+            [
+              %{name: "bug", color: "d73a4a", description: "Something is not working"},
+              %{name: "triage", color: "ededed"}
+            ]} = Client.add_issue_labels("org/repo", 2, ["bug", "triage"], "token")
+  end
+
   test "create issue comment sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

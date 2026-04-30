@@ -8,6 +8,7 @@ defmodule Jido.Connect.GitHub.ScopeResolver do
       "github.file.update" -> ["metadata:read", "contents:write"]
       "github.issue_comment.create" -> ["metadata:read", "issues:write"]
       "github.issue_comment.list" -> ["metadata:read", "issues:read"]
+      "github.issue.label.add" -> ["metadata:read", "issues:write"]
       "github.issue.create" -> ["metadata:read", "issues:write"]
       "github.issue.list" -> ["metadata:read", "issues:read"]
       "github.workflow_run.list" -> ["metadata:read", "actions:read"]
