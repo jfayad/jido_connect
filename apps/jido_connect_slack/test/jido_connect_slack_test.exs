@@ -311,6 +311,10 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def delete_file(%{file_id: "F123"}, "token") do
+      {:ok, %{file_id: "F123"}}
+    end
+
     def auth_test("token") do
       {:ok,
        %{
@@ -884,6 +888,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.ShareFile,
+             Jido.Connect.Slack.Actions.DeleteFile,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
@@ -923,6 +928,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.ListConversationMembers,
                  Jido.Connect.Slack.Actions.UploadFile,
                  Jido.Connect.Slack.Actions.ShareFile,
+                 Jido.Connect.Slack.Actions.DeleteFile,
                  Jido.Connect.Slack.Actions.AuthTest,
                  Jido.Connect.Slack.Actions.TeamInfo,
                  Jido.Connect.Slack.Actions.PostMessage,
@@ -1317,6 +1323,26 @@ defmodule Jido.Connect.SlackTest do
     assert share_projection.risk == :write
     assert share_projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.ShareFile.name() == "slack_file_share"
+
+    delete_file_projection = Jido.Connect.Slack.Actions.DeleteFile.jido_connect_projection()
+
+    assert delete_file_projection.action_id == "slack.file.delete"
+    assert delete_file_projection.label == "Delete file"
+    assert delete_file_projection.resource == :file
+    assert delete_file_projection.verb == :delete
+    assert delete_file_projection.scopes == ["files:write"]
+
+    assert Enum.map(delete_file_projection.input, & &1.name) == [
+             :file_id
+           ]
+
+    assert Enum.map(delete_file_projection.output, & &1.name) == [
+             :file_id
+           ]
+
+    assert delete_file_projection.risk == :destructive
+    assert delete_file_projection.confirmation == :always
+    assert Jido.Connect.Slack.Actions.DeleteFile.name() == "slack_file_delete"
 
     list_projection = Jido.Connect.Slack.Actions.ListChannels.jido_connect_projection()
     assert list_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
@@ -1932,6 +1958,16 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated delete file action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{file_id: "F123"}} =
+             Jido.Connect.Slack.Actions.DeleteFile.run(
+               %{file_id: "F123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated add reaction action validates channel timestamp and name" do
     {context, lease} = context_and_lease()
 
@@ -2227,6 +2263,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.ShareFile,
+             Jido.Connect.Slack.Actions.DeleteFile,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,

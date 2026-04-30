@@ -133,6 +133,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_share_file_response(attrs)
   end
 
+  def delete_file(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/files.delete", json: delete_file_params(attrs))
+    |> handle_delete_file_response(attrs)
+  end
+
   def list_users(params, access_token) when is_map(params) and is_binary(access_token) do
     access_token
     |> request()
@@ -274,6 +281,13 @@ defmodule Jido.Connect.Slack.Client do
     params
     |> Map.take([:channels, :initial_comment, :thread_ts])
     |> Map.put(:files, [file])
+    |> Data.compact()
+  end
+
+  defp delete_file_params(params) do
+    params
+    |> Map.take([:file_id])
+    |> Map.new(fn {:file_id, file_id} -> {:file, file_id} end)
     |> Data.compact()
   end
 
@@ -461,6 +475,13 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_delete_message_response(response), do: handle_error_response(response)
+
+  defp handle_delete_file_response({:ok, %{status: status, body: %{"ok" => true}}}, attrs)
+       when status in 200..299 do
+    {:ok, %{file_id: Data.get(attrs, :file_id)}}
+  end
+
+  defp handle_delete_file_response(response, _attrs), do: handle_error_response(response)
 
   defp handle_add_reaction_response({:ok, %{status: status, body: %{"ok" => true}}}, attrs)
        when status in 200..299 do

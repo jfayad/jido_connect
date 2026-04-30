@@ -632,6 +632,23 @@ defmodule Jido.Connect.Slack.ClientTest do
              Client.share_file(%{file_id: "F123", channels: "C123"}, "token")
   end
 
+  test "delete file sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/files.delete"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{"file" => "F123"} = Jason.decode!(body)
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{ok: true})
+    end)
+
+    assert {:ok, %{file_id: "F123"}} =
+             Client.delete_file(%{file_id: "F123"}, "token")
+  end
+
   test "list users sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

@@ -76,5 +76,34 @@ defmodule Jido.Connect.Slack.Actions.Files do
         field :files, {:array, :map}
       end
     end
+
+    action :delete_file do
+      id "slack.file.delete"
+      resource :file
+      verb :delete
+      data_classification :workspace_content
+      label "Delete file"
+
+      description """
+      Delete an existing Slack file by ID.
+      """
+
+      handler Jido.Connect.Slack.Handlers.Actions.DeleteFile
+      effect :destructive, confirmation: :always
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["files:write"]
+      end
+
+      input do
+        field :file_id, :string, required?: true, example: "F012AB3CDE4"
+      end
+
+      output do
+        field :file_id, :string
+      end
+    end
   end
 end
