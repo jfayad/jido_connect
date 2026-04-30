@@ -253,6 +253,112 @@ defmodule Jido.Connect.GitHub.ClientTest do
             ]} = Client.list_branches(%{repo: "org/repo", page: 2, per_page: 50}, "token")
   end
 
+  test "create branch resolves source ref and posts git ref" do
+    Req.Test.stub(__MODULE__, fn
+      %{method: "GET", request_path: "/repos/org/repo/git/ref/heads/main"} = conn ->
+        assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+        Req.Test.json(conn, %{
+          ref: "refs/heads/main",
+          object: %{
+            sha: "abc123",
+            type: "commit",
+            url: "https://api.github.test/repos/org/repo/git/commits/abc123"
+          }
+        })
+
+      %{method: "POST", request_path: "/repos/org/repo/git/refs"} = conn ->
+        assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+        {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+        assert Jason.decode!(body) == %{
+                 "ref" => "refs/heads/feature/example",
+                 "sha" => "abc123"
+               }
+
+        conn
+        |> Plug.Conn.put_status(201)
+        |> Req.Test.json(%{
+          ref: "refs/heads/feature/example",
+          url: "https://api.github.test/repos/org/repo/git/refs/heads/feature/example",
+          object: %{
+            sha: "abc123",
+            type: "commit",
+            url: "https://api.github.test/repos/org/repo/git/commits/abc123"
+          }
+        })
+    end)
+
+    assert {:ok,
+            %{
+              ref: "refs/heads/feature/example",
+              sha: "abc123",
+              url: "https://api.github.test/repos/org/repo/git/refs/heads/feature/example",
+              object: %{sha: "abc123", type: "commit"}
+            }} =
+             Client.create_branch(
+               "org/repo",
+               %{branch: "feature/example", source_ref: "main"},
+               "token"
+             )
+  end
+
+  test "create branch posts source SHA without resolving ref" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/git/refs"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "ref" => "refs/heads/feature/example",
+               "sha" => "abc123"
+             }
+
+      conn
+      |> Plug.Conn.put_status(201)
+      |> Req.Test.json(%{
+        ref: "refs/heads/feature/example",
+        object: %{sha: "abc123", type: "commit"}
+      })
+    end)
+
+    assert {:ok, %{ref: "refs/heads/feature/example", sha: "abc123"}} =
+             Client.create_branch(
+               "org/repo",
+               %{branch: "feature/example", source_sha: "abc123"},
+               "token"
+             )
+  end
+
+  test "create branch normalizes duplicate ref errors" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/repos/org/repo/git/refs"
+
+      conn
+      |> Plug.Conn.put_status(422)
+      |> Req.Test.json(%{
+        message: "Reference already exists",
+        errors: [%{resource: "Reference", code: "already_exists"}]
+      })
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :already_exists,
+              status: 422,
+              details: %{message: "Reference already exists"}
+            }} =
+             Client.create_branch(
+               "org/repo",
+               %{branch: "feature/example", source_sha: "abc123"},
+               "token"
+             )
+  end
+
   test "list commits sends expected request and normalizes commits" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

@@ -154,6 +154,39 @@ defmodule Jido.Connect.GitHub.Actions.Repositories do
       end
     end
 
+    action :create_branch do
+      id "github.branch.create"
+      resource :branch
+      verb :create
+      data_classification :workspace_metadata
+      label "Create branch"
+      description "Create a GitHub repository branch from an existing ref or commit SHA."
+      handler Jido.Connect.GitHub.Handlers.Actions.CreateBranch
+      effect :write, confirmation: :always
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :branch, :string, required?: true, example: "feature/example"
+        field :source_ref, :string, example: "main"
+        field :source_sha, :string, example: "abc123"
+      end
+
+      output do
+        field :repo, :string
+        field :branch, :string
+        field :ref, :string
+        field :sha, :string
+        field :url, :string
+        field :object, :map
+      end
+    end
+
     action :list_commits do
       id "github.commit.list"
       resource :commit

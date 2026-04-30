@@ -104,6 +104,24 @@ defmodule Jido.Connect.GitHubTest do
        ]}
     end
 
+    def create_branch(
+          "org/repo",
+          %{branch: "feature/example", source_ref: "main"},
+          "token"
+        ) do
+      {:ok,
+       %{
+         ref: "refs/heads/feature/example",
+         sha: "abc123",
+         url: "https://api.github.test/repos/org/repo/git/refs/heads/feature/example",
+         object: %{
+           sha: "abc123",
+           type: "commit",
+           url: "https://api.github.test/repos/org/repo/git/commits/abc123"
+         }
+       }}
+    end
+
     def list_commits(
           %{repo: "org/repo", ref: "main", path: "lib/example.ex", page: 2, per_page: 10},
           "token"
@@ -780,6 +798,19 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.branch.create",
+              resource: :branch,
+              verb: :create,
+              mutation?: true,
+              confirmation: :always,
+              auth_profiles: [:user, :installation],
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.branch.create")
+
+    assert {:ok,
+            %{
               id: "github.ref.compare",
               resource: :ref,
               verb: :get,
@@ -1133,6 +1164,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.GetRepository,
              Jido.Connect.GitHub.Actions.ListBranches,
+             Jido.Connect.GitHub.Actions.CreateBranch,
              Jido.Connect.GitHub.Actions.ListCommits,
              Jido.Connect.GitHub.Actions.CompareRefs,
              Jido.Connect.GitHub.Actions.ReadFile,
@@ -1180,6 +1212,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.ListInstallationRepositories,
                  Jido.Connect.GitHub.Actions.GetRepository,
                  Jido.Connect.GitHub.Actions.ListBranches,
+                 Jido.Connect.GitHub.Actions.CreateBranch,
                  Jido.Connect.GitHub.Actions.ListCommits,
                  Jido.Connect.GitHub.Actions.CompareRefs,
                  Jido.Connect.GitHub.Actions.ReadFile,
@@ -1514,6 +1547,23 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.ListBranches.name() == "github_branch_list"
+  end
+
+  test "generated branch create action metadata tracks source fields" do
+    projection = Jido.Connect.GitHub.Actions.CreateBranch.jido_connect_projection()
+
+    assert projection.action_id == "github.branch.create"
+    assert projection.label == "Create branch"
+    assert Enum.map(projection.input, & &1.name) == [:repo, :branch, :source_ref, :source_sha]
+    assert Enum.map(projection.output, & &1.name) == [:repo, :branch, :ref, :sha, :url, :object]
+    assert projection.risk == :write
+    assert projection.confirmation == :always
+    assert projection.resource == :branch
+    assert projection.verb == :create
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.CreateBranch.name() == "github_branch_create"
   end
 
   test "generated commit list action metadata tracks ref, path, and pagination fields" do
@@ -2237,6 +2287,57 @@ defmodule Jido.Connect.GitHubTest do
                %{repo: "org/repo", page: 2, per_page: 10},
                context: context,
                credential_lease: lease
+             )
+  end
+
+  test "invokes GitHub create branch action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              repo: "org/repo",
+              branch: "feature/example",
+              ref: "refs/heads/feature/example",
+              sha: "abc123"
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.branch.create",
+               %{repo: "org/repo", branch: "feature/example", source_ref: "main"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "validates GitHub create branch source inputs before client calls" do
+    credentials = %{access_token: "token", github_client: FakeGitHubClient}
+    handler = Jido.Connect.GitHub.Handlers.Actions.CreateBranch
+
+    assert {:error, %Connect.Error.ValidationError{reason: :missing_source, subject: :source}} =
+             handler.run(%{repo: "org/repo", branch: "feature/example"}, %{
+               credentials: credentials
+             })
+
+    assert {:error, %Connect.Error.ValidationError{reason: :missing_source, subject: :source}} =
+             handler.run(%{repo: "org/repo", branch: "feature/example", source_ref: ""}, %{
+               credentials: credentials
+             })
+
+    assert {:error, %Connect.Error.ValidationError{reason: :ambiguous_source, subject: :source}} =
+             handler.run(
+               %{
+                 repo: "org/repo",
+                 branch: "feature/example",
+                 source_ref: "main",
+                 source_sha: "abc123"
+               },
+               %{credentials: credentials}
+             )
+
+    assert {:error, %Connect.Error.ConfigError{key: :github_client}} =
+             handler.run(
+               %{repo: "org/repo", branch: "feature/example", source_sha: "abc123"},
+               %{credentials: %{access_token: "token"}}
              )
   end
 
@@ -2968,6 +3069,25 @@ defmodule Jido.Connect.GitHubTest do
              )
   end
 
+  test "generated branch create action delegates to integration invoke runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              repo: "org/repo",
+              branch: "feature/example",
+              ref: "refs/heads/feature/example",
+              sha: "abc123"
+            }} =
+             Jido.Connect.GitHub.Actions.CreateBranch.run(
+               %{repo: "org/repo", branch: "feature/example", source_ref: "main"},
+               %{
+                 integration_context: context,
+                 credential_lease: lease
+               }
+             )
+  end
+
   test "generated commit list action delegates to integration invoke runtime" do
     {context, lease} = context_and_lease()
 
@@ -3351,6 +3471,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.GetRepository,
              Jido.Connect.GitHub.Actions.ListBranches,
+             Jido.Connect.GitHub.Actions.CreateBranch,
              Jido.Connect.GitHub.Actions.ListCommits,
              Jido.Connect.GitHub.Actions.CompareRefs,
              Jido.Connect.GitHub.Actions.ReadFile,

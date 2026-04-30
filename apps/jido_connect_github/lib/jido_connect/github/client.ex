@@ -52,6 +52,20 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_branch_list_response()
   end
 
+  def create_branch(repo, attrs, access_token)
+      when is_binary(repo) and is_map(attrs) and is_binary(access_token) do
+    req = request(access_token)
+
+    with {:ok, sha} <- branch_source_sha(req, repo, attrs) do
+      req
+      |> Req.post(
+        url: "/repos/#{repo}/git/refs",
+        json: %{ref: "refs/heads/#{Map.fetch!(attrs, :branch)}", sha: sha}
+      )
+      |> handle_ref_create_response()
+    end
+  end
+
   def list_commits(%{repo: repo} = params, access_token)
       when is_binary(repo) and is_binary(access_token) do
     access_token
@@ -479,6 +493,44 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_branch_list_response(response), do: handle_error_response(response)
+
+  defp handle_ref_fetch_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_ref(body)}
+  end
+
+  defp handle_ref_fetch_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub ref response was invalid", body)
+  end
+
+  defp handle_ref_fetch_response(response), do: handle_error_response(response)
+
+  defp handle_ref_create_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    {:ok, normalize_ref(body)}
+  end
+
+  defp handle_ref_create_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub ref create response was invalid", body)
+  end
+
+  defp handle_ref_create_response({:ok, %{status: 422, body: body} = response}) do
+    if ref_already_exists?(body) do
+      {:error,
+       Error.provider("GitHub branch already exists",
+         provider: :github,
+         reason: :already_exists,
+         status: 422,
+         details: %{message: Data.get(body, "message"), body: body}
+       )}
+    else
+      handle_error_response({:ok, response})
+    end
+  end
+
+  defp handle_ref_create_response(response), do: handle_error_response(response)
 
   defp handle_commit_list_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_list(body) do
@@ -924,6 +976,29 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp normalize_branch_commit(_commit), do: nil
+
+  defp normalize_ref(ref) when is_map(ref) do
+    object = Data.get(ref, "object") || %{}
+
+    %{
+      ref: Data.get(ref, "ref"),
+      sha: Data.get(object, "sha"),
+      url: Data.get(ref, "url"),
+      object: normalize_ref_object(object)
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_ref_object(object) when is_map(object) do
+    %{
+      sha: Data.get(object, "sha"),
+      type: Data.get(object, "type"),
+      url: Data.get(object, "url")
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_ref_object(_object), do: nil
 
   defp normalize_commit(commit) when is_map(commit) do
     details = Data.get(commit, "commit") || %{}
@@ -1443,6 +1518,29 @@ defmodule Jido.Connect.GitHub.Client do
     ]
   end
 
+  defp branch_source_sha(_req, _repo, %{source_sha: sha}) when is_binary(sha), do: {:ok, sha}
+
+  defp branch_source_sha(req, repo, %{source_ref: ref}) when is_binary(ref) do
+    req
+    |> Req.get(url: "/repos/#{repo}/git/ref/#{encode_path(git_ref_path(ref))}")
+    |> handle_ref_fetch_response()
+    |> case do
+      {:ok, %{sha: sha}} when is_binary(sha) -> {:ok, sha}
+      {:ok, ref} -> invalid_success_response("GitHub source ref response was invalid", ref)
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp git_ref_path("refs/" <> ref), do: ref
+
+  defp git_ref_path(ref) do
+    if String.contains?(ref, "/") do
+      ref
+    else
+      "heads/#{ref}"
+    end
+  end
+
   defp commit_list_params(params) do
     [
       sha: Map.get(params, :ref),
@@ -1479,6 +1577,21 @@ defmodule Jido.Connect.GitHub.Client do
   defp encode_ref(ref), do: URI.encode(ref, &char_unreserved?/1)
 
   defp char_unreserved?(character), do: URI.char_unreserved?(character)
+
+  defp ref_already_exists?(body) when is_map(body) do
+    message = body |> Data.get("message", "") |> to_string() |> String.downcase()
+    errors = Data.get(body, "errors", [])
+
+    String.contains?(message, "reference already exists") or
+      Enum.any?(List.wrap(errors), fn error ->
+        error_message = error |> Data.get("message", "") |> to_string() |> String.downcase()
+        code = error |> Data.get("code", "") |> to_string() |> String.downcase()
+
+        String.contains?(error_message, "reference already exists") or code == "already_exists"
+      end)
+  end
+
+  defp ref_already_exists?(_body), do: false
 
   defp pull_request_list_params(params) do
     [
