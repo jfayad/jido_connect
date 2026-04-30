@@ -560,13 +560,68 @@ defmodule Jido.Connect.Slack.WebhookTest do
             }} = Webhook.normalize_signal("channel_unarchive", unarchive_payload)
   end
 
-  test "normalizes file created events with file metadata" do
-    payload = file_event_payload("file_created", "Ev906", %{"user_id" => "U123"})
+  test "normalizes member joined channel events with membership metadata" do
+    payload =
+      channel_event_payload("member_joined_channel", "Ev910", %{
+        "user" => "U123",
+        "channel" => "C123",
+        "channel_type" => "C",
+        "team" => "T123",
+        "inviter" => "U456",
+        "event_ts" => "1700000000.001300"
+      })
 
     assert {:ok,
             %{
               team_id: "T123",
-              event_id: "Ev906",
+              event_id: "Ev910",
+              channel_id: "C123",
+              channel: "C123",
+              channel_type: "C",
+              user: "U123",
+              inviter: "U456",
+              event_ts: "1700000000.001300",
+              actor: %{id: "U123", team_id: "T123"},
+              inviter_user: %{id: "U456", team_id: "T123"}
+            }} = Webhook.normalize_signal("member_joined_channel", payload)
+
+    assert {:ok, %{channel_id: "C123", user: "U123"}} = Webhook.normalize_event(payload)
+  end
+
+  test "normalizes member left channel events with membership metadata" do
+    payload =
+      channel_event_payload("member_left_channel", "Ev911", %{
+        "user" => "U123",
+        "channel" => "C123",
+        "channel_type" => "C",
+        "team" => "T123",
+        "event_ts" => "1700000000.001400"
+      })
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev911",
+              channel_id: "C123",
+              channel: "C123",
+              channel_type: "C",
+              user: "U123",
+              event_ts: "1700000000.001400",
+              actor: %{id: "U123", team_id: "T123"}
+            }} = Webhook.normalize_signal("member_left_channel", payload)
+
+    assert {:ok, signal} = Webhook.normalize_event(payload)
+    refute Map.has_key?(signal, :inviter)
+    refute Map.has_key?(signal, :inviter_user)
+  end
+
+  test "normalizes file created events with file metadata" do
+    payload = file_event_payload("file_created", "Ev912", %{"user_id" => "U123"})
+
+    assert {:ok,
+            %{
+              team_id: "T123",
+              event_id: "Ev912",
               file_id: "F123",
               file: %{"id" => "F123"},
               user_id: "U123",

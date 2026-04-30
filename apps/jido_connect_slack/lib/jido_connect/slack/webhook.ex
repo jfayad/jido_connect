@@ -163,6 +163,8 @@ defmodule Jido.Connect.Slack.Webhook do
                "channel_rename",
                "channel_archive",
                "channel_unarchive",
+               "member_joined_channel",
+               "member_left_channel",
                "file_created",
                "file_shared",
                "file_public",
@@ -387,6 +389,25 @@ defmodule Jido.Connect.Slack.Webhook do
 
   defp lifecycle_signal(payload, %{"type" => event_type} = event)
        when event_type in [
+              "member_joined_channel",
+              "member_left_channel"
+            ] do
+    Data.compact(%{
+      team_id: Data.get(payload, "team_id"),
+      event_id: Data.get(payload, "event_id"),
+      channel_id: channel_id(event),
+      channel: Data.get(event, "channel"),
+      channel_type: Data.get(event, "channel_type"),
+      user: Data.get(event, "user"),
+      inviter: Data.get(event, "inviter"),
+      event_ts: Data.get(event, "event_ts"),
+      actor: channel_actor(payload, event),
+      inviter_user: channel_inviter(payload, event)
+    })
+  end
+
+  defp lifecycle_signal(payload, %{"type" => event_type} = event)
+       when event_type in [
               "channel_created",
               "channel_rename",
               "channel_archive",
@@ -427,6 +448,19 @@ defmodule Jido.Connect.Slack.Webhook do
       id: Data.get(event, "user") || Data.get(channel, "creator"),
       team_id: Data.get(payload, "team_id")
     })
+  end
+
+  defp channel_inviter(payload, event) do
+    case Data.get(event, "inviter") do
+      inviter when is_binary(inviter) and inviter != "" ->
+        Data.compact(%{
+          id: inviter,
+          team_id: Data.get(payload, "team_id")
+        })
+
+      _other ->
+        nil
+    end
   end
 
   defp file_signal(payload, event) do

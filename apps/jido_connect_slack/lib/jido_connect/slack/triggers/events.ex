@@ -455,6 +455,78 @@ defmodule Jido.Connect.Slack.Triggers.Events do
       end
     end
 
+    webhook :member_joined_channel do
+      id "slack.event.member_joined_channel"
+      resource :channel_member
+      verb :watch
+      data_classification :workspace_metadata
+      label "Member joined channel"
+      description "Receive Slack Events API member_joined_channel callbacks."
+
+      verification %{
+        kind: :slack_signed_request,
+        signature_header: "x-slack-signature",
+        timestamp_header: "x-slack-request-timestamp"
+      }
+
+      dedupe %{key: [:team_id, :channel_id, :user, :event_id]}
+      handler Jido.Connect.Slack.Handlers.Triggers.MemberJoinedChannelEvent
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["channels:read"]
+      end
+
+      signal do
+        field :team_id, :string
+        field :event_id, :string
+        field :channel_id, :string
+        field :channel, :string
+        field :channel_type, :string
+        field :user, :string
+        field :inviter, :string
+        field :event_ts, :string
+        field :actor, :map
+        field :inviter_user, :map
+      end
+    end
+
+    webhook :member_left_channel do
+      id "slack.event.member_left_channel"
+      resource :channel_member
+      verb :watch
+      data_classification :workspace_metadata
+      label "Member left channel"
+      description "Receive Slack Events API member_left_channel callbacks."
+
+      verification %{
+        kind: :slack_signed_request,
+        signature_header: "x-slack-signature",
+        timestamp_header: "x-slack-request-timestamp"
+      }
+
+      dedupe %{key: [:team_id, :channel_id, :user, :event_id]}
+      handler Jido.Connect.Slack.Handlers.Triggers.MemberLeftChannelEvent
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["channels:read"]
+      end
+
+      signal do
+        field :team_id, :string
+        field :event_id, :string
+        field :channel_id, :string
+        field :channel, :string
+        field :channel_type, :string
+        field :user, :string
+        field :event_ts, :string
+        field :actor, :map
+      end
+    end
+
     webhook :file_created do
       id "slack.event.file_created"
       resource :file

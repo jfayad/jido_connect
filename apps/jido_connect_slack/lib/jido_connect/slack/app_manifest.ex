@@ -133,6 +133,8 @@ defmodule Jido.Connect.Slack.AppManifest do
         "channel_rename",
         "channel_archive",
         "channel_unarchive",
+        "member_joined_channel",
+        "member_left_channel",
         "file_created",
         "file_shared",
         "file_public",

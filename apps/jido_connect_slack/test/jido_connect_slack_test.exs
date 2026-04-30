@@ -1363,6 +1363,8 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Sensors.ChannelRename,
              Jido.Connect.Slack.Sensors.ChannelArchive,
              Jido.Connect.Slack.Sensors.ChannelUnarchive,
+             Jido.Connect.Slack.Sensors.MemberJoinedChannel,
+             Jido.Connect.Slack.Sensors.MemberLeftChannel,
              Jido.Connect.Slack.Sensors.FileCreated,
              Jido.Connect.Slack.Sensors.FileShared,
              Jido.Connect.Slack.Sensors.FilePublic,
@@ -1424,6 +1426,8 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Sensors.ChannelRename,
                  Jido.Connect.Slack.Sensors.ChannelArchive,
                  Jido.Connect.Slack.Sensors.ChannelUnarchive,
+                 Jido.Connect.Slack.Sensors.MemberJoinedChannel,
+                 Jido.Connect.Slack.Sensors.MemberLeftChannel,
                  Jido.Connect.Slack.Sensors.FileCreated,
                  Jido.Connect.Slack.Sensors.FileShared,
                  Jido.Connect.Slack.Sensors.FilePublic,
@@ -3859,7 +3863,9 @@ defmodule Jido.Connect.SlackTest do
       {Jido.Connect.Slack.Sensors.ChannelCreated, "slack.event.channel_created"},
       {Jido.Connect.Slack.Sensors.ChannelRename, "slack.event.channel_rename"},
       {Jido.Connect.Slack.Sensors.ChannelArchive, "slack.event.channel_archive"},
-      {Jido.Connect.Slack.Sensors.ChannelUnarchive, "slack.event.channel_unarchive"}
+      {Jido.Connect.Slack.Sensors.ChannelUnarchive, "slack.event.channel_unarchive"},
+      {Jido.Connect.Slack.Sensors.MemberJoinedChannel, "slack.event.member_joined_channel"},
+      {Jido.Connect.Slack.Sensors.MemberLeftChannel, "slack.event.member_left_channel"}
     ]
 
     for {sensor, trigger_id} <- sensors do
