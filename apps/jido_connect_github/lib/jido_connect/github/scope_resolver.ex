@@ -20,6 +20,7 @@ defmodule Jido.Connect.GitHub.ScopeResolver do
       "github.release.list" -> ["metadata:read", "contents:read"]
       "github.workflow_run.job.list" -> ["metadata:read", "actions:read"]
       "github.workflow_run.list" -> ["metadata:read", "actions:read"]
+      "github.workflow_run.updated" -> ["metadata:read", "actions:read"]
       "github.workflow_run.rerun" -> ["metadata:read", "actions:write"]
       "github.workflow_run.cancel" -> ["metadata:read", "actions:write"]
       "github.workflow.dispatch" -> ["metadata:read", "actions:write"]

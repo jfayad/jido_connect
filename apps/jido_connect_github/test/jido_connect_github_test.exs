@@ -369,6 +369,69 @@ defmodule Jido.Connect.GitHubTest do
        }}
     end
 
+    def list_workflow_runs(
+          %{repo: "org/repo", page: 1, per_page: 30, checkpoint: "2026-04-29T10:00:00Z"},
+          "token"
+        ) do
+      {:ok,
+       %{
+         total_count: 2,
+         workflow_runs: [
+           %{
+             id: 31,
+             name: "CI",
+             number: 18,
+             status: "in_progress",
+             conclusion: nil,
+             event: "push",
+             branch: "main",
+             sha: "def456",
+             workflow_id: 9001,
+             url: "https://github.test/runs/31",
+             created_at: "2026-04-29T10:00:00Z",
+             updated_at: "2026-04-29T10:00:00Z"
+           },
+           %{
+             id: 32,
+             name: "CI",
+             number: 19,
+             status: "completed",
+             conclusion: "failure",
+             event: "push",
+             branch: "main",
+             sha: "fed654",
+             workflow_id: 9001,
+             url: "https://github.test/runs/32",
+             created_at: "2026-04-29T10:02:00Z",
+             updated_at: "2026-04-29T10:03:00Z"
+           }
+         ]
+       }}
+    end
+
+    def list_workflow_runs(%{repo: "org/repo", page: 1, per_page: 30}, "token") do
+      {:ok,
+       %{
+         total_count: 1,
+         workflow_runs: [
+           %{
+             id: 31,
+             name: "CI",
+             number: 18,
+             status: "in_progress",
+             conclusion: nil,
+             event: "push",
+             branch: "main",
+             sha: "def456",
+             workflow_id: 9001,
+             url: "https://github.test/runs/31",
+             created_at: "2026-04-29T10:00:00Z",
+             updated_at: "2026-04-29T10:00:00Z"
+           }
+         ]
+       }}
+    end
+
     def list_releases(%{repo: "org/repo", page: 2, per_page: 10}, "token") do
       {:ok,
        %{
@@ -1137,6 +1200,17 @@ defmodule Jido.Connect.GitHubTest do
               scope_resolver: Jido.Connect.GitHub.ScopeResolver
             }} =
              Connect.trigger(spec, "github.pull_request.updated")
+
+    assert {:ok,
+            %{
+              id: "github.workflow_run.updated",
+              kind: :poll,
+              checkpoint: :updated_at,
+              dedupe: %{key: [:repo, :workflow_run_id, :updated_at]},
+              auth_profiles: [:user, :installation],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.trigger(spec, "github.workflow_run.updated")
   end
 
   test "GitHub catalog entry exposes setup, auth, and runtime capabilities" do
@@ -1197,7 +1271,8 @@ defmodule Jido.Connect.GitHubTest do
 
     assert Jido.Connect.GitHub.jido_sensor_modules() == [
              Jido.Connect.GitHub.Sensors.NewIssues,
-             Jido.Connect.GitHub.Sensors.UpdatedPullRequests
+             Jido.Connect.GitHub.Sensors.UpdatedPullRequests,
+             Jido.Connect.GitHub.Sensors.WorkflowRunUpdates
            ]
 
     assert Jido.Connect.GitHub.jido_plugin_module() == Jido.Connect.GitHub.Plugin
@@ -1244,7 +1319,8 @@ defmodule Jido.Connect.GitHubTest do
                ],
                sensors: [
                  Jido.Connect.GitHub.Sensors.NewIssues,
-                 Jido.Connect.GitHub.Sensors.UpdatedPullRequests
+                 Jido.Connect.GitHub.Sensors.UpdatedPullRequests,
+                 Jido.Connect.GitHub.Sensors.WorkflowRunUpdates
                ],
                plugin: Jido.Connect.GitHub.Plugin
              }
@@ -1343,6 +1419,9 @@ defmodule Jido.Connect.GitHubTest do
     assert {:module, Jido.Connect.GitHub.Sensors.UpdatedPullRequests} =
              Code.ensure_loaded(Jido.Connect.GitHub.Sensors.UpdatedPullRequests)
 
+    assert {:module, Jido.Connect.GitHub.Sensors.WorkflowRunUpdates} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Sensors.WorkflowRunUpdates)
+
     assert {:module, Jido.Connect.GitHub.Plugin} =
              Code.ensure_loaded(Jido.Connect.GitHub.Plugin)
 
@@ -1377,6 +1456,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListIssueComments, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Sensors.NewIssues, :init, 2)
     assert function_exported?(Jido.Connect.GitHub.Sensors.UpdatedPullRequests, :init, 2)
+    assert function_exported?(Jido.Connect.GitHub.Sensors.WorkflowRunUpdates, :init, 2)
     assert function_exported?(Jido.Connect.GitHub.Plugin, :plugin_spec, 1)
   end
 
@@ -3460,6 +3540,67 @@ defmodule Jido.Connect.GitHubTest do
 
     assert next_signal.data.pull_number == 8
     assert state.checkpoint == "2026-04-29T10:02:00Z"
+  end
+
+  test "workflow run update poll emits updates and completions since checkpoint" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              signals: [
+                %{
+                  repo: "org/repo",
+                  workflow_run_id: 32,
+                  workflow_run_number: 19,
+                  workflow_name: "CI",
+                  action: "completed",
+                  status: "completed",
+                  conclusion: "failure",
+                  ci_status: "failure",
+                  failure: true,
+                  branch: "main",
+                  updated_at: "2026-04-29T10:03:00Z"
+                }
+              ],
+              checkpoint: "2026-04-29T10:03:00Z"
+            }} =
+             Connect.poll(
+               Jido.Connect.GitHub.integration(),
+               "github.workflow_run.updated",
+               %{repo: "org/repo"},
+               %{
+                 context: context,
+                 credential_lease: lease,
+                 checkpoint: "2026-04-29T10:00:00Z"
+               }
+             )
+  end
+
+  test "generated workflow run update sensor continues checkpoint between ticks" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, state, [{:schedule, 300_000}]} =
+             Jido.Connect.GitHub.Sensors.WorkflowRunUpdates.init(%{repo: "org/repo"}, %{
+               integration_context: context,
+               credential_lease: lease
+             })
+
+    assert {:ok, state, [{:emit, signal}, {:schedule, 300_000}]} =
+             Jido.Connect.GitHub.Sensors.WorkflowRunUpdates.handle_event(:tick, state)
+
+    assert signal.type == "github.workflow_run.updated"
+    assert signal.data.workflow_run_id == 31
+    assert signal.data.action == "updated"
+    assert signal.data.ci_status == "in_progress"
+    assert state.checkpoint == "2026-04-29T10:00:00Z"
+
+    assert {:ok, state, [{:emit, next_signal}, {:schedule, 300_000}]} =
+             Jido.Connect.GitHub.Sensors.WorkflowRunUpdates.handle_event(:tick, state)
+
+    assert next_signal.data.workflow_run_id == 32
+    assert next_signal.data.action == "completed"
+    assert next_signal.data.failure == true
+    assert state.checkpoint == "2026-04-29T10:03:00Z"
   end
 
   test "generated plugin lists and filters generated actions" do
