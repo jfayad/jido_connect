@@ -4,6 +4,31 @@ defmodule Jido.Connect.Slack.Actions.Pins do
   use Spark.Dsl.Fragment, of: Jido.Connect
 
   actions do
+    action :list_pins do
+      id "slack.pin.list"
+      resource :pin
+      verb :list
+      data_classification :workspace_metadata
+      label "List pinned items"
+      description "List pinned Slack items for a channel."
+      handler Jido.Connect.Slack.Handlers.Actions.ListPins
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["pins:read"]
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+      end
+
+      output do
+        field :channel, :string
+        field :items, {:array, :map}
+      end
+    end
+
     action :add_pin do
       id "slack.pin.add"
       resource :pin

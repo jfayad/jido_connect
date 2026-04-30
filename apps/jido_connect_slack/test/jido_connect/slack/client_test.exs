@@ -775,6 +775,61 @@ defmodule Jido.Connect.Slack.ClientTest do
              Client.remove_pin(%{channel: "C123", timestamp: "1700000000.000100"}, "token")
   end
 
+  test "list pins sends expected request and normalizes pinned items" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/pins.list"
+      assert %{"channel" => "C123"} = Plug.Conn.Query.decode(conn.query_string)
+
+      Req.Test.json(conn, %{
+        ok: true,
+        items: [
+          %{
+            "type" => "message",
+            "channel" => "C123",
+            "created" => 1_700_000_001,
+            "created_by" => "U123",
+            "message" => %{
+              "type" => "message",
+              "channel" => "C123",
+              "text" => "Pinned",
+              "ts" => "1700000000.000100"
+            }
+          },
+          %{
+            "type" => "file_comment",
+            "created" => 1_700_000_002,
+            "created_by" => "U456",
+            "file" => %{"id" => "F123", "name" => "report.txt"},
+            "comment" => %{"id" => "Fc123", "comment" => "Looks good"}
+          }
+        ]
+      })
+    end)
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              items: [
+                %{
+                  type: "message",
+                  channel: "C123",
+                  timestamp: "1700000000.000100",
+                  created: 1_700_000_001,
+                  created_by: "U123",
+                  message: %{"text" => "Pinned"}
+                },
+                %{
+                  type: "file_comment",
+                  created: 1_700_000_002,
+                  created_by: "U456",
+                  file: %{"id" => "F123"},
+                  file_comment: %{"id" => "Fc123"}
+                }
+              ]
+            }} = Client.list_pins(%{channel: "C123"}, "token")
+  end
+
   test "get reactions sends expected message target request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

@@ -169,6 +169,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_get_reactions_response(params)
   end
 
+  def list_pins(params, access_token) when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/pins.list", params: pin_list_params(params))
+    |> handle_pin_list_response(params)
+  end
+
   def add_pin(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
     access_token
     |> request()
@@ -390,6 +397,12 @@ defmodule Jido.Connect.Slack.Client do
   defp get_reactions_params(params) do
     params
     |> Map.take([:channel, :timestamp, :file, :file_comment, :full])
+    |> Data.compact()
+  end
+
+  defp pin_list_params(params) do
+    params
+    |> Map.take([:channel])
     |> Data.compact()
   end
 
@@ -847,6 +860,25 @@ defmodule Jido.Connect.Slack.Client do
 
   defp handle_get_reactions_response(response, _params), do: handle_error_response(response)
 
+  defp handle_pin_list_response(
+         {:ok, %{status: status, body: %{"ok" => true} = body}},
+         params
+       )
+       when status in 200..299 do
+    with items when is_list(items) <- Map.get(body, "items", []),
+         true <- Enum.all?(items, &is_map/1) do
+      {:ok,
+       %{
+         channel: Data.get(params, :channel),
+         items: Enum.map(items, &normalize_pinned_item/1)
+       }}
+    else
+      _other -> invalid_success_response("Slack pin list response was invalid", body)
+    end
+  end
+
+  defp handle_pin_list_response(response, _params), do: handle_error_response(response)
+
   defp handle_add_pin_response({:ok, %{status: status, body: %{"ok" => true}}}, attrs)
        when status in 200..299 do
     {:ok,
@@ -870,6 +902,24 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_remove_pin_response(response, _attrs), do: handle_error_response(response)
+
+  defp normalize_pinned_item(item) do
+    message = Data.get(item, "message")
+    file = Data.get(item, "file")
+    file_comment = Data.get(item, "comment")
+
+    %{
+      type: Data.get(item, "type"),
+      channel: Data.get(item, "channel", Data.get(message, "channel")),
+      timestamp: Data.get(item, "timestamp", Data.get(message, "ts")),
+      created: Data.get(item, "created"),
+      created_by: Data.get(item, "created_by"),
+      message: message,
+      file: file,
+      file_comment: file_comment
+    }
+    |> Data.compact()
+  end
 
   defp reactions_target("message", body) do
     case Data.get(body, "message") do

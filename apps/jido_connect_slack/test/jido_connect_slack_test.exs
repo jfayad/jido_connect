@@ -491,6 +491,29 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def list_pins(%{channel: "C123"}, "token") do
+      {:ok,
+       %{
+         channel: "C123",
+         items: [
+           %{
+             type: "message",
+             channel: "C123",
+             timestamp: "1700000000.000100",
+             created: 1_700_000_001,
+             created_by: "U123",
+             message: %{"text" => "Pinned", "ts" => "1700000000.000100"}
+           },
+           %{
+             type: "file",
+             created: 1_700_000_002,
+             created_by: "U456",
+             file: %{"id" => "F123", "name" => "report.txt"}
+           }
+         ]
+       }}
+    end
+
     def add_pin(%{channel: "C123", timestamp: "1700000000.000100"}, "token") do
       {:ok,
        %{
@@ -918,6 +941,17 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok,
             %{
+              id: "slack.pin.list",
+              resource: :pin,
+              verb: :list,
+              policies: [:workspace_access],
+              scopes: ["pins:read"],
+              mutation?: false
+            }} =
+             Connect.action(spec, "slack.pin.list")
+
+    assert {:ok,
+            %{
               id: "slack.pin.add",
               resource: :pin,
               verb: :create,
@@ -1272,6 +1306,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.UnscheduleMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
+             Jido.Connect.Slack.Actions.ListPins,
              Jido.Connect.Slack.Actions.AddPin,
              Jido.Connect.Slack.Actions.RemovePin,
              Jido.Connect.Slack.Actions.ListReactions,
@@ -1323,6 +1358,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.UnscheduleMessage,
                  Jido.Connect.Slack.Actions.UpdateMessage,
                  Jido.Connect.Slack.Actions.DeleteMessage,
+                 Jido.Connect.Slack.Actions.ListPins,
                  Jido.Connect.Slack.Actions.AddPin,
                  Jido.Connect.Slack.Actions.RemovePin,
                  Jido.Connect.Slack.Actions.ListReactions,
@@ -1763,6 +1799,27 @@ defmodule Jido.Connect.SlackTest do
     assert remove_reaction_projection.risk == :write
     assert remove_reaction_projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.RemoveReaction.name() == "slack_reaction_remove"
+
+    list_pins_projection = Jido.Connect.Slack.Actions.ListPins.jido_connect_projection()
+
+    assert list_pins_projection.action_id == "slack.pin.list"
+    assert list_pins_projection.label == "List pinned items"
+    assert list_pins_projection.resource == :pin
+    assert list_pins_projection.verb == :list
+    assert list_pins_projection.scopes == ["pins:read"]
+
+    assert Enum.map(list_pins_projection.input, & &1.name) == [
+             :channel
+           ]
+
+    assert Enum.map(list_pins_projection.output, & &1.name) == [
+             :channel,
+             :items
+           ]
+
+    assert list_pins_projection.risk == :read
+    assert list_pins_projection.confirmation == :none
+    assert Jido.Connect.Slack.Actions.ListPins.name() == "slack_pin_list"
 
     pin_projection = Jido.Connect.Slack.Actions.AddPin.jido_connect_projection()
 
@@ -3139,6 +3196,35 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated list pins action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: "C123",
+              items: [
+                %{
+                  type: "message",
+                  channel: "C123",
+                  timestamp: "1700000000.000100",
+                  created: 1_700_000_001,
+                  created_by: "U123",
+                  message: %{"text" => "Pinned"}
+                },
+                %{
+                  type: "file",
+                  created: 1_700_000_002,
+                  created_by: "U456",
+                  file: %{"id" => "F123"}
+                }
+              ]
+            }} =
+             Jido.Connect.Slack.Actions.ListPins.run(
+               %{channel: "C123"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated remove pin action delegates through integration runtime" do
     {context, lease} = context_and_lease()
 
@@ -3334,6 +3420,21 @@ defmodule Jido.Connect.SlackTest do
             }} =
              Jido.Connect.Slack.Actions.AddPin.run(
                %{channel: "C123", timestamp: "1700000000"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "generated list pins action validates channel shape" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_input,
+              subject: "general",
+              details: %{field: :channel}
+            }} =
+             Jido.Connect.Slack.Actions.ListPins.run(
+               %{channel: "general"},
                %{integration_context: context, credential_lease: lease}
              )
   end
@@ -3568,6 +3669,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.UnscheduleMessage,
              Jido.Connect.Slack.Actions.UpdateMessage,
              Jido.Connect.Slack.Actions.DeleteMessage,
+             Jido.Connect.Slack.Actions.ListPins,
              Jido.Connect.Slack.Actions.AddPin,
              Jido.Connect.Slack.Actions.RemovePin,
              Jido.Connect.Slack.Actions.ListReactions,
@@ -3701,6 +3803,7 @@ defmodule Jido.Connect.SlackTest do
           "mpim:write",
           "chat:write",
           "files:write",
+          "pins:read",
           "pins:write",
           "reactions:read",
           "reactions:write",
