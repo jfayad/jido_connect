@@ -26,10 +26,24 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_map_response()
   end
 
+  def team_info(params, access_token) when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/team.info", params: team_info_params(params))
+    |> handle_team_info_response()
+  end
+
   defp list_channels_params(params) do
     params
     |> Map.take([:types, :exclude_archived, :limit, :cursor, :team_id])
     |> Data.compact()
+  end
+
+  defp team_info_params(params) do
+    case Data.get(params, :team_id) do
+      nil -> %{}
+      team_id -> %{team: team_id}
+    end
   end
 
   defp request(access_token) do
@@ -78,6 +92,16 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_map_response(response), do: handle_error_response(response)
+
+  defp handle_team_info_response({:ok, %{status: status, body: %{"ok" => true} = body}})
+       when status in 200..299 do
+    case Data.get(body, "team") do
+      team when is_map(team) -> {:ok, %{team: team}}
+      _other -> invalid_success_response("Slack team info response was invalid", body)
+    end
+  end
+
+  defp handle_team_info_response(response), do: handle_error_response(response)
 
   defp handle_error_response({:ok, %{status: status, body: %{"ok" => false} = body}}) do
     Error.provider("Slack API request failed",

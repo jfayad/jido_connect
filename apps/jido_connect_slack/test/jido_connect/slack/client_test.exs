@@ -81,6 +81,35 @@ defmodule Jido.Connect.Slack.ClientTest do
     assert {:ok, %{"team_id" => "T123", "user_id" => "U123"}} = Client.auth_test("token")
   end
 
+  test "team info sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/team.info"
+      assert %{"team" => "T123"} = URI.decode_query(conn.query_string)
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        ok: true,
+        team: %{
+          id: "T123",
+          name: "Demo",
+          domain: "demo",
+          enterprise_id: "E123",
+          enterprise_name: "Example Enterprise"
+        }
+      })
+    end)
+
+    assert {:ok,
+            %{
+              team: %{
+                "id" => "T123",
+                "name" => "Demo",
+                "enterprise_id" => "E123"
+              }
+            }} = Client.team_info(%{team_id: "T123"}, "token")
+  end
+
   test "normalizes Slack API errors" do
     Req.Test.stub(__MODULE__, fn conn ->
       Req.Test.json(conn, %{ok: false, error: "invalid_auth"})
