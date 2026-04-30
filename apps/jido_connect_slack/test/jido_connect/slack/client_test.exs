@@ -580,6 +580,58 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "share file sends expected request" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/files.completeUploadExternal"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "channels" => "C123,C456",
+               "initial_comment" => "Here is the report",
+               "thread_ts" => "1700000000.000100",
+               "files" => [%{"id" => "F123", "title" => "Report"}]
+             } = Jason.decode!(body)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        ok: true,
+        files: [%{id: "F123", title: "Report"}]
+      })
+    end)
+
+    assert {:ok, %{file_id: "F123", files: [%{"id" => "F123", "title" => "Report"}]}} =
+             Client.share_file(
+               %{
+                 file_id: "F123",
+                 channels: "C123,C456",
+                 title: "Report",
+                 initial_comment: "Here is the report",
+                 thread_ts: "1700000000.000100"
+               },
+               "token"
+             )
+  end
+
+  test "share file normalizes malformed responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/files.completeUploadExternal"
+
+      Req.Test.json(conn, %{ok: true, files: %{"id" => "F123"}})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :slack,
+              reason: :invalid_response,
+              details: %{body: %{"ok" => true, "files" => %{"id" => "F123"}}}
+            }} =
+             Client.share_file(%{file_id: "F123", channels: "C123"}, "token")
+  end
+
   test "list users sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

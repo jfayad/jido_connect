@@ -41,5 +41,40 @@ defmodule Jido.Connect.Slack.Actions.Files do
         field :files, {:array, :map}
       end
     end
+
+    action :share_file do
+      id "slack.file.share"
+      resource :file
+      verb :share
+      data_classification :workspace_content
+      label "Share file"
+
+      description """
+      Share an existing Slack file to one or more channels with an optional
+      title and introductory comment.
+      """
+
+      handler Jido.Connect.Slack.Handlers.Actions.ShareFile
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["files:write"]
+      end
+
+      input do
+        field :file_id, :string, required?: true, example: "F012AB3CDE4"
+        field :channels, :string, required?: true, example: "C012AB3CD,C987ZYXWV"
+        field :title, :string
+        field :initial_comment, :string
+        field :thread_ts, :string, description: "Slack parent message timestamp."
+      end
+
+      output do
+        field :file_id, :string
+        field :files, {:array, :map}
+      end
+    end
   end
 end

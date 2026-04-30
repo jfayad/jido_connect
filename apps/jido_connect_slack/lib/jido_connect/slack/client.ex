@@ -123,6 +123,16 @@ defmodule Jido.Connect.Slack.Client do
     end
   end
 
+  def share_file(attrs, access_token) when is_map(attrs) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(
+      url: "/files.completeUploadExternal",
+      json: share_file_params(attrs)
+    )
+    |> handle_share_file_response(attrs)
+  end
+
   def list_users(params, access_token) when is_map(params) and is_binary(access_token) do
     access_token
     |> request()
@@ -252,6 +262,17 @@ defmodule Jido.Connect.Slack.Client do
 
     params
     |> Map.take([:channel_id, :initial_comment, :thread_ts])
+    |> Map.put(:files, [file])
+    |> Data.compact()
+  end
+
+  defp share_file_params(params) do
+    file =
+      %{id: Data.get(params, :file_id), title: Data.get(params, :title)}
+      |> Data.compact()
+
+    params
+    |> Map.take([:channels, :initial_comment, :thread_ts])
     |> Map.put(:files, [file])
     |> Data.compact()
   end
@@ -586,6 +607,19 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_complete_upload_response(response, _upload), do: handle_error_response(response)
+
+  defp handle_share_file_response({:ok, %{status: status, body: %{"ok" => true} = body}}, attrs)
+       when status in 200..299 do
+    files = Data.get(body, "files", [])
+
+    if is_list(files) and Enum.all?(files, &is_map/1) do
+      {:ok, %{file_id: Data.get(attrs, :file_id), files: files}}
+    else
+      invalid_success_response("Slack share file response was invalid", body)
+    end
+  end
+
+  defp handle_share_file_response(response, _attrs), do: handle_error_response(response)
 
   defp handle_user_list_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do

@@ -295,6 +295,22 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def share_file(
+          %{
+            file_id: "F123",
+            channels: "C123,C456",
+            title: "Report",
+            initial_comment: "Here is the report"
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         file_id: "F123",
+         files: [%{"id" => "F123", "title" => "Report"}]
+       }}
+    end
+
     def auth_test("token") do
       {:ok,
        %{
@@ -566,6 +582,18 @@ defmodule Jido.Connect.SlackTest do
               confirmation: :required_for_ai
             }} =
              Connect.action(spec, "slack.reaction.remove")
+
+    assert {:ok,
+            %{
+              id: "slack.file.share",
+              resource: :file,
+              verb: :share,
+              policies: [:workspace_access],
+              scopes: ["files:write"],
+              mutation?: true,
+              confirmation: :required_for_ai
+            }} =
+             Connect.action(spec, "slack.file.share")
 
     assert {:ok,
             %{
@@ -855,6 +883,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.GetConversationInfo,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
+             Jido.Connect.Slack.Actions.ShareFile,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,
@@ -893,6 +922,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.GetConversationInfo,
                  Jido.Connect.Slack.Actions.ListConversationMembers,
                  Jido.Connect.Slack.Actions.UploadFile,
+                 Jido.Connect.Slack.Actions.ShareFile,
                  Jido.Connect.Slack.Actions.AuthTest,
                  Jido.Connect.Slack.Actions.TeamInfo,
                  Jido.Connect.Slack.Actions.PostMessage,
@@ -932,6 +962,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.UploadFile} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.UploadFile)
+
+    assert {:module, Jido.Connect.Slack.Actions.ShareFile} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.ShareFile)
 
     assert {:module, Jido.Connect.Slack.Actions.AuthTest} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.AuthTest)
@@ -1259,6 +1292,31 @@ defmodule Jido.Connect.SlackTest do
     assert upload_projection.risk == :write
     assert upload_projection.confirmation == :required_for_ai
     assert Jido.Connect.Slack.Actions.UploadFile.name() == "slack_file_upload"
+
+    share_projection = Jido.Connect.Slack.Actions.ShareFile.jido_connect_projection()
+
+    assert share_projection.action_id == "slack.file.share"
+    assert share_projection.label == "Share file"
+    assert share_projection.resource == :file
+    assert share_projection.verb == :share
+    assert share_projection.scopes == ["files:write"]
+
+    assert Enum.map(share_projection.input, & &1.name) == [
+             :file_id,
+             :channels,
+             :title,
+             :initial_comment,
+             :thread_ts
+           ]
+
+    assert Enum.map(share_projection.output, & &1.name) == [
+             :file_id,
+             :files
+           ]
+
+    assert share_projection.risk == :write
+    assert share_projection.confirmation == :required_for_ai
+    assert Jido.Connect.Slack.Actions.ShareFile.name() == "slack_file_share"
 
     list_projection = Jido.Connect.Slack.Actions.ListChannels.jido_connect_projection()
     assert list_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
@@ -1855,6 +1913,25 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated share file action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              file_id: "F123",
+              files: [%{"id" => "F123", "title" => "Report"}]
+            }} =
+             Jido.Connect.Slack.Actions.ShareFile.run(
+               %{
+                 file_id: "F123",
+                 channels: "C123,C456",
+                 title: "Report",
+                 initial_comment: "Here is the report"
+               },
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated add reaction action validates channel timestamp and name" do
     {context, lease} = context_and_lease()
 
@@ -2149,6 +2226,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.GetConversationInfo,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
+             Jido.Connect.Slack.Actions.ShareFile,
              Jido.Connect.Slack.Actions.AuthTest,
              Jido.Connect.Slack.Actions.TeamInfo,
              Jido.Connect.Slack.Actions.PostMessage,

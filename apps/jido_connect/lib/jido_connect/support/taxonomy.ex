@@ -49,6 +49,7 @@ defmodule Jido.Connect.Taxonomy do
     :read,
     :search,
     :send,
+    :share,
     :sync,
     :update,
     :upload,
