@@ -4,6 +4,56 @@ defmodule Jido.Connect.Slack.Actions.Files do
   use Spark.Dsl.Fragment, of: Jido.Connect
 
   actions do
+    action :search_files do
+      id "slack.file.search"
+      resource :file
+      verb :search
+      data_classification :workspace_content
+      label "Search files"
+      description "Search Slack files with query helpers and pagination."
+      handler Jido.Connect.Slack.Handlers.Actions.SearchFiles
+      effect :read
+
+      access do
+        auth :user
+        policies [:workspace_access]
+        scopes ["search:read"]
+      end
+
+      input do
+        field :query, :string, required?: true
+
+        field :in, :string,
+          description:
+            "Optional Slack search in: qualifier value, such as #general, group_name, or <@U012AB3CD>."
+
+        field :from, :string,
+          description:
+            "Optional Slack search from: qualifier value, such as <@U012AB3CD> or botname."
+
+        field :before, :string, description: "Optional Slack search before: date qualifier."
+        field :after, :string, description: "Optional Slack search after: date qualifier."
+        field :on, :string, description: "Optional Slack search on: date qualifier."
+        field :has, :string, description: "Optional Slack search has: qualifier value."
+        field :sort, :string, enum: ["score", "timestamp"], default: "score"
+        field :sort_dir, :string, enum: ["asc", "desc"], default: "desc"
+        field :count, :integer, default: 20
+        field :page, :integer, default: 1
+        field :cursor, :string
+        field :highlight, :boolean, default: false
+        field :team_id, :string
+      end
+
+      output do
+        field :query, :string
+        field :files, {:array, :map}
+        field :total_count, :integer
+        field :pagination, :map
+        field :paging, :map
+        field :next_cursor, :string
+      end
+    end
+
     action :upload_file do
       id "slack.file.upload"
       resource :file

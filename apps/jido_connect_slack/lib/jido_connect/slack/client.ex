@@ -26,6 +26,13 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_search_messages_response()
   end
 
+  def search_files(params, access_token) when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(url: "/search.files", params: search_params(params))
+    |> handle_search_files_response()
+  end
+
   def get_conversation_info(params, access_token)
       when is_map(params) and is_binary(access_token) do
     access_token
@@ -252,6 +259,10 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp search_messages_params(params) do
+    search_params(params)
+  end
+
+  defp search_params(params) do
     params
     |> Map.take([:query, :sort, :sort_dir, :count, :page, :cursor, :highlight, :team_id])
     |> Data.compact()
@@ -495,6 +506,27 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_search_messages_response(response), do: handle_error_response(response)
+
+  defp handle_search_files_response({:ok, %{status: status, body: %{"ok" => true} = body}})
+       when status in 200..299 do
+    with files when is_map(files) <- Map.get(body, "files", %{}),
+         matches when is_list(matches) <- Map.get(files, "matches", []),
+         true <- Enum.all?(matches, &is_map/1) do
+      {:ok,
+       %{
+         query: Data.get(body, "query"),
+         files: matches,
+         total_count: search_total_count(files),
+         pagination: Data.get(files, "pagination", %{}),
+         paging: Data.get(files, "paging", %{}),
+         next_cursor: get_in(body, ["response_metadata", "next_cursor"]) || ""
+       }}
+    else
+      _other -> invalid_success_response("Slack file search response was invalid", body)
+    end
+  end
+
+  defp handle_search_files_response(response), do: handle_error_response(response)
 
   defp handle_conversation_info_response(
          {:ok, %{status: status, body: %{"ok" => true} = body}},

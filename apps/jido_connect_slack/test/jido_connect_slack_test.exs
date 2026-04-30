@@ -113,6 +113,44 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def search_files(
+          %{
+            query: "report in:#general from:<@U123> after:2026-04-01 has:pdf",
+            sort: "timestamp",
+            sort_dir: "desc",
+            count: 10,
+            page: 2,
+            highlight: true
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         query: "report in:#general from:<@U123> after:2026-04-01 has:pdf",
+         files: [
+           %{
+             id: "F123",
+             created: 1_700_000_000,
+             timestamp: 1_700_000_000,
+             name: "report.pdf",
+             title: "Report",
+             mimetype: "application/pdf",
+             filetype: "pdf",
+             pretty_type: "PDF",
+             user: "U123",
+             size: 1234,
+             permalink: "https://example.slack.com/files/U123/F123/report.pdf",
+             channels: ["C123"],
+             comments_count: 1
+           }
+         ],
+         total_count: 1,
+         pagination: %{page: 2, per_page: 10, total_count: 1},
+         paging: %{page: 2, count: 10, total: 1},
+         next_cursor: "next"
+       }}
+    end
+
     def list_conversation_members(%{channel: "C123", limit: 100}, "token") do
       {:ok,
        %{
@@ -862,6 +900,19 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:ok,
             %{
+              id: "slack.file.search",
+              resource: :file,
+              verb: :search,
+              policies: [:workspace_access],
+              scopes: ["search:read"],
+              auth_profile: :user,
+              auth_profiles: [:user],
+              mutation?: false
+            }} =
+             Connect.action(spec, "slack.file.search")
+
+    assert {:ok,
+            %{
               id: "slack.file.share",
               resource: :file,
               verb: :share,
@@ -1166,6 +1217,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.KickUser,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
+             Jido.Connect.Slack.Actions.SearchFiles,
              Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.ShareFile,
              Jido.Connect.Slack.Actions.DeleteFile,
@@ -1214,6 +1266,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.KickUser,
                  Jido.Connect.Slack.Actions.OpenConversation,
                  Jido.Connect.Slack.Actions.ListConversationMembers,
+                 Jido.Connect.Slack.Actions.SearchFiles,
                  Jido.Connect.Slack.Actions.UploadFile,
                  Jido.Connect.Slack.Actions.ShareFile,
                  Jido.Connect.Slack.Actions.DeleteFile,
@@ -1272,6 +1325,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.ListConversationMembers} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.ListConversationMembers)
+
+    assert {:module, Jido.Connect.Slack.Actions.SearchFiles} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.SearchFiles)
 
     assert {:module, Jido.Connect.Slack.Actions.UploadFile} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.UploadFile)
@@ -1418,6 +1474,45 @@ defmodule Jido.Connect.SlackTest do
     assert search_projection.risk == :read
     assert search_projection.confirmation == :none
     assert Jido.Connect.Slack.Actions.SearchMessages.name() == "slack_message_search"
+
+    search_files_projection = Jido.Connect.Slack.Actions.SearchFiles.jido_connect_projection()
+
+    assert search_files_projection.action_id == "slack.file.search"
+    assert search_files_projection.label == "Search files"
+    assert search_files_projection.resource == :file
+    assert search_files_projection.verb == :search
+    assert search_files_projection.scopes == ["search:read"]
+    assert search_files_projection.auth_profiles == [:user]
+
+    assert Enum.map(search_files_projection.input, & &1.name) == [
+             :query,
+             :in,
+             :from,
+             :before,
+             :after,
+             :on,
+             :has,
+             :sort,
+             :sort_dir,
+             :count,
+             :page,
+             :cursor,
+             :highlight,
+             :team_id
+           ]
+
+    assert Enum.map(search_files_projection.output, & &1.name) == [
+             :query,
+             :files,
+             :total_count,
+             :pagination,
+             :paging,
+             :next_cursor
+           ]
+
+    assert search_files_projection.risk == :read
+    assert search_files_projection.confirmation == :none
+    assert Jido.Connect.Slack.Actions.SearchFiles.name() == "slack_file_search"
 
     ephemeral_projection = Jido.Connect.Slack.Actions.PostEphemeral.jido_connect_projection()
 
@@ -2725,6 +2820,51 @@ defmodule Jido.Connect.SlackTest do
              )
   end
 
+  test "generated search files action delegates with query helpers and normalized output" do
+    {context, lease} = context_and_lease(profile: :user)
+
+    assert {:ok,
+            %{
+              query: "report in:#general from:<@U123> after:2026-04-01 has:pdf",
+              files: [
+                %{
+                  id: "F123",
+                  created: 1_700_000_000,
+                  timestamp: 1_700_000_000,
+                  name: "report.pdf",
+                  title: "Report",
+                  mimetype: "application/pdf",
+                  filetype: "pdf",
+                  pretty_type: "PDF",
+                  user: "U123",
+                  size: 1234,
+                  permalink: "https://example.slack.com/files/U123/F123/report.pdf",
+                  channels: ["C123"],
+                  comments_count: 1
+                }
+              ],
+              total_count: 1,
+              pagination: %{page: 2, per_page: 10, total_count: 1},
+              paging: %{page: 2, count: 10, total: 1},
+              next_cursor: "next"
+            }} =
+             Jido.Connect.Slack.Actions.SearchFiles.run(
+               %{
+                 query: "report",
+                 in: "#general",
+                 from: "<@U123>",
+                 after: "2026-04-01",
+                 has: "pdf",
+                 sort: "timestamp",
+                 sort_dir: "desc",
+                 count: 10,
+                 page: 2,
+                 highlight: true
+               },
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
   test "generated schedule message action delegates through integration runtime" do
     {context, lease} = context_and_lease()
     post_at = System.system_time(:second) + 60
@@ -3235,6 +3375,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.KickUser,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
+             Jido.Connect.Slack.Actions.SearchFiles,
              Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.ShareFile,
              Jido.Connect.Slack.Actions.DeleteFile,

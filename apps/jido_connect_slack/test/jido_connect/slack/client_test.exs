@@ -872,6 +872,84 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "search files sends expected request and normalizes pagination" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/search.files"
+
+      assert %{
+               "query" => "report in:#general",
+               "sort" => "timestamp",
+               "sort_dir" => "desc",
+               "count" => "10",
+               "page" => "2",
+               "highlight" => "true",
+               "cursor" => "page-1"
+             } = URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        ok: true,
+        query: "report in:#general",
+        files: %{
+          matches: [
+            %{
+              id: "F123",
+              name: "report.pdf",
+              title: "Report",
+              mimetype: "application/pdf",
+              permalink: "https://example.slack.com/files/U123/F123/report.pdf"
+            }
+          ],
+          pagination: %{page: 2, per_page: 10, total_count: 1},
+          paging: %{page: 2, count: 10, total: 1},
+          total: 1
+        },
+        response_metadata: %{next_cursor: "page-2"}
+      })
+    end)
+
+    assert {:ok,
+            %{
+              query: "report in:#general",
+              files: [%{"name" => "report.pdf"}],
+              total_count: 1,
+              pagination: %{"page" => 2, "per_page" => 10, "total_count" => 1},
+              paging: %{"page" => 2, "count" => 10, "total" => 1},
+              next_cursor: "page-2"
+            }} =
+             Client.search_files(
+               %{
+                 query: "report in:#general",
+                 sort: "timestamp",
+                 sort_dir: "desc",
+                 count: 10,
+                 page: 2,
+                 highlight: true,
+                 cursor: "page-1"
+               },
+               "token"
+             )
+  end
+
+  test "search files normalizes malformed responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/api/search.files"
+
+      Req.Test.json(conn, %{ok: true, files: %{matches: %{id: "F123"}}})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :slack,
+              reason: :invalid_response,
+              details: %{body: %{"ok" => true, "files" => %{"matches" => %{"id" => "F123"}}}}
+            }} =
+             Client.search_files(%{query: "report"}, "token")
+  end
+
   test "upload file normalizes malformed upload URL responses" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"
