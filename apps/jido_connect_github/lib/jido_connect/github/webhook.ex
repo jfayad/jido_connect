@@ -9,6 +9,8 @@ defmodule Jido.Connect.GitHub.Webhook do
   @issue_actions ~w(opened edited closed reopened assigned labeled unlabeled)
   @issue_comment_actions ~w(created edited deleted)
   @pull_request_actions ~w(opened synchronize synchronized reopened closed ready_for_review converted_to_draft)
+  @pull_request_review_actions ~w(submitted edited dismissed)
+  @pull_request_review_comment_actions ~w(created edited deleted)
 
   def parse_headers(headers) when is_map(headers) do
     %{
@@ -143,6 +145,36 @@ defmodule Jido.Connect.GitHub.Webhook do
     end
   end
 
+  def normalize_signal("pull_request_review", payload) when is_map(payload) do
+    action = Data.get(payload, "action")
+
+    if action in @pull_request_review_actions do
+      normalize_pull_request_review_signal(action, payload)
+    else
+      {:error,
+       Error.provider("Unsupported GitHub pull request review webhook action",
+         provider: :github,
+         reason: :unsupported_pull_request_review_action,
+         details: %{action: action}
+       )}
+    end
+  end
+
+  def normalize_signal("pull_request_review_comment", payload) when is_map(payload) do
+    action = Data.get(payload, "action")
+
+    if action in @pull_request_review_comment_actions do
+      normalize_pull_request_review_comment_signal(action, payload)
+    else
+      {:error,
+       Error.provider("Unsupported GitHub pull request review comment webhook action",
+         provider: :github,
+         reason: :unsupported_pull_request_review_comment_action,
+         details: %{action: action}
+       )}
+    end
+  end
+
   def normalize_signal(event, _payload) do
     {:error,
      Error.provider("Unsupported GitHub webhook event",
@@ -220,6 +252,51 @@ defmodule Jido.Connect.GitHub.Webhook do
        merged?: pull_request_merged?(pull_request),
        repository: normalize_repository(repo),
        pull_request: normalize_pull_request(pull_request),
+       sender: normalize_actor(sender),
+       changes: normalize_changes(Data.get(payload, "changes"))
+     })}
+  end
+
+  defp normalize_pull_request_review_signal(action, payload) do
+    pull_request = Data.get(payload, "pull_request") || %{}
+    review = Data.get(payload, "review") || %{}
+    repo = Data.get(payload, "repository") || %{}
+    sender = Data.get(payload, "sender") || %{}
+
+    {:ok,
+     Data.compact(%{
+       action: action,
+       repo: Data.get(repo, "full_name"),
+       pull_request_number: Data.get(pull_request, "number"),
+       review_id: Data.get(review, "id"),
+       review_state: Data.get(review, "state"),
+       title: Data.get(pull_request, "title"),
+       url: Data.get(review, "html_url") || Data.get(pull_request, "html_url"),
+       repository: normalize_repository(repo),
+       pull_request: normalize_pull_request(pull_request),
+       review: normalize_pull_request_review(review),
+       sender: normalize_actor(sender),
+       changes: normalize_changes(Data.get(payload, "changes"))
+     })}
+  end
+
+  defp normalize_pull_request_review_comment_signal(action, payload) do
+    pull_request = Data.get(payload, "pull_request") || %{}
+    comment = Data.get(payload, "comment") || %{}
+    repo = Data.get(payload, "repository") || %{}
+    sender = Data.get(payload, "sender") || %{}
+
+    {:ok,
+     Data.compact(%{
+       action: action,
+       repo: Data.get(repo, "full_name"),
+       pull_request_number: Data.get(pull_request, "number"),
+       comment_id: Data.get(comment, "id"),
+       title: Data.get(pull_request, "title"),
+       url: Data.get(comment, "html_url") || Data.get(comment, "url"),
+       repository: normalize_repository(repo),
+       pull_request: normalize_pull_request(pull_request),
+       comment: normalize_pull_request_review_comment(comment),
        sender: normalize_actor(sender),
        changes: normalize_changes(Data.get(payload, "changes"))
      })}
@@ -318,6 +395,53 @@ defmodule Jido.Connect.GitHub.Webhook do
   end
 
   defp normalize_pull_request(_pull_request), do: %{}
+
+  defp normalize_pull_request_review(review) when is_map(review) do
+    Data.compact(%{
+      id: Data.get(review, "id"),
+      node_id: Data.get(review, "node_id"),
+      body: Data.get(review, "body"),
+      state: Data.get(review, "state"),
+      commit_id: Data.get(review, "commit_id"),
+      submitted_at: Data.get(review, "submitted_at"),
+      url: Data.get(review, "html_url") || Data.get(review, "url"),
+      api_url: Data.get(review, "url"),
+      pull_request_url: Data.get(review, "pull_request_url"),
+      author: normalize_actor(Data.get(review, "user") || %{})
+    })
+  end
+
+  defp normalize_pull_request_review(_review), do: %{}
+
+  defp normalize_pull_request_review_comment(comment) when is_map(comment) do
+    Data.compact(%{
+      id: Data.get(comment, "id"),
+      node_id: Data.get(comment, "node_id"),
+      body: Data.get(comment, "body"),
+      diff_hunk: Data.get(comment, "diff_hunk"),
+      path: Data.get(comment, "path"),
+      position: Data.get(comment, "position"),
+      original_position: Data.get(comment, "original_position"),
+      line: Data.get(comment, "line"),
+      original_line: Data.get(comment, "original_line"),
+      side: Data.get(comment, "side"),
+      start_line: Data.get(comment, "start_line"),
+      original_start_line: Data.get(comment, "original_start_line"),
+      start_side: Data.get(comment, "start_side"),
+      commit_id: Data.get(comment, "commit_id"),
+      original_commit_id: Data.get(comment, "original_commit_id"),
+      in_reply_to_id: Data.get(comment, "in_reply_to_id"),
+      pull_request_review_id: Data.get(comment, "pull_request_review_id"),
+      url: Data.get(comment, "html_url") || Data.get(comment, "url"),
+      api_url: Data.get(comment, "url"),
+      pull_request_url: Data.get(comment, "pull_request_url"),
+      created_at: Data.get(comment, "created_at"),
+      updated_at: Data.get(comment, "updated_at"),
+      author: normalize_actor(Data.get(comment, "user") || %{})
+    })
+  end
+
+  defp normalize_pull_request_review_comment(_comment), do: %{}
 
   defp pull_request_issue?(issue) when is_map(issue), do: is_map(Data.get(issue, "pull_request"))
   defp pull_request_issue?(_issue), do: false

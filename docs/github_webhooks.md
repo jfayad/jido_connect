@@ -10,7 +10,9 @@ the poll sensor fields. Issue comment events support created, edited, and
 deleted actions, and include `comment_target` plus `pull_request?` fields to
 distinguish issue comments from pull request comments. Pull request lifecycle
 events support opened, synchronize, synchronized, reopened, closed, merged,
-ready_for_review, and converted_to_draft signal shapes. Push events include
+ready_for_review, and converted_to_draft signal shapes. Pull request review
+events support submitted, edited, and dismissed actions; pull request review
+comment events support created, edited, and deleted actions. Push events include
 repository, ref, commits, pusher, and delivery metadata when normalized from a
 verified delivery.
 

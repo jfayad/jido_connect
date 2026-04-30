@@ -302,6 +302,107 @@ defmodule Jido.Connect.GitHub.WebhookTest do
              )
   end
 
+  test "normalizes GitHub pull request review actions" do
+    assert {:ok,
+            %{
+              action: "submitted",
+              repo: "org/repo",
+              pull_request_number: 42,
+              review_id: 1001,
+              review_state: "approved",
+              title: "Add webhook support",
+              url: "https://github.com/org/repo/pull/42#pullrequestreview-1001",
+              repository: %{full_name: "org/repo"},
+              pull_request: %{number: 42, title: "Add webhook support"},
+              review: %{
+                id: 1001,
+                body: "Looks good",
+                state: "approved",
+                commit_id: "head-sha",
+                submitted_at: "2026-04-29T15:02:00Z",
+                url: "https://github.com/org/repo/pull/42#pullrequestreview-1001",
+                pull_request_url: "https://api.github.com/repos/org/repo/pulls/42",
+                author: %{login: "reviewer"}
+              },
+              sender: %{login: "sender"}
+            }} =
+             Webhook.normalize_signal(
+               "pull_request_review",
+               pull_request_review_payload("submitted")
+             )
+
+    assert {:ok,
+            %{
+              action: "edited",
+              changes: %{"body" => %{from: "Old review"}},
+              review: %{body: "Updated review"}
+            }} =
+             Webhook.normalize_signal(
+               "pull_request_review",
+               pull_request_review_payload("edited", %{
+                 "review" => %{"body" => "Updated review"},
+                 "changes" => %{"body" => %{"from" => "Old review"}}
+               })
+             )
+
+    assert {:ok, %{action: "dismissed", review: %{state: "dismissed"}}} =
+             Webhook.normalize_signal(
+               "pull_request_review",
+               pull_request_review_payload("dismissed", %{"review" => %{"state" => "dismissed"}})
+             )
+  end
+
+  test "normalizes GitHub pull request review comment actions" do
+    assert {:ok,
+            %{
+              action: "created",
+              repo: "org/repo",
+              pull_request_number: 42,
+              comment_id: 2002,
+              title: "Add webhook support",
+              url: "https://github.com/org/repo/pull/42#discussion_r2002",
+              repository: %{full_name: "org/repo"},
+              pull_request: %{number: 42, title: "Add webhook support"},
+              comment: %{
+                id: 2002,
+                body: "Please rename this",
+                path: "lib/example.ex",
+                line: 12,
+                side: "RIGHT",
+                commit_id: "head-sha",
+                pull_request_review_id: 1001,
+                url: "https://github.com/org/repo/pull/42#discussion_r2002",
+                pull_request_url: "https://api.github.com/repos/org/repo/pulls/42",
+                author: %{login: "reviewer"}
+              },
+              sender: %{login: "sender"}
+            }} =
+             Webhook.normalize_signal(
+               "pull_request_review_comment",
+               pull_request_review_comment_payload("created")
+             )
+
+    assert {:ok,
+            %{
+              action: "edited",
+              changes: %{"body" => %{from: "Old comment"}},
+              comment: %{body: "Updated comment"}
+            }} =
+             Webhook.normalize_signal(
+               "pull_request_review_comment",
+               pull_request_review_comment_payload("edited", %{
+                 "comment" => %{"body" => "Updated comment"},
+                 "changes" => %{"body" => %{"from" => "Old comment"}}
+               })
+             )
+
+    assert {:ok, %{action: "deleted", comment: %{id: 2002}}} =
+             Webhook.normalize_signal(
+               "pull_request_review_comment",
+               pull_request_review_comment_payload("deleted")
+             )
+  end
+
   test "normalizes GitHub push event into stable signal shape" do
     payload = push_payload()
 
@@ -402,6 +503,22 @@ defmodule Jido.Connect.GitHub.WebhookTest do
               details: %{action: "auto_merge_enabled"}
             }} =
              Webhook.normalize_signal("pull_request", %{"action" => "auto_merge_enabled"})
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :unsupported_pull_request_review_action,
+              details: %{action: "created"}
+            }} =
+             Webhook.normalize_signal("pull_request_review", %{"action" => "created"})
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :unsupported_pull_request_review_comment_action,
+              details: %{action: "resolved"}
+            }} =
+             Webhook.normalize_signal("pull_request_review_comment", %{"action" => "resolved"})
 
     assert {:error, %Error.ProviderError{provider: :github, reason: :unsupported_event}} =
              Webhook.normalize_signal("ping", %{})
@@ -560,6 +677,59 @@ defmodule Jido.Connect.GitHub.WebhookTest do
 
   defp pull_request_closed_at("closed"), do: "2026-04-29T15:05:00Z"
   defp pull_request_closed_at(_action), do: nil
+
+  defp pull_request_review_payload(action, extra \\ %{}) do
+    Map.merge(
+      pull_request_payload(action),
+      %{
+        "action" => action,
+        "review" => %{
+          "id" => 1001,
+          "node_id" => "review-node",
+          "body" => "Looks good",
+          "state" => "approved",
+          "commit_id" => "head-sha",
+          "html_url" => "https://github.com/org/repo/pull/42#pullrequestreview-1001",
+          "url" => "https://api.github.com/repos/org/repo/pulls/42/reviews/1001",
+          "pull_request_url" => "https://api.github.com/repos/org/repo/pulls/42",
+          "submitted_at" => "2026-04-29T15:02:00Z",
+          "user" => %{"login" => "reviewer"}
+        }
+      }
+    )
+    |> deep_merge(extra)
+  end
+
+  defp pull_request_review_comment_payload(action, extra \\ %{}) do
+    Map.merge(
+      pull_request_payload(action),
+      %{
+        "action" => action,
+        "comment" => %{
+          "id" => 2002,
+          "node_id" => "review-comment-node",
+          "body" => "Please rename this",
+          "diff_hunk" => "@@ -10,7 +10,7 @@",
+          "path" => "lib/example.ex",
+          "position" => 3,
+          "original_position" => 3,
+          "line" => 12,
+          "original_line" => 12,
+          "side" => "RIGHT",
+          "commit_id" => "head-sha",
+          "original_commit_id" => "head-sha",
+          "pull_request_review_id" => 1001,
+          "html_url" => "https://github.com/org/repo/pull/42#discussion_r2002",
+          "url" => "https://api.github.com/repos/org/repo/pulls/comments/2002",
+          "pull_request_url" => "https://api.github.com/repos/org/repo/pulls/42",
+          "created_at" => "2026-04-29T15:03:00Z",
+          "updated_at" => "2026-04-29T15:04:00Z",
+          "user" => %{"login" => "reviewer"}
+        }
+      }
+    )
+    |> deep_merge(extra)
+  end
 
   defp github_repository do
     %{
