@@ -11,6 +11,7 @@ defmodule Jido.Connect.GitHub.Webhook do
   @pull_request_actions ~w(opened synchronize synchronized reopened closed ready_for_review converted_to_draft)
   @pull_request_review_actions ~w(submitted edited dismissed)
   @pull_request_review_comment_actions ~w(created edited deleted)
+  @release_actions ~w(published edited unpublished deleted prereleased released)
   @workflow_run_actions ~w(requested in_progress completed)
   @workflow_run_failure_conclusions ~w(failure startup_failure timed_out action_required cancelled)
 
@@ -177,6 +178,21 @@ defmodule Jido.Connect.GitHub.Webhook do
     end
   end
 
+  def normalize_signal("release", payload) when is_map(payload) do
+    action = Data.get(payload, "action")
+
+    if action in @release_actions do
+      normalize_release_signal(action, payload)
+    else
+      {:error,
+       Error.provider("Unsupported GitHub release webhook action",
+         provider: :github,
+         reason: :unsupported_release_action,
+         details: %{action: action}
+       )}
+    end
+  end
+
   def normalize_signal("workflow_run", payload) when is_map(payload) do
     action = Data.get(payload, "action")
 
@@ -314,6 +330,30 @@ defmodule Jido.Connect.GitHub.Webhook do
        repository: normalize_repository(repo),
        pull_request: normalize_pull_request(pull_request),
        comment: normalize_pull_request_review_comment(comment),
+       sender: normalize_actor(sender),
+       changes: normalize_changes(Data.get(payload, "changes"))
+     })}
+  end
+
+  defp normalize_release_signal(action, payload) do
+    release = Data.get(payload, "release") || %{}
+    repo = Data.get(payload, "repository") || %{}
+    sender = Data.get(payload, "sender") || %{}
+
+    {:ok,
+     Data.compact(%{
+       action: action,
+       repo: Data.get(repo, "full_name"),
+       release_id: Data.get(release, "id"),
+       tag_name: Data.get(release, "tag_name"),
+       name: Data.get(release, "name"),
+       url: Data.get(release, "html_url") || Data.get(release, "url"),
+       draft?: Data.get(release, "draft"),
+       prerelease?: Data.get(release, "prerelease"),
+       target_commitish: Data.get(release, "target_commitish"),
+       published_at: Data.get(release, "published_at"),
+       repository: normalize_repository(repo),
+       release: normalize_release(release),
        sender: normalize_actor(sender),
        changes: normalize_changes(Data.get(payload, "changes"))
      })}
@@ -489,6 +529,29 @@ defmodule Jido.Connect.GitHub.Webhook do
   end
 
   defp normalize_pull_request_review_comment(_comment), do: %{}
+
+  defp normalize_release(release) when is_map(release) do
+    Data.compact(%{
+      id: Data.get(release, "id"),
+      node_id: Data.get(release, "node_id"),
+      tag_name: Data.get(release, "tag_name"),
+      name: Data.get(release, "name"),
+      body: Data.get(release, "body"),
+      draft?: Data.get(release, "draft"),
+      prerelease?: Data.get(release, "prerelease"),
+      target_commitish: Data.get(release, "target_commitish"),
+      url: Data.get(release, "html_url") || Data.get(release, "url"),
+      api_url: Data.get(release, "url"),
+      upload_url: Data.get(release, "upload_url"),
+      tarball_url: Data.get(release, "tarball_url"),
+      zipball_url: Data.get(release, "zipball_url"),
+      created_at: Data.get(release, "created_at"),
+      published_at: Data.get(release, "published_at"),
+      author: normalize_actor(Data.get(release, "author") || %{})
+    })
+  end
+
+  defp normalize_release(_release), do: %{}
 
   defp normalize_workflow_run(workflow_run) when is_map(workflow_run) do
     Data.compact(%{

@@ -12,7 +12,9 @@ distinguish issue comments from pull request comments. Pull request lifecycle
 events support opened, synchronize, synchronized, reopened, closed, merged,
 ready_for_review, and converted_to_draft signal shapes. Pull request review
 events support submitted, edited, and dismissed actions; pull request review
-comment events support created, edited, and deleted actions. Push events include
+comment events support created, edited, and deleted actions. Release lifecycle
+events support published, edited, unpublished, deleted, prereleased, and
+released actions. Push events include
 repository, ref, commits, pusher, and delivery metadata when normalized from a
 verified delivery.
 

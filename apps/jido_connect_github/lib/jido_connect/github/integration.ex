@@ -38,7 +38,7 @@ defmodule Jido.Connect.GitHub do
       kind :webhook
       feature :webhook_verification
       label "Webhook verification"
-      description "Signature verification and issue webhook normalization."
+      description "Signature verification and GitHub webhook normalization."
     end
   end
 

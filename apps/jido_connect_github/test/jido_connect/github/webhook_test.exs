@@ -403,6 +403,60 @@ defmodule Jido.Connect.GitHub.WebhookTest do
              )
   end
 
+  test "normalizes GitHub release lifecycle actions" do
+    assert {:ok,
+            %{
+              action: "published",
+              repo: "org/repo",
+              release_id: 3003,
+              tag_name: "v1.2.3",
+              name: "Version 1.2.3",
+              url: "https://github.com/org/repo/releases/tag/v1.2.3",
+              draft?: false,
+              prerelease?: false,
+              target_commitish: "main",
+              published_at: "2026-04-29T15:10:00Z",
+              repository: %{full_name: "org/repo"},
+              release: %{
+                id: 3003,
+                tag_name: "v1.2.3",
+                name: "Version 1.2.3",
+                body: "Release notes",
+                draft?: false,
+                prerelease?: false,
+                target_commitish: "main",
+                url: "https://github.com/org/repo/releases/tag/v1.2.3",
+                api_url: "https://api.github.com/repos/org/repo/releases/3003",
+                upload_url:
+                  "https://uploads.github.com/repos/org/repo/releases/3003/assets{?name,label}",
+                tarball_url: "https://api.github.com/repos/org/repo/tarball/v1.2.3",
+                zipball_url: "https://api.github.com/repos/org/repo/zipball/v1.2.3",
+                created_at: "2026-04-29T15:00:00Z",
+                published_at: "2026-04-29T15:10:00Z",
+                author: %{login: "author"}
+              },
+              sender: %{login: "sender"}
+            }} = Webhook.normalize_signal("release", release_payload("published"))
+
+    assert {:ok,
+            %{
+              action: "edited",
+              changes: %{"name" => %{from: "Old release name"}},
+              release: %{name: "Version 1.2.3"}
+            }} =
+             Webhook.normalize_signal(
+               "release",
+               release_payload("edited", %{
+                 "changes" => %{"name" => %{"from" => "Old release name"}}
+               })
+             )
+
+    for action <- ["unpublished", "deleted", "prereleased", "released"] do
+      assert {:ok, %{action: ^action, release: %{tag_name: "v1.2.3"}}} =
+               Webhook.normalize_signal("release", release_payload(action))
+    end
+  end
+
   test "normalizes GitHub push event into stable signal shape" do
     payload = push_payload()
 
@@ -591,6 +645,14 @@ defmodule Jido.Connect.GitHub.WebhookTest do
               details: %{action: "resolved"}
             }} =
              Webhook.normalize_signal("pull_request_review_comment", %{"action" => "resolved"})
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :github,
+              reason: :unsupported_release_action,
+              details: %{action: "created"}
+            }} =
+             Webhook.normalize_signal("release", %{"action" => "created"})
 
     assert {:error,
             %Error.ProviderError{
@@ -809,6 +871,41 @@ defmodule Jido.Connect.GitHub.WebhookTest do
       }
     )
     |> deep_merge(extra)
+  end
+
+  defp release_payload(action, extra \\ %{}) do
+    Map.merge(
+      %{
+        "action" => action,
+        "repository" => github_repository(),
+        "release" => %{
+          "id" => 3003,
+          "node_id" => "release-node",
+          "tag_name" => "v1.2.3",
+          "name" => "Version 1.2.3",
+          "body" => "Release notes",
+          "draft" => false,
+          "prerelease" => false,
+          "target_commitish" => "main",
+          "html_url" => "https://github.com/org/repo/releases/tag/v1.2.3",
+          "url" => "https://api.github.com/repos/org/repo/releases/3003",
+          "upload_url" =>
+            "https://uploads.github.com/repos/org/repo/releases/3003/assets{?name,label}",
+          "tarball_url" => "https://api.github.com/repos/org/repo/tarball/v1.2.3",
+          "zipball_url" => "https://api.github.com/repos/org/repo/zipball/v1.2.3",
+          "created_at" => "2026-04-29T15:00:00Z",
+          "published_at" => "2026-04-29T15:10:00Z",
+          "author" => %{"login" => "author"}
+        },
+        "sender" => %{"login" => "sender"}
+      },
+      extra,
+      fn _key, original, override ->
+        if is_map(original) and is_map(override),
+          do: deep_merge(original, override),
+          else: override
+      end
+    )
   end
 
   defp github_repository do
