@@ -22,7 +22,7 @@ Options:
   --effort EFFORT           Codex reasoning effort: low, medium, high, xhigh.
                             Default: $CODEX_EFFORT, $CODEX_REASONING_EFFORT, or medium.
   --profile PROFILE         Optional Codex config profile.
-  --sandbox MODE            Codex sandbox mode. Default: workspace-write.
+  --sandbox MODE            Codex sandbox mode. Default: danger-full-access.
   --allow-epic              Allow selecting epic issues. Default: false.
   --strict-ready            Do not fall back from bw ready to bw list --all.
   --order ORDER             Queue order: priority, oldest, newest. Default: priority.
@@ -85,7 +85,7 @@ Examples:
   scripts/bw_codex_issue.sh --worktree --model gpt-5.5 --effort high --issue jido_con-qgc.1
   BW_CODEX_REVIEW_CMD='codex exec review --model gpt-5.5 --cd "$WORKDIR"' \
     scripts/bw_codex_issue.sh --model gpt-5.5
-  CODEX_COMMAND_TEMPLATE='codex --ask-for-approval never exec --cd "$WORKDIR" -m gpt-5.5 -c model_reasoning_effort=\"medium\" -s workspace-write -' \
+  CODEX_COMMAND_TEMPLATE='codex --ask-for-approval never exec --cd "$WORKDIR" -m gpt-5.5 -c model_reasoning_effort=\"medium\" -s danger-full-access -' \
     scripts/bw_codex_issue.sh
 USAGE
 }
@@ -402,17 +402,16 @@ work is complete. Do not commit, close the issue, or run \`bw sync\`.
 Run \`bw prime\` first, inspect the local code needed for this issue, and implement
 the smallest coherent change.
 
-The shell orchestrator owns formatting, compilation, tests, coverage, commit,
-issue close, and sync through trusted outer hooks after your turn. Do not run
-\`mix format\`, \`mix compile\`, \`mix test\`, \`mix quality\`, \`mix coveralls\`, or
-any other Mix task from nested Codex in this repo. Mix may fail inside nested
-Codex with a local PubSub TCP \`:eperm\` error; if you see that, do not investigate
-Mix internals or retry alternate Mix commands. Continue with code changes and
-report the verification limitation.
+The shell orchestrator owns the authoritative formatting, compilation, tests,
+coverage, commit, issue close, and sync through trusted outer hooks after your
+turn. You may run focused verification locally when it helps, including Mix
+tasks, but keep it narrow and do not repeatedly grind broad verification inside
+nested Codex. The outer hooks will run the final format/verify pass.
 
 Do not run ad-hoc Elixir formatter APIs or formatter commands such as
-\`Code.format_*\`. Preserve existing Spark DSL style, especially no-parens DSL
-calls. Useful lightweight checks are allowed, including \`git diff --check\`,
+\`Code.format_*\`. Use repository commands such as \`mix format\` when formatting
+is needed. Preserve existing Spark DSL style, especially no-parens DSL calls.
+Useful lightweight checks are allowed, including \`git diff --check\`,
 \`Code.string_to_quoted!\` parse checks, \`rg\`, and focused file inspection.
 
 If \`bw prime\` reports uncommitted changes while this issue is already
@@ -479,13 +478,14 @@ Scope rules:
 - Do not implement unrelated Beadwork issues.
 - Do not commit, close the issue, or run \`bw sync\`.
 - If \`bw prime\` warns about uncommitted changes, do not ask the user; continue with this repair.
-- The shell orchestrator owns the next format/verify run. Do not run \`mix format\`,
-  \`mix compile\`, \`mix test\`, \`mix quality\`, \`mix coveralls\`, or any other Mix
-  task from nested Codex in this repo.
+- The shell orchestrator owns the next authoritative format/verify run. You may
+  run focused verification locally when it helps, including Mix tasks, but keep
+  it narrow and do not repeatedly grind broad verification inside nested Codex.
 - Do not run ad-hoc Elixir formatter APIs or formatter commands such as
-  \`Code.format_*\`. Preserve existing Spark DSL style, especially no-parens DSL
-  calls. Prefer \`git diff --check\`, \`Code.string_to_quoted!\`, \`rg\`, and focused
-  file inspection for lightweight local checks.
+  \`Code.format_*\`. Use repository commands such as \`mix format\` when formatting
+  is needed. Preserve existing Spark DSL style, especially no-parens DSL calls.
+  Prefer \`git diff --check\`, \`Code.string_to_quoted!\`, \`rg\`, and focused file
+  inspection for lightweight local checks.
 
 Current git status:
 
@@ -622,7 +622,7 @@ ISSUE_ID=""
 CODEX_MODEL_VALUE="${CODEX_MODEL:-gpt-5.5}"
 CODEX_EFFORT_VALUE="${CODEX_EFFORT:-${CODEX_REASONING_EFFORT:-medium}}"
 CODEX_PROFILE=""
-CODEX_SANDBOX="workspace-write"
+CODEX_SANDBOX="danger-full-access"
 ALLOW_EPIC=false
 STRICT_READY=false
 QUEUE_ORDER="${BW_CODEX_ORDER:-priority}"
