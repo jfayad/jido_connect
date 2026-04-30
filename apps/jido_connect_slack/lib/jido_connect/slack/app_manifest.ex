@@ -11,6 +11,8 @@ defmodule Jido.Connect.Slack.AppManifest do
   @default_scopes [
     "channels:read",
     "channels:history",
+    "im:write",
+    "mpim:write",
     "chat:write",
     "files:write",
     "reactions:read",

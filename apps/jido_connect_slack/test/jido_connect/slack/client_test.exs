@@ -247,6 +247,49 @@ defmodule Jido.Connect.Slack.ClientTest do
              )
   end
 
+  test "open conversation sends expected request and normalizes output" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/api/conversations.open"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert %{
+               "users" => "U123,U456",
+               "return_im" => true,
+               "prevent_creation" => false
+             } = Jason.decode!(body)
+
+      Req.Test.json(conn, %{
+        ok: true,
+        channel: %{
+          id: "G123",
+          is_mpim: true,
+          is_private: true,
+          name: "mpdm-user-1--user-2-1",
+          users: ["U123", "U456"],
+          unread_count: 10
+        }
+      })
+    end)
+
+    assert {:ok,
+            %{
+              channel: "G123",
+              conversation: %{
+                id: "G123",
+                is_mpim: true,
+                is_private: true,
+                name: "mpdm-user-1--user-2-1",
+                users: ["U123", "U456"]
+              }
+            }} =
+             Client.open_conversation(
+               %{users: ["U123", "U456"], return_im: true, prevent_creation: false},
+               "token"
+             )
+  end
+
   test "post message sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

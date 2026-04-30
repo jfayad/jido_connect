@@ -34,6 +34,14 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_conversation_info_response(params)
   end
 
+  def open_conversation(params, access_token)
+      when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/conversations.open", json: open_conversation_params(params))
+    |> handle_open_conversation_response()
+  end
+
   def list_conversation_members(params, access_token)
       when is_map(params) and is_binary(access_token) do
     access_token
@@ -207,6 +215,13 @@ defmodule Jido.Connect.Slack.Client do
     |> Data.compact()
   end
 
+  defp open_conversation_params(params) do
+    params
+    |> Map.take([:users, :channel, :return_im, :prevent_creation])
+    |> maybe_join_users()
+    |> Data.compact()
+  end
+
   defp conversation_members_params(params) do
     params
     |> Map.take([:channel, :limit, :cursor])
@@ -296,6 +311,12 @@ defmodule Jido.Connect.Slack.Client do
     |> Map.put(:files, [file])
     |> Data.compact()
   end
+
+  defp maybe_join_users(%{users: users} = params) when is_list(users) do
+    Map.put(params, :users, Enum.join(users, ","))
+  end
+
+  defp maybe_join_users(params), do: params
 
   defp delete_file_params(params) do
     params
@@ -409,6 +430,25 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_conversation_info_response(response, _params), do: handle_error_response(response)
+
+  defp handle_open_conversation_response({:ok, %{status: status, body: %{"ok" => true} = body}})
+       when status in 200..299 do
+    case Data.get(body, "channel") do
+      conversation when is_map(conversation) ->
+        conversation = normalize_conversation(conversation)
+
+        {:ok,
+         %{
+           channel: Data.get(conversation, :id),
+           conversation: conversation
+         }}
+
+      _other ->
+        invalid_success_response("Slack conversation open response was invalid", body)
+    end
+  end
+
+  defp handle_open_conversation_response(response), do: handle_error_response(response)
 
   defp handle_conversation_members_response(
          {:ok, %{status: status, body: %{"ok" => true} = body}},
@@ -777,6 +817,21 @@ defmodule Jido.Connect.Slack.Client do
       is_private: Data.get(channel, "is_private"),
       is_member: Data.get(channel, "is_member")
     }
+  end
+
+  defp normalize_conversation(conversation) when is_map(conversation) do
+    %{
+      id: Data.get(conversation, "id"),
+      name: Data.get(conversation, "name"),
+      is_im: Data.get(conversation, "is_im"),
+      is_mpim: Data.get(conversation, "is_mpim"),
+      is_private: Data.get(conversation, "is_private"),
+      is_open: Data.get(conversation, "is_open"),
+      is_user_deleted: Data.get(conversation, "is_user_deleted"),
+      user: Data.get(conversation, "user"),
+      users: Data.get(conversation, "users")
+    }
+    |> Data.compact()
   end
 
   defp normalize_user(user) when is_map(user) do

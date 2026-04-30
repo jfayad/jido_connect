@@ -181,6 +181,46 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def open_conversation(%{users: ["U123"]}, "token") do
+      {:ok,
+       %{
+         channel: "D123",
+         conversation: %{
+           id: "D123",
+           is_im: true,
+           is_open: true,
+           user: "U123"
+         }
+       }}
+    end
+
+    def open_conversation(%{users: ["U123", "U456"]}, "token") do
+      {:ok,
+       %{
+         channel: "GMP123",
+         conversation: %{
+           id: "GMP123",
+           is_mpim: true,
+           is_private: true,
+           is_open: true,
+           users: ["U123", "U456"]
+         }
+       }}
+    end
+
+    def open_conversation(%{channel: "D123"}, "token") do
+      {:ok,
+       %{
+         channel: "D123",
+         conversation: %{
+           id: "D123",
+           is_im: true,
+           is_open: true,
+           user: "U123"
+         }
+       }}
+    end
+
     def post_message(
           %{channel: "C123", text: "Hello", reply_broadcast: false},
           "token"
@@ -527,6 +567,17 @@ defmodule Jido.Connect.SlackTest do
               mutation?: false
             }} =
              Connect.action(spec, "slack.conversation.info")
+
+    assert {:ok,
+            %{
+              id: "slack.conversation.open",
+              resource: :conversation,
+              verb: :create,
+              policies: [:workspace_access],
+              scopes: ["im:write"],
+              mutation?: true
+            }} =
+             Connect.action(spec, "slack.conversation.open")
 
     assert {:ok,
             %{
@@ -931,6 +982,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.GetThreadReplies,
              Jido.Connect.Slack.Actions.GetConversationInfo,
+             Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.ShareFile,
@@ -972,6 +1024,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.ListChannels,
                  Jido.Connect.Slack.Actions.GetThreadReplies,
                  Jido.Connect.Slack.Actions.GetConversationInfo,
+                 Jido.Connect.Slack.Actions.OpenConversation,
                  Jido.Connect.Slack.Actions.ListConversationMembers,
                  Jido.Connect.Slack.Actions.UploadFile,
                  Jido.Connect.Slack.Actions.ShareFile,
@@ -1504,6 +1557,27 @@ defmodule Jido.Connect.SlackTest do
              :conversation
            ]
 
+    open_conversation_projection =
+      Jido.Connect.Slack.Actions.OpenConversation.jido_connect_projection()
+
+    assert open_conversation_projection.action_id == "slack.conversation.open"
+    assert open_conversation_projection.resource == :conversation
+    assert open_conversation_projection.verb == :create
+    assert open_conversation_projection.scopes == ["im:write"]
+    assert open_conversation_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
+
+    assert Enum.map(open_conversation_projection.input, & &1.name) == [
+             :users,
+             :channel,
+             :return_im,
+             :prevent_creation
+           ]
+
+    assert Enum.map(open_conversation_projection.output, & &1.name) == [
+             :channel,
+             :conversation
+           ]
+
     auth_projection = Jido.Connect.Slack.Actions.AuthTest.jido_connect_projection()
     assert auth_projection.action_id == "slack.auth.test"
     assert auth_projection.resource == :auth
@@ -1739,6 +1813,63 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.GetConversationInfo.run(
                %{channel: "GMP123", conversation_type: "mpim"},
                %{integration_context: expanded_context, credential_lease: lease}
+             )
+  end
+
+  test "generated open conversation action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              channel: "D123",
+              conversation: %{
+                id: "D123",
+                is_im: true,
+                is_open: true,
+                user: "U123"
+              }
+            }} =
+             Jido.Connect.Slack.Actions.OpenConversation.run(
+               %{users: ["U123"]},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "open conversation resolves scopes from DM or MPIM target" do
+    {context, lease} = context_and_lease()
+
+    no_write_context = %{
+      context
+      | connection: %{
+          context.connection
+          | scopes: context.connection.scopes -- ["im:write", "mpim:write"]
+        }
+    }
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["im:write"]
+            }} =
+             Jido.Connect.Slack.Actions.OpenConversation.run(
+               %{users: ["U123"]},
+               %{integration_context: no_write_context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["mpim:write"]
+            }} =
+             Jido.Connect.Slack.Actions.OpenConversation.run(
+               %{users: ["U123", "U456"]},
+               %{integration_context: no_write_context, credential_lease: lease}
+             )
+
+    assert {:ok, %{channel: "GMP123", conversation: %{is_mpim: true}}} =
+             Jido.Connect.Slack.Actions.OpenConversation.run(
+               %{users: ["U123", "U456"]},
+               %{integration_context: context, credential_lease: lease}
              )
   end
 
@@ -2390,6 +2521,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.ListChannels,
              Jido.Connect.Slack.Actions.GetThreadReplies,
              Jido.Connect.Slack.Actions.GetConversationInfo,
+             Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
              Jido.Connect.Slack.Actions.ShareFile,
@@ -2528,6 +2660,8 @@ defmodule Jido.Connect.SlackTest do
         scopes: [
           "channels:read",
           "channels:history",
+          "im:write",
+          "mpim:write",
           "chat:write",
           "files:write",
           "reactions:read",

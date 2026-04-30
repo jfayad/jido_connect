@@ -22,6 +22,11 @@ defmodule Jido.Connect.Slack.ScopeResolver do
     "mpim" => "mpim:history"
   }
 
+  @conversation_write_scopes %{
+    "im" => "im:write",
+    "mpim" => "mpim:write"
+  }
+
   def required_scopes(%{id: "slack.channel.list"}, input, _connection) do
     input
     |> requested_types()
@@ -42,6 +47,17 @@ defmodule Jido.Connect.Slack.ScopeResolver do
 
   def required_scopes(%{action_id: "slack.conversation.info"}, input, connection) do
     required_scopes(%{id: "slack.conversation.info"}, input, connection)
+  end
+
+  def required_scopes(%{id: "slack.conversation.open"}, input, _connection) do
+    input
+    |> requested_open_conversation_type()
+    |> conversation_write_scope()
+    |> List.wrap()
+  end
+
+  def required_scopes(%{action_id: "slack.conversation.open"}, input, connection) do
+    required_scopes(%{id: "slack.conversation.open"}, input, connection)
   end
 
   def required_scopes(%{id: "slack.conversation.members"}, input, _connection) do
@@ -90,6 +106,38 @@ defmodule Jido.Connect.Slack.ScopeResolver do
 
   defp conversation_read_scope(type) do
     Map.get(@conversation_type_scopes, type, "channels:read")
+  end
+
+  defp requested_open_conversation_type(input) do
+    case Map.get(input, :conversation_type, Map.get(input, "conversation_type")) do
+      nil -> open_type_from_input(input)
+      type -> type |> to_string() |> String.trim()
+    end
+  end
+
+  defp open_type_from_input(input) do
+    users = Map.get(input, :users, Map.get(input, "users"))
+    channel = Map.get(input, :channel, Map.get(input, "channel"))
+
+    cond do
+      user_count(users) > 1 -> "mpim"
+      match?("G" <> _rest, channel) -> "mpim"
+      true -> "im"
+    end
+  end
+
+  defp user_count(users) when is_list(users), do: length(users)
+
+  defp user_count(users) when is_binary(users) do
+    users
+    |> String.split(",", trim: true)
+    |> length()
+  end
+
+  defp user_count(_users), do: 0
+
+  defp conversation_write_scope(type) do
+    Map.get(@conversation_write_scopes, type, "im:write")
   end
 
   defp type_from_channel("C" <> _rest), do: "public_channel"

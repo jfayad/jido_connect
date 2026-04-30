@@ -108,6 +108,37 @@ defmodule Jido.Connect.Slack.Actions.Conversations do
       end
     end
 
+    action :open_conversation do
+      id "slack.conversation.open"
+      resource :conversation
+      verb :create
+      data_classification :workspace_metadata
+      label "Open conversation"
+      description "Open or resume a Slack DM or multi-person DM."
+      handler Jido.Connect.Slack.Handlers.Actions.OpenConversation
+      effect :write, confirmation: :required_for_ai
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["im:write"], resolver: Jido.Connect.Slack.ScopeResolver
+      end
+
+      input do
+        field :users, {:array, :string}, description: "Slack user IDs for the DM or MPIM to open."
+
+        field :channel, :string, description: "Existing Slack DM or MPIM channel ID to resume."
+
+        field :return_im, :boolean, default: false
+        field :prevent_creation, :boolean, default: false
+      end
+
+      output do
+        field :channel, :string
+        field :conversation, :map
+      end
+    end
+
     action :list_conversation_members do
       id "slack.conversation.members"
       resource :conversation_member
