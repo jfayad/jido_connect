@@ -227,6 +227,39 @@ defmodule Jido.Connect.GitHub.Actions.Issues do
       end
     end
 
+    action :list_workflow_run_jobs do
+      id "github.workflow_run.job.list"
+      resource :workflow_run_job
+      verb :list
+      data_classification :workspace_metadata
+      label "List workflow run jobs"
+
+      description "List GitHub Actions jobs and steps for a workflow run with normalized CI status."
+
+      handler Jido.Connect.GitHub.Handlers.Actions.ListWorkflowRunJobs
+      effect :read
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :run_id, :integer, required?: true
+        field :filter, :string, enum: ["latest", "all"], default: "latest"
+        field :page, :integer, default: 1
+        field :per_page, :integer, default: 30
+      end
+
+      output do
+        field :jobs, {:array, :map}
+        field :total_count, :integer
+        field :ci_status, :string
+      end
+    end
+
     action :dispatch_workflow do
       id "github.workflow.dispatch"
       resource :workflow

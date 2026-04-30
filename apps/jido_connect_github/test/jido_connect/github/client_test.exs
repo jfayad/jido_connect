@@ -527,6 +527,88 @@ defmodule Jido.Connect.GitHub.ClientTest do
              )
   end
 
+  test "list workflow run jobs sends expected request and normalizes CI status" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/repos/org/repo/actions/runs/22/jobs"
+
+      assert %{"filter" => "latest", "page" => "2", "per_page" => "10"} =
+               URI.decode_query(conn.query_string)
+
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, %{
+        total_count: 2,
+        jobs: [
+          %{
+            id: 33,
+            run_id: 22,
+            run_attempt: 1,
+            name: "test",
+            status: "completed",
+            conclusion: "failure",
+            html_url: "https://github.test/runs/22/job/33",
+            started_at: "2026-04-29T10:00:00Z",
+            completed_at: "2026-04-29T10:05:00Z",
+            steps: [
+              %{
+                number: 1,
+                name: "checkout",
+                status: "completed",
+                conclusion: "success",
+                started_at: "2026-04-29T10:00:00Z",
+                completed_at: "2026-04-29T10:01:00Z"
+              },
+              %{
+                number: 2,
+                name: "mix test",
+                status: "completed",
+                conclusion: "failure",
+                started_at: "2026-04-29T10:01:00Z",
+                completed_at: "2026-04-29T10:05:00Z"
+              }
+            ]
+          },
+          %{
+            id: 34,
+            run_id: 22,
+            name: "deploy",
+            status: "queued",
+            conclusion: nil,
+            steps: []
+          }
+        ]
+      })
+    end)
+
+    assert {:ok,
+            %{
+              total_count: 2,
+              ci_status: "failure",
+              jobs: [
+                %{
+                  id: 33,
+                  run_id: 22,
+                  run_attempt: 1,
+                  name: "test",
+                  status: "completed",
+                  conclusion: "failure",
+                  ci_status: "failure",
+                  url: "https://github.test/runs/22/job/33",
+                  steps: [
+                    %{number: 1, name: "checkout", ci_status: "success"},
+                    %{number: 2, name: "mix test", ci_status: "failure"}
+                  ]
+                },
+                %{id: 34, name: "deploy", status: "queued", ci_status: "queued", steps: []}
+              ]
+            }} =
+             Client.list_workflow_run_jobs(
+               %{repo: "org/repo", run_id: 22, filter: "latest", page: 2, per_page: 10},
+               "token"
+             )
+  end
+
   test "dispatch workflow sends expected request" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

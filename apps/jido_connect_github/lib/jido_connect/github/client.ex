@@ -92,6 +92,17 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_workflow_run_list_response()
   end
 
+  def list_workflow_run_jobs(%{repo: repo, run_id: run_id} = params, access_token)
+      when is_binary(repo) and is_integer(run_id) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(
+      url: "/repos/#{repo}/actions/runs/#{run_id}/jobs",
+      params: workflow_run_job_list_params(params)
+    )
+    |> handle_workflow_run_job_list_response()
+  end
+
   def dispatch_workflow(repo, workflow, attrs, access_token)
       when is_binary(repo) and is_binary(workflow) and is_map(attrs) and is_binary(access_token) do
     access_token
@@ -451,6 +462,31 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_workflow_run_list_response(response), do: handle_error_response(response)
 
+  defp handle_workflow_run_job_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    case Data.get(body, "jobs") do
+      jobs when is_list(jobs) ->
+        normalized_jobs = Enum.map(jobs, &normalize_workflow_run_job/1)
+
+        {:ok,
+         %{
+           jobs: normalized_jobs,
+           total_count: Data.get(body, "total_count"),
+           ci_status: aggregate_ci_status(normalized_jobs)
+         }}
+
+      _other ->
+        invalid_success_response("GitHub workflow run job list response was invalid", body)
+    end
+  end
+
+  defp handle_workflow_run_job_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub workflow run job list response was invalid", body)
+  end
+
+  defp handle_workflow_run_job_list_response(response), do: handle_error_response(response)
+
   defp handle_workflow_dispatch_response({:ok, %{status: 204}}), do: {:ok, %{dispatched: true}}
 
   defp handle_workflow_dispatch_response({:ok, %{status: status, body: body}})
@@ -754,6 +790,42 @@ defmodule Jido.Connect.GitHub.Client do
     |> Data.compact()
   end
 
+  defp normalize_workflow_run_job(job) when is_map(job) do
+    %{
+      id: Data.get(job, "id"),
+      run_id: Data.get(job, "run_id"),
+      run_attempt: Data.get(job, "run_attempt"),
+      name: Data.get(job, "name"),
+      status: Data.get(job, "status"),
+      conclusion: Data.get(job, "conclusion"),
+      ci_status: normalize_ci_status(Data.get(job, "status"), Data.get(job, "conclusion")),
+      steps: normalize_workflow_run_steps(Data.get(job, "steps")),
+      url: Data.get(job, "html_url") || Data.get(job, "url"),
+      started_at: Data.get(job, "started_at"),
+      completed_at: Data.get(job, "completed_at")
+    }
+    |> Data.compact()
+  end
+
+  defp normalize_workflow_run_steps(steps) when is_list(steps) do
+    Enum.map(steps, &normalize_workflow_run_step/1)
+  end
+
+  defp normalize_workflow_run_steps(_steps), do: []
+
+  defp normalize_workflow_run_step(step) when is_map(step) do
+    %{
+      number: Data.get(step, "number"),
+      name: Data.get(step, "name"),
+      status: Data.get(step, "status"),
+      conclusion: Data.get(step, "conclusion"),
+      ci_status: normalize_ci_status(Data.get(step, "status"), Data.get(step, "conclusion")),
+      started_at: Data.get(step, "started_at"),
+      completed_at: Data.get(step, "completed_at")
+    }
+    |> Data.compact()
+  end
+
   defp normalize_repository_owner(owner) when is_map(owner) do
     %{
       login: Data.get(owner, "login"),
@@ -996,6 +1068,15 @@ defmodule Jido.Connect.GitHub.Client do
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
   end
 
+  defp workflow_run_job_list_params(params) do
+    [
+      filter: Map.get(params, :filter, "latest"),
+      per_page: Map.get(params, :per_page, 30),
+      page: Map.get(params, :page, 1)
+    ]
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+  end
+
   defp issue_comment_list_params(params) do
     [
       since: Map.get(params, :since),
@@ -1016,6 +1097,47 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp workflow_run_list_request(repo, params),
     do: {"/repos/#{repo}/actions/runs", workflow_run_list_params(params)}
+
+  defp normalize_ci_status(_status, conclusion) when conclusion in ["success", "failure"] do
+    conclusion
+  end
+
+  defp normalize_ci_status(_status, conclusion)
+       when conclusion in ["cancelled", "skipped", "timed_out", "action_required", "neutral"] do
+    conclusion
+  end
+
+  defp normalize_ci_status(status, _conclusion)
+       when status in ["queued", "waiting", "requested"] do
+    "queued"
+  end
+
+  defp normalize_ci_status(status, _conclusion) when status in ["in_progress", "pending"] do
+    "in_progress"
+  end
+
+  defp normalize_ci_status("completed", _conclusion), do: "unknown"
+  defp normalize_ci_status(status, _conclusion) when is_binary(status), do: status
+  defp normalize_ci_status(_status, _conclusion), do: "unknown"
+
+  defp aggregate_ci_status([]), do: "unknown"
+
+  defp aggregate_ci_status(jobs) do
+    statuses = Enum.map(jobs, &Map.get(&1, :ci_status, "unknown"))
+
+    cond do
+      "failure" in statuses -> "failure"
+      "timed_out" in statuses -> "timed_out"
+      "action_required" in statuses -> "action_required"
+      "cancelled" in statuses -> "cancelled"
+      "in_progress" in statuses -> "in_progress"
+      "queued" in statuses -> "queued"
+      Enum.all?(statuses, &(&1 == "success")) -> "success"
+      Enum.all?(statuses, &(&1 == "skipped")) -> "skipped"
+      Enum.all?(statuses, &(&1 in ["success", "skipped", "neutral"])) -> "neutral"
+      true -> "unknown"
+    end
+  end
 
   defp invalid_success_response(message, body) do
     {:error,
