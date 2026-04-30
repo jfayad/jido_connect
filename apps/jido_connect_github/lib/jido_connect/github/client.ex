@@ -41,6 +41,17 @@ defmodule Jido.Connect.GitHub.Client do
     |> handle_repository_response()
   end
 
+  def list_branches(%{repo: repo} = params, access_token)
+      when is_binary(repo) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(
+      url: "/repos/#{repo}/branches",
+      params: branch_list_params(params)
+    )
+    |> handle_branch_list_response()
+  end
+
   def read_file(repo, path, ref, access_token)
       when is_binary(repo) and is_binary(path) and is_binary(access_token) do
     access_token
@@ -412,6 +423,18 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp handle_repository_response(response), do: handle_error_response(response)
 
+  defp handle_branch_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_list(body) do
+    {:ok, Enum.map(body, &normalize_branch/1)}
+  end
+
+  defp handle_branch_list_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub branch list response was invalid", body)
+  end
+
+  defp handle_branch_list_response(response), do: handle_error_response(response)
+
   defp handle_file_content_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_map(body) do
     case Data.get(body, "type") do
@@ -771,6 +794,27 @@ defmodule Jido.Connect.GitHub.Client do
       url: Data.get(repository, "html_url") || Data.get(repository, "url")
     }
   end
+
+  defp normalize_branch(branch) when is_map(branch) do
+    commit = Data.get(branch, "commit") || %{}
+
+    %{
+      name: Data.get(branch, "name"),
+      sha: Data.get(commit, "sha"),
+      commit: normalize_branch_commit(commit),
+      protected: Data.get(branch, "protected"),
+      protection_url: Data.get(branch, "protection_url")
+    }
+  end
+
+  defp normalize_branch_commit(commit) when is_map(commit) do
+    %{
+      sha: Data.get(commit, "sha"),
+      url: Data.get(commit, "url")
+    }
+  end
+
+  defp normalize_branch_commit(_commit), do: nil
 
   defp normalize_pull_request(pull_request) when is_map(pull_request) do
     %{
@@ -1178,6 +1222,13 @@ defmodule Jido.Connect.GitHub.Client do
   defp normalize_milestone(_milestone), do: nil
 
   defp repository_list_params(params) do
+    [
+      per_page: Map.get(params, :per_page, 30),
+      page: Map.get(params, :page, 1)
+    ]
+  end
+
+  defp branch_list_params(params) do
     [
       per_page: Map.get(params, :per_page, 30),
       page: Map.get(params, :page, 1)

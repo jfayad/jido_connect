@@ -53,6 +53,22 @@ defmodule Jido.Connect.GitHubTest do
        }}
     end
 
+    def list_branches(%{repo: "org/repo", page: 2, per_page: 10}, "token") do
+      {:ok,
+       [
+         %{
+           name: "main",
+           sha: "abc123",
+           commit: %{
+             sha: "abc123",
+             url: "https://api.github.test/repos/org/repo/commits/abc123"
+           },
+           protected: true,
+           protection_url: "https://api.github.test/repos/org/repo/branches/main/protection"
+         }
+       ]}
+    end
+
     def list_issues("org/repo", "open", "token") do
       {:ok, [%{number: 1, url: "https://github.test/1", title: "First", state: "open"}]}
     end
@@ -630,6 +646,18 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.branch.list",
+              resource: :branch,
+              verb: :list,
+              mutation?: false,
+              auth_profiles: [:user, :installation],
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.branch.list")
+
+    assert {:ok,
+            %{
               id: "github.file.read",
               resource: :file,
               verb: :read,
@@ -958,6 +986,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.GetRepository,
+             Jido.Connect.GitHub.Actions.ListBranches,
              Jido.Connect.GitHub.Actions.ReadFile,
              Jido.Connect.GitHub.Actions.UpdateFile,
              Jido.Connect.GitHub.Actions.ListIssues,
@@ -1000,6 +1029,7 @@ defmodule Jido.Connect.GitHubTest do
                  Jido.Connect.GitHub.Actions.ListRepositories,
                  Jido.Connect.GitHub.Actions.ListInstallationRepositories,
                  Jido.Connect.GitHub.Actions.GetRepository,
+                 Jido.Connect.GitHub.Actions.ListBranches,
                  Jido.Connect.GitHub.Actions.ReadFile,
                  Jido.Connect.GitHub.Actions.UpdateFile,
                  Jido.Connect.GitHub.Actions.ListIssues,
@@ -1043,6 +1073,9 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:module, Jido.Connect.GitHub.Actions.GetRepository} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.GetRepository)
+
+    assert {:module, Jido.Connect.GitHub.Actions.ListBranches} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListBranches)
 
     assert {:module, Jido.Connect.GitHub.Actions.ReadFile} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ReadFile)
@@ -1117,6 +1150,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListInstallationRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.GetRepository, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.ListBranches, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ReadFile, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.UpdateFile, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.AddIssueLabels, :run, 2)
@@ -1293,6 +1327,22 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.ListPullRequests.name() == "github_pull_request_list"
+  end
+
+  test "generated branch list action metadata tracks pagination fields" do
+    projection = Jido.Connect.GitHub.Actions.ListBranches.jido_connect_projection()
+
+    assert projection.action_id == "github.branch.list"
+    assert projection.label == "List branches"
+    assert Enum.map(projection.input, & &1.name) == [:repo, :page, :per_page]
+    assert Enum.map(projection.output, & &1.name) == [:branches]
+    assert projection.risk == :read
+    assert projection.resource == :branch
+    assert projection.verb == :list
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.ListBranches.name() == "github_branch_list"
   end
 
   test "generated file read action metadata tracks path, ref, and content metadata fields" do
@@ -1919,6 +1969,30 @@ defmodule Jido.Connect.GitHubTest do
                Jido.Connect.GitHub.integration(),
                "github.repo.get",
                %{owner: "org", name: "repo"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes GitHub list branches action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              branches: [
+                %{
+                  name: "main",
+                  sha: "abc123",
+                  protected: true,
+                  protection_url:
+                    "https://api.github.test/repos/org/repo/branches/main/protection"
+                }
+              ]
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.branch.list",
+               %{repo: "org/repo", page: 2, per_page: 10},
                context: context,
                credential_lease: lease
              )
@@ -2605,6 +2679,19 @@ defmodule Jido.Connect.GitHubTest do
              })
   end
 
+  test "generated branch list action delegates to integration invoke runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{branches: [%{name: "main", sha: "abc123", protected: true}]}} =
+             Jido.Connect.GitHub.Actions.ListBranches.run(
+               %{repo: "org/repo", page: 2, per_page: 10},
+               %{
+                 integration_context: context,
+                 credential_lease: lease
+               }
+             )
+  end
+
   test "generated installation repository action delegates to integration invoke runtime" do
     {context, lease} =
       context_and_lease(
@@ -2890,6 +2977,7 @@ defmodule Jido.Connect.GitHubTest do
              Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
              Jido.Connect.GitHub.Actions.GetRepository,
+             Jido.Connect.GitHub.Actions.ListBranches,
              Jido.Connect.GitHub.Actions.ReadFile,
              Jido.Connect.GitHub.Actions.UpdateFile,
              Jido.Connect.GitHub.Actions.ListIssues,

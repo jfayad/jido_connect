@@ -91,6 +91,33 @@ defmodule Jido.Connect.GitHub.Actions.Repositories do
       end
     end
 
+    action :list_branches do
+      id "github.branch.list"
+      resource :branch
+      verb :list
+      data_classification :workspace_metadata
+      label "List branches"
+      description "List GitHub repository branches with pagination."
+      handler Jido.Connect.GitHub.Handlers.Actions.ListBranches
+      effect :read
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :page, :integer, default: 1
+        field :per_page, :integer, default: 30
+      end
+
+      output do
+        field :branches, {:array, :map}
+      end
+    end
+
     action :read_file do
       id "github.file.read"
       resource :file

@@ -144,6 +144,41 @@ defmodule Jido.Connect.GitHub.ClientTest do
             }} = Client.get_repository("org", "repo", "token")
   end
 
+  test "list branches sends expected request and normalizes branches" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/repos/org/repo/branches"
+      assert %{"page" => "2", "per_page" => "50"} = URI.decode_query(conn.query_string)
+      assert ["Bearer token"] = Plug.Conn.get_req_header(conn, "authorization")
+
+      Req.Test.json(conn, [
+        %{
+          name: "main",
+          commit: %{
+            sha: "abc123",
+            url: "https://api.github.test/repos/org/repo/commits/abc123"
+          },
+          protected: true,
+          protection_url: "https://api.github.test/repos/org/repo/branches/main/protection"
+        }
+      ])
+    end)
+
+    assert {:ok,
+            [
+              %{
+                name: "main",
+                sha: "abc123",
+                commit: %{
+                  sha: "abc123",
+                  url: "https://api.github.test/repos/org/repo/commits/abc123"
+                },
+                protected: true,
+                protection_url: "https://api.github.test/repos/org/repo/branches/main/protection"
+              }
+            ]} = Client.list_branches(%{repo: "org/repo", page: 2, per_page: 50}, "token")
+  end
+
   test "read file sends expected request and decodes UTF-8 content" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"
