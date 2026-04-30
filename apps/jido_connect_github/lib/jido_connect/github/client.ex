@@ -33,6 +33,17 @@ defmodule Jido.Connect.GitHub.Client do
     |> response_handler.()
   end
 
+  def read_file(repo, path, ref, access_token)
+      when is_binary(repo) and is_binary(path) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.get(
+      url: "/repos/#{repo}/contents/#{encode_path(path)}",
+      params: file_content_params(ref)
+    )
+    |> handle_file_content_response()
+  end
+
   def list_pull_requests(%{repo: repo} = params, access_token)
       when is_binary(repo) and is_binary(access_token) do
     access_token
@@ -237,6 +248,21 @@ defmodule Jido.Connect.GitHub.Client do
   end
 
   defp handle_user_repository_list_response(response), do: handle_error_response(response)
+
+  defp handle_file_content_response({:ok, %{status: status, body: body}})
+       when status in 200..299 and is_map(body) do
+    case Data.get(body, "type") do
+      "file" -> normalize_file_content(body)
+      _other -> invalid_success_response("GitHub file content response was invalid", body)
+    end
+  end
+
+  defp handle_file_content_response({:ok, %{status: status, body: body}})
+       when status in 200..299 do
+    invalid_success_response("GitHub file content response was invalid", body)
+  end
+
+  defp handle_file_content_response(response), do: handle_error_response(response)
 
   defp handle_pull_request_list_response({:ok, %{status: status, body: body}})
        when status in 200..299 and is_list(body) do
@@ -502,6 +528,58 @@ defmodule Jido.Connect.GitHub.Client do
 
   defp normalize_repository_owner(_owner), do: nil
 
+  defp normalize_file_content(file) when is_map(file) do
+    with "base64" <- Data.get(file, "encoding"),
+         content when is_binary(content) <- Data.get(file, "content"),
+         {:ok, decoded} <- Base.decode64(content, ignore: :whitespace) do
+      decoded_file_content(file, decoded, content)
+    else
+      _other ->
+        invalid_success_response("GitHub file content response was invalid", file)
+    end
+  end
+
+  defp decoded_file_content(file, decoded, encoded) do
+    base = %{
+      path: Data.get(file, "path"),
+      name: Data.get(file, "name"),
+      sha: Data.get(file, "sha"),
+      size: Data.get(file, "size"),
+      type: Data.get(file, "type"),
+      url: Data.get(file, "url"),
+      html_url: Data.get(file, "html_url"),
+      download_url: Data.get(file, "download_url")
+    }
+
+    content =
+      if text_content?(decoded) do
+        %{content: decoded, content_base64: nil, encoding: "utf-8", binary: false}
+      else
+        %{
+          content: nil,
+          content_base64: strip_base64_whitespace(encoded),
+          encoding: "base64",
+          binary: true
+        }
+      end
+
+    {:ok, compact_file_content(Map.merge(Data.compact(base), content))}
+  end
+
+  defp strip_base64_whitespace(content) do
+    String.replace(content, ~r/\s+/, "")
+  end
+
+  defp text_content?(content) do
+    String.valid?(content) and :binary.match(content, <<0>>) == :nomatch
+  end
+
+  defp compact_file_content(file) do
+    file
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
   defp normalize_pull_request_ref(ref) when is_map(ref) do
     %{
       label: Data.get(ref, "label"),
@@ -586,6 +664,18 @@ defmodule Jido.Connect.GitHub.Client do
       page: Map.get(params, :page, 1)
     ]
   end
+
+  defp file_content_params(ref) when is_binary(ref), do: [ref: ref]
+  defp file_content_params(_ref), do: []
+
+  defp encode_path(path) do
+    path
+    |> String.split("/")
+    |> Enum.map(fn segment -> URI.encode(segment, &char_unreserved?/1) end)
+    |> Enum.join("/")
+  end
+
+  defp char_unreserved?(character), do: URI.char_unreserved?(character)
 
   defp pull_request_list_params(params) do
     [

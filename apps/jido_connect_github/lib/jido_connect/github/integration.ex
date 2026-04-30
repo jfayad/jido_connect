@@ -75,6 +75,7 @@ defmodule Jido.Connect.GitHub do
         "metadata:read",
         "issues:read",
         "issues:write",
+        "contents:read",
         "actions:read",
         "actions:write",
         "contents:write",

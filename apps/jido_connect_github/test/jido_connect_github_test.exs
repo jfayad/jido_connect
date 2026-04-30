@@ -43,6 +43,23 @@ defmodule Jido.Connect.GitHubTest do
       {:ok, [%{number: 1, url: "https://github.test/1", title: "First", state: "open"}]}
     end
 
+    def read_file("org/repo", "README.md", "main", "token") do
+      {:ok,
+       %{
+         path: "README.md",
+         name: "README.md",
+         sha: "abc123",
+         size: 12,
+         type: "file",
+         encoding: "utf-8",
+         binary: false,
+         content: "# Project\n",
+         url: "https://api.github.test/repos/org/repo/contents/README.md",
+         html_url: "https://github.test/org/repo/blob/main/README.md",
+         download_url: "https://raw.github.test/org/repo/main/README.md"
+       }}
+    end
+
     def list_pull_requests(
           %{
             repo: "org/repo",
@@ -303,6 +320,18 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:ok,
             %{
+              id: "github.file.read",
+              resource: :file,
+              verb: :read,
+              mutation?: false,
+              auth_profiles: [:user, :installation],
+              policies: [:repo_access],
+              scope_resolver: Jido.Connect.GitHub.ScopeResolver
+            }} =
+             Connect.action(spec, "github.file.read")
+
+    assert {:ok,
+            %{
               id: "github.issue.list",
               resource: :issue,
               verb: :list,
@@ -464,6 +493,7 @@ defmodule Jido.Connect.GitHubTest do
     assert Jido.Connect.GitHub.jido_action_modules() == [
              Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
+             Jido.Connect.GitHub.Actions.ReadFile,
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,
@@ -491,6 +521,7 @@ defmodule Jido.Connect.GitHubTest do
                actions: [
                  Jido.Connect.GitHub.Actions.ListRepositories,
                  Jido.Connect.GitHub.Actions.ListInstallationRepositories,
+                 Jido.Connect.GitHub.Actions.ReadFile,
                  Jido.Connect.GitHub.Actions.ListIssues,
                  Jido.Connect.GitHub.Actions.CreateIssue,
                  Jido.Connect.GitHub.Actions.ListPullRequests,
@@ -517,6 +548,9 @@ defmodule Jido.Connect.GitHubTest do
 
     assert {:module, Jido.Connect.GitHub.Actions.ListInstallationRepositories} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.ListInstallationRepositories)
+
+    assert {:module, Jido.Connect.GitHub.Actions.ReadFile} =
+             Code.ensure_loaded(Jido.Connect.GitHub.Actions.ReadFile)
 
     assert {:module, Jido.Connect.GitHub.Actions.CreateIssueComment} =
              Code.ensure_loaded(Jido.Connect.GitHub.Actions.CreateIssueComment)
@@ -557,6 +591,7 @@ defmodule Jido.Connect.GitHubTest do
     assert function_exported?(Jido.Connect.GitHub.Actions.ListIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListRepositories, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListInstallationRepositories, :run, 2)
+    assert function_exported?(Jido.Connect.GitHub.Actions.ReadFile, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListPullRequests, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.SearchIssues, :run, 2)
     assert function_exported?(Jido.Connect.GitHub.Actions.ListWorkflowRuns, :run, 2)
@@ -663,6 +698,38 @@ defmodule Jido.Connect.GitHubTest do
     assert projection.auth_profiles == [:user, :installation]
     assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
     assert Jido.Connect.GitHub.Actions.ListPullRequests.name() == "github_pull_request_list"
+  end
+
+  test "generated file read action metadata tracks path, ref, and content metadata fields" do
+    projection = Jido.Connect.GitHub.Actions.ReadFile.jido_connect_projection()
+
+    assert projection.action_id == "github.file.read"
+    assert projection.label == "Read file contents"
+    assert Enum.map(projection.input, & &1.name) == [:repo, :path, :ref]
+
+    assert Enum.map(projection.output, & &1.name) == [
+             :repo,
+             :path,
+             :name,
+             :sha,
+             :size,
+             :type,
+             :encoding,
+             :binary,
+             :content,
+             :content_base64,
+             :url,
+             :html_url,
+             :download_url
+           ]
+
+    assert projection.risk == :read
+    assert projection.resource == :file
+    assert projection.verb == :read
+    assert projection.policies == [:repo_access]
+    assert projection.auth_profiles == [:user, :installation]
+    assert projection.scope_resolver == Jido.Connect.GitHub.ScopeResolver
+    assert Jido.Connect.GitHub.Actions.ReadFile.name() == "github_file_read"
   end
 
   test "generated issue search action metadata tracks query helper and pagination fields" do
@@ -845,6 +912,27 @@ defmodule Jido.Connect.GitHubTest do
                Jido.Connect.GitHub.integration(),
                "github.issue.list",
                %{repo: "org/repo"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes GitHub read file action through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              repo: "org/repo",
+              path: "README.md",
+              name: "README.md",
+              encoding: "utf-8",
+              binary: false,
+              content: "# Project\n"
+            }} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.file.read",
+               %{repo: "org/repo", path: "README.md", ref: "main"},
                context: context,
                credential_lease: lease
              )
@@ -1035,7 +1123,31 @@ defmodule Jido.Connect.GitHubTest do
                credential_lease: lease
              )
 
+    read_context = %{
+      context
+      | connection: %{context.connection | scopes: ["metadata:read", "contents:read"]}
+    }
+
+    assert {:ok, %{path: "README.md", content: "# Project\n"}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.file.read",
+               %{repo: "org/repo", path: "README.md", ref: "main"},
+               context: read_context,
+               credential_lease: lease
+             )
+
     missing_write = %{context | connection: %{context.connection | scopes: ["metadata:read"]}}
+
+    assert {:error,
+            %Connect.Error.AuthError{reason: :missing_scopes, missing_scopes: ["contents:read"]}} =
+             Connect.invoke(
+               Jido.Connect.GitHub.integration(),
+               "github.file.read",
+               %{repo: "org/repo", path: "README.md", ref: "main"},
+               context: missing_write,
+               credential_lease: lease
+             )
 
     assert {:error,
             %Connect.Error.AuthError{reason: :missing_scopes, missing_scopes: ["issues:write"]}} =
@@ -1267,6 +1379,7 @@ defmodule Jido.Connect.GitHubTest do
     assert spec.actions == [
              Jido.Connect.GitHub.Actions.ListRepositories,
              Jido.Connect.GitHub.Actions.ListInstallationRepositories,
+             Jido.Connect.GitHub.Actions.ReadFile,
              Jido.Connect.GitHub.Actions.ListIssues,
              Jido.Connect.GitHub.Actions.CreateIssue,
              Jido.Connect.GitHub.Actions.ListPullRequests,

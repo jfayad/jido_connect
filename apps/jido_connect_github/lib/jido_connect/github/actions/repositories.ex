@@ -58,5 +58,44 @@ defmodule Jido.Connect.GitHub.Actions.Repositories do
         field :permissions, :map
       end
     end
+
+    action :read_file do
+      id "github.file.read"
+      resource :file
+      verb :read
+      data_classification :workspace_content
+      label "Read file contents"
+      description "Read a GitHub repository file by path and optional ref."
+      handler Jido.Connect.GitHub.Handlers.Actions.ReadFile
+      effect :read
+
+      access do
+        auth [:user, :installation], default: :user
+        policies [:repo_access]
+        scopes ["repo"], resolver: Jido.Connect.GitHub.ScopeResolver
+      end
+
+      input do
+        field :repo, :string, required?: true, example: "org/repo"
+        field :path, :string, required?: true, example: "README.md"
+        field :ref, :string
+      end
+
+      output do
+        field :repo, :string
+        field :path, :string
+        field :name, :string
+        field :sha, :string
+        field :size, :integer
+        field :type, :string
+        field :encoding, :string
+        field :binary, :boolean
+        field :content, :string
+        field :content_base64, :string
+        field :url, :string
+        field :html_url, :string
+        field :download_url, :string
+      end
+    end
   end
 end
