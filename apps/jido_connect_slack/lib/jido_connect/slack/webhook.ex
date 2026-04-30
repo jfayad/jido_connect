@@ -52,18 +52,21 @@ defmodule Jido.Connect.Slack.Webhook do
   def verify_delivery(body, headers, signing_secret, opts \\ []) do
     with :ok <- verify_signature(body, headers, signing_secret, opts),
          {:ok, payload} <- decode_body(body) do
-      WebhookDelivery.verified(:slack, %{
-        delivery_id: Data.get(payload, "event_id"),
-        event: get_in(payload, ["event", "type"]) || Data.get(payload, "type"),
-        headers: headers,
-        payload: payload,
-        duplicate?:
-          CoreWebhook.duplicate?(
-            Data.get(payload, "event_id"),
-            Keyword.get(opts, :seen_delivery_ids, [])
-          ),
-        metadata: %{team_id: Data.get(payload, "team_id")}
-      })
+      with {:ok, delivery} <-
+             WebhookDelivery.verified(:slack, %{
+               delivery_id: Data.get(payload, "event_id"),
+               event: get_in(payload, ["event", "type"]) || Data.get(payload, "type"),
+               headers: headers,
+               payload: payload,
+               duplicate?:
+                 CoreWebhook.duplicate?(
+                   Data.get(payload, "event_id"),
+                   Keyword.get(opts, :seen_delivery_ids, [])
+                 ),
+               metadata: %{team_id: Data.get(payload, "team_id")}
+             }) do
+        {:ok, maybe_put_normalized_signal(delivery)}
+      end
     end
   end
 
@@ -80,18 +83,40 @@ defmodule Jido.Connect.Slack.Webhook do
      )}
   end
 
-  def normalize_event(
+  def normalize_signal(%WebhookDelivery{event: event, payload: payload} = delivery) do
+    with {:ok, signal} <- normalize_signal(event, payload) do
+      {:ok, Map.put(signal, :delivery, delivery_metadata(delivery))}
+    end
+  end
+
+  def normalize_signal(
+        "app_mention",
         %{"type" => "event_callback", "event" => %{"type" => "app_mention"} = event} = payload
       ) do
     {:ok,
-     %{
+     Data.compact(%{
        team_id: Data.get(payload, "team_id"),
        event_id: Data.get(payload, "event_id"),
        channel: Data.get(event, "channel"),
+       channel_type: Data.get(event, "channel_type"),
        user: Data.get(event, "user"),
        text: Data.get(event, "text"),
-       ts: Data.get(event, "ts")
-     }}
+       ts: Data.get(event, "ts"),
+       thread_ts: Data.get(event, "thread_ts")
+     })}
+  end
+
+  def normalize_signal(event, _payload) do
+    {:error,
+     Error.provider("Unsupported Slack event",
+       provider: :slack,
+       reason: :unsupported_event,
+       details: %{event: event}
+     )}
+  end
+
+  def normalize_event(%{"type" => "event_callback", "event" => %{"type" => type}} = payload) do
+    normalize_signal(type, payload)
   end
 
   def normalize_event(%{"type" => type}) do
@@ -109,6 +134,23 @@ defmodule Jido.Connect.Slack.Webhook do
        provider: :slack,
        reason: :unsupported_event
      )}
+  end
+
+  defp maybe_put_normalized_signal(%WebhookDelivery{} = delivery) do
+    case normalize_signal(delivery) do
+      {:ok, signal} -> WebhookDelivery.put_signal(delivery, signal)
+      {:error, _reason} -> delivery
+    end
+  end
+
+  defp delivery_metadata(%WebhookDelivery{} = delivery) do
+    Data.compact(%{
+      provider: delivery.provider,
+      event: delivery.event,
+      id: delivery.delivery_id,
+      duplicate?: delivery.duplicate?,
+      received_at: delivery.received_at
+    })
   end
 
   defp parse_timestamp(nil) do

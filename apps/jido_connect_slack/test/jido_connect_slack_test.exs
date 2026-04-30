@@ -396,6 +396,32 @@ defmodule Jido.Connect.SlackTest do
               mutation?: false
             }} =
              Connect.action(spec, "slack.user.lookup_by_email")
+
+    assert {:ok,
+            %{
+              id: "slack.event.app_mention",
+              kind: :webhook,
+              resource: :message,
+              verb: :watch,
+              policies: [:workspace_access],
+              scopes: ["app_mentions:read"],
+              verification: %{
+                kind: :slack_signed_request,
+                signature_header: "x-slack-signature",
+                timestamp_header: "x-slack-request-timestamp"
+              }
+            } = trigger} = Connect.trigger(spec, "slack.event.app_mention")
+
+    assert Enum.map(trigger.signal, & &1.name) == [
+             :team_id,
+             :event_id,
+             :channel,
+             :channel_type,
+             :user,
+             :text,
+             :ts,
+             :thread_ts
+           ]
   end
 
   test "Slack catalog entry exposes setup, auth, and runtime capabilities" do
@@ -429,7 +455,10 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.LookupUserByEmail
            ]
 
-    assert Jido.Connect.Slack.jido_sensor_modules() == []
+    assert Jido.Connect.Slack.jido_sensor_modules() == [
+             Jido.Connect.Slack.Sensors.AppMention
+           ]
+
     assert Jido.Connect.Slack.jido_plugin_module() == Jido.Connect.Slack.Plugin
 
     assert %Connect.Catalog.Manifest{
@@ -450,7 +479,9 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.UserInfo,
                  Jido.Connect.Slack.Actions.LookupUserByEmail
                ],
-               sensors: [],
+               sensors: [
+                 Jido.Connect.Slack.Sensors.AppMention
+               ],
                plugin: Jido.Connect.Slack.Plugin
              }
            } = Jido.Connect.Slack.jido_connect_manifest()
@@ -491,7 +522,11 @@ defmodule Jido.Connect.SlackTest do
     assert {:module, Jido.Connect.Slack.Plugin} =
              Code.ensure_loaded(Jido.Connect.Slack.Plugin)
 
+    assert {:module, Jido.Connect.Slack.Sensors.AppMention} =
+             Code.ensure_loaded(Jido.Connect.Slack.Sensors.AppMention)
+
     assert function_exported?(Jido.Connect.Slack.Actions.ListChannels, :run, 2)
+    assert function_exported?(Jido.Connect.Slack.Sensors.AppMention, :handle_event, 2)
     assert function_exported?(Jido.Connect.Slack.Plugin, :plugin_spec, 1)
   end
 
@@ -1155,6 +1190,15 @@ defmodule Jido.Connect.SlackTest do
 
     assert missing_scopes.state == :missing_scopes
     assert missing_scopes.missing_scopes == ["channels:read"]
+  end
+
+  test "generated app mention sensor exposes trigger metadata and ignores direct events" do
+    assert Jido.Connect.Slack.Sensors.AppMention.trigger_id() == "slack.event.app_mention"
+    assert Jido.Connect.Slack.Sensors.AppMention.signal_type() == "slack.event.app_mention"
+    assert Jido.Connect.Slack.Sensors.AppMention.signal_source() == "/jido/connect/slack"
+
+    assert {:ok, state} = Jido.Connect.Slack.Sensors.AppMention.init(%{}, %{})
+    assert {:ok, ^state} = Jido.Connect.Slack.Sensors.AppMention.handle_event(:anything, state)
   end
 
   defp context_and_lease(opts \\ []) do

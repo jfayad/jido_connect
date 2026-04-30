@@ -13,7 +13,8 @@ defmodule Jido.Connect.Slack do
       Jido.Connect.Slack.Actions.Identity,
       Jido.Connect.Slack.Actions.Messages,
       Jido.Connect.Slack.Actions.Reactions,
-      Jido.Connect.Slack.Actions.Users
+      Jido.Connect.Slack.Actions.Users,
+      Jido.Connect.Slack.Triggers.Events
     ]
 
   integration do
@@ -67,6 +68,7 @@ defmodule Jido.Connect.Slack do
         "im:history",
         "mpim:read",
         "mpim:history",
+        "app_mentions:read",
         "chat:write",
         "files:write",
         "reactions:write",
@@ -77,6 +79,7 @@ defmodule Jido.Connect.Slack do
       default_scopes [
         "channels:read",
         "channels:history",
+        "app_mentions:read",
         "chat:write",
         "files:write",
         "reactions:write",

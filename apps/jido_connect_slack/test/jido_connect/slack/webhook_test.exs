@@ -22,7 +22,20 @@ defmodule Jido.Connect.Slack.WebhookTest do
   end
 
   test "verifies signed JSON requests" do
-    body = ~s({"type":"event_callback","event":{"type":"app_mention"}})
+    body =
+      Jason.encode!(%{
+        type: "event_callback",
+        team_id: "T123",
+        event_id: "Ev123",
+        event: %{
+          type: "app_mention",
+          channel: "C123",
+          user: "U123",
+          text: "<@U999> hello",
+          ts: "1700000000.000100"
+        }
+      })
+
     timestamp = "1700000000"
     signature = slack_signature("secret", timestamp, body)
 
@@ -40,9 +53,24 @@ defmodule Jido.Connect.Slack.WebhookTest do
     assert {:ok,
             %WebhookDelivery{
               provider: :slack,
+              delivery_id: "Ev123",
               event: "app_mention",
               signature_state: :verified,
-              payload: %{"type" => "event_callback"}
+              duplicate?: true,
+              payload: %{"type" => "event_callback"},
+              normalized_signal: %{
+                team_id: "T123",
+                event_id: "Ev123",
+                channel: "C123",
+                text: "<@U999> hello",
+                delivery: %{
+                  provider: :slack,
+                  event: "app_mention",
+                  id: "Ev123",
+                  duplicate?: true,
+                  received_at: %DateTime{}
+                }
+              }
             }} =
              Webhook.verify_delivery(
                body,
@@ -51,7 +79,8 @@ defmodule Jido.Connect.Slack.WebhookTest do
                  "x-slack-request-timestamp" => timestamp
                },
                "secret",
-               now: 1_700_000_000
+               now: 1_700_000_000,
+               seen_delivery_ids: ["Ev123"]
              )
   end
 
@@ -101,9 +130,11 @@ defmodule Jido.Connect.Slack.WebhookTest do
       "event" => %{
         "type" => "app_mention",
         "channel" => "C123",
+        "channel_type" => "channel",
         "user" => "U123",
         "text" => "<@U999> hello",
-        "ts" => "1700000000.000100"
+        "ts" => "1700000000.000100",
+        "thread_ts" => "1700000000.000000"
       }
     }
 
@@ -112,13 +143,17 @@ defmodule Jido.Connect.Slack.WebhookTest do
               team_id: "T123",
               event_id: "Ev123",
               channel: "C123",
+              channel_type: "channel",
               user: "U123",
               text: "<@U999> hello",
-              ts: "1700000000.000100"
-            }} = Webhook.normalize_event(payload)
+              ts: "1700000000.000100",
+              thread_ts: "1700000000.000000"
+            }} = Webhook.normalize_signal("app_mention", payload)
+
+    assert {:ok, %{channel: "C123"}} = Webhook.normalize_event(payload)
 
     assert {:error, %Error.ProviderError{provider: :slack, reason: :unsupported_event}} =
-             Webhook.normalize_event(%{
+             Webhook.normalize_signal("message", %{
                "type" => "event_callback",
                "event" => %{"type" => "message"}
              })
