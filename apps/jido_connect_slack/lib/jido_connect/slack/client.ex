@@ -42,6 +42,14 @@ defmodule Jido.Connect.Slack.Client do
     |> handle_create_channel_response()
   end
 
+  def archive_conversation(params, access_token)
+      when is_map(params) and is_binary(access_token) do
+    access_token
+    |> request()
+    |> Req.post(url: "/conversations.archive", json: archive_conversation_params(params))
+    |> handle_archive_conversation_response(params)
+  end
+
   def open_conversation(params, access_token)
       when is_map(params) and is_binary(access_token) do
     access_token
@@ -226,6 +234,12 @@ defmodule Jido.Connect.Slack.Client do
   defp create_channel_params(params) do
     params
     |> Map.take([:name, :is_private, :team_id])
+    |> Data.compact()
+  end
+
+  defp archive_conversation_params(params) do
+    params
+    |> Map.take([:channel])
     |> Data.compact()
   end
 
@@ -454,6 +468,17 @@ defmodule Jido.Connect.Slack.Client do
   end
 
   defp handle_create_channel_response(response), do: handle_error_response(response)
+
+  defp handle_archive_conversation_response(
+         {:ok, %{status: status, body: %{"ok" => true}}},
+         params
+       )
+       when status in 200..299 do
+    {:ok, %{channel: Data.get(params, :channel)}}
+  end
+
+  defp handle_archive_conversation_response(response, _params),
+    do: handle_error_response(response)
 
   defp handle_open_conversation_response({:ok, %{status: status, body: %{"ok" => true} = body}})
        when status in 200..299 do

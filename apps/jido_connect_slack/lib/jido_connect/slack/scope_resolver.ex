@@ -32,6 +32,13 @@ defmodule Jido.Connect.Slack.ScopeResolver do
     true => "groups:write"
   }
 
+  @conversation_archive_scopes %{
+    "public_channel" => "channels:manage",
+    "private_channel" => "groups:write",
+    "im" => "im:write",
+    "mpim" => "mpim:write"
+  }
+
   def required_scopes(%{id: "slack.channel.list"}, input, _connection) do
     input
     |> requested_types()
@@ -63,6 +70,17 @@ defmodule Jido.Connect.Slack.ScopeResolver do
 
   def required_scopes(%{action_id: "slack.channel.create"}, input, connection) do
     required_scopes(%{id: "slack.channel.create"}, input, connection)
+  end
+
+  def required_scopes(%{id: "slack.channel.archive"}, input, _connection) do
+    input
+    |> requested_conversation_type()
+    |> then(&Map.get(@conversation_archive_scopes, &1, "channels:manage"))
+    |> List.wrap()
+  end
+
+  def required_scopes(%{action_id: "slack.channel.archive"}, input, connection) do
+    required_scopes(%{id: "slack.channel.archive"}, input, connection)
   end
 
   def required_scopes(%{id: "slack.conversation.open"}, input, _connection) do

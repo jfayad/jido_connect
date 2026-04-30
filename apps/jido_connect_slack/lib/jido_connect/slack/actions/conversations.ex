@@ -135,6 +135,35 @@ defmodule Jido.Connect.Slack.Actions.Conversations do
       end
     end
 
+    action :archive_channel do
+      id "slack.channel.archive"
+      resource :channel
+      verb :archive
+      data_classification :workspace_metadata
+      label "Archive channel"
+      description "Archive a Slack conversation."
+      handler Jido.Connect.Slack.Handlers.Actions.ArchiveChannel
+      effect :destructive, confirmation: :always
+
+      access do
+        auth :bot
+        policies [:workspace_access]
+        scopes ["channels:manage"], resolver: Jido.Connect.Slack.ScopeResolver
+      end
+
+      input do
+        field :channel, :string, required?: true, example: "C012AB3CD"
+
+        field :conversation_type, :string,
+          description:
+            "Optional Slack conversation type: public_channel, private_channel, im, or mpim."
+      end
+
+      output do
+        field :channel, :string
+      end
+    end
+
     action :open_conversation do
       id "slack.conversation.open"
       resource :conversation

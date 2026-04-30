@@ -207,6 +207,14 @@ defmodule Jido.Connect.SlackTest do
        }}
     end
 
+    def archive_conversation(%{channel: "C999"}, "token") do
+      {:ok, %{channel: "C999"}}
+    end
+
+    def archive_conversation(%{channel: "G999"}, "token") do
+      {:ok, %{channel: "G999"}}
+    end
+
     def open_conversation(%{users: ["U123"]}, "token") do
       {:ok,
        %{
@@ -605,6 +613,19 @@ defmodule Jido.Connect.SlackTest do
               confirmation: :required_for_ai
             }} =
              Connect.action(spec, "slack.channel.create")
+
+    assert {:ok,
+            %{
+              id: "slack.channel.archive",
+              resource: :channel,
+              verb: :archive,
+              policies: [:workspace_access],
+              scopes: ["channels:manage"],
+              mutation?: true,
+              confirmation: :always,
+              risk: :destructive
+            }} =
+             Connect.action(spec, "slack.channel.archive")
 
     assert {:ok,
             %{
@@ -1021,6 +1042,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.GetThreadReplies,
              Jido.Connect.Slack.Actions.GetConversationInfo,
              Jido.Connect.Slack.Actions.CreateChannel,
+             Jido.Connect.Slack.Actions.ArchiveChannel,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
@@ -1064,6 +1086,7 @@ defmodule Jido.Connect.SlackTest do
                  Jido.Connect.Slack.Actions.GetThreadReplies,
                  Jido.Connect.Slack.Actions.GetConversationInfo,
                  Jido.Connect.Slack.Actions.CreateChannel,
+                 Jido.Connect.Slack.Actions.ArchiveChannel,
                  Jido.Connect.Slack.Actions.OpenConversation,
                  Jido.Connect.Slack.Actions.ListConversationMembers,
                  Jido.Connect.Slack.Actions.UploadFile,
@@ -1106,6 +1129,9 @@ defmodule Jido.Connect.SlackTest do
 
     assert {:module, Jido.Connect.Slack.Actions.CreateChannel} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.CreateChannel)
+
+    assert {:module, Jido.Connect.Slack.Actions.ArchiveChannel} =
+             Code.ensure_loaded(Jido.Connect.Slack.Actions.ArchiveChannel)
 
     assert {:module, Jido.Connect.Slack.Actions.SearchMessages} =
              Code.ensure_loaded(Jido.Connect.Slack.Actions.SearchMessages)
@@ -1619,6 +1645,29 @@ defmodule Jido.Connect.SlackTest do
              :channel
            ]
 
+    archive_channel_projection =
+      Jido.Connect.Slack.Actions.ArchiveChannel.jido_connect_projection()
+
+    assert archive_channel_projection.action_id == "slack.channel.archive"
+    assert archive_channel_projection.label == "Archive channel"
+    assert archive_channel_projection.resource == :channel
+    assert archive_channel_projection.verb == :archive
+    assert archive_channel_projection.scopes == ["channels:manage"]
+    assert archive_channel_projection.scope_resolver == Jido.Connect.Slack.ScopeResolver
+
+    assert Enum.map(archive_channel_projection.input, & &1.name) == [
+             :channel,
+             :conversation_type
+           ]
+
+    assert Enum.map(archive_channel_projection.output, & &1.name) == [
+             :channel
+           ]
+
+    assert archive_channel_projection.risk == :destructive
+    assert archive_channel_projection.confirmation == :always
+    assert Jido.Connect.Slack.Actions.ArchiveChannel.name() == "slack_channel_archive"
+
     open_conversation_projection =
       Jido.Connect.Slack.Actions.OpenConversation.jido_connect_projection()
 
@@ -1929,6 +1978,54 @@ defmodule Jido.Connect.SlackTest do
     assert {:ok, %{channel: %{id: "G999", is_private: true}}} =
              Jido.Connect.Slack.Actions.CreateChannel.run(
                %{name: "secret-updates", is_private: true},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "generated archive channel action delegates through integration runtime" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{channel: "C999"}} =
+             Jido.Connect.Slack.Actions.ArchiveChannel.run(
+               %{channel: "C999"},
+               %{integration_context: context, credential_lease: lease}
+             )
+  end
+
+  test "archive channel resolves scopes from conversation type" do
+    {context, lease} = context_and_lease()
+
+    no_manage_context = %{
+      context
+      | connection: %{
+          context.connection
+          | scopes: context.connection.scopes -- ["channels:manage", "groups:write"]
+        }
+    }
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["channels:manage"]
+            }} =
+             Jido.Connect.Slack.Actions.ArchiveChannel.run(
+               %{channel: "C999"},
+               %{integration_context: no_manage_context, credential_lease: lease}
+             )
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["groups:write"]
+            }} =
+             Jido.Connect.Slack.Actions.ArchiveChannel.run(
+               %{channel: "G999"},
+               %{integration_context: no_manage_context, credential_lease: lease}
+             )
+
+    assert {:ok, %{channel: "G999"}} =
+             Jido.Connect.Slack.Actions.ArchiveChannel.run(
+               %{channel: "G999"},
                %{integration_context: context, credential_lease: lease}
              )
   end
@@ -2653,6 +2750,7 @@ defmodule Jido.Connect.SlackTest do
              Jido.Connect.Slack.Actions.GetThreadReplies,
              Jido.Connect.Slack.Actions.GetConversationInfo,
              Jido.Connect.Slack.Actions.CreateChannel,
+             Jido.Connect.Slack.Actions.ArchiveChannel,
              Jido.Connect.Slack.Actions.OpenConversation,
              Jido.Connect.Slack.Actions.ListConversationMembers,
              Jido.Connect.Slack.Actions.UploadFile,
