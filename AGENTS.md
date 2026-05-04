@@ -18,6 +18,9 @@ progress, and decisions survive context compaction.
 ## Working Rules
 
 - Prefer the existing Spark DSL and Zoi struct patterns.
+- Keep provider DSL fragments, client API areas, webhook handlers, and tests in
+  small capability-oriented groups. Avoid catch-all modules such as `Client.Rest`
+  or single files that mix unrelated action, trigger, or event families.
 - Keep generated Jido modules thin. They should carry metadata and delegate to
   `Jido.Connect` runtimes.
 - Keep provider API logic in provider clients and handlers.

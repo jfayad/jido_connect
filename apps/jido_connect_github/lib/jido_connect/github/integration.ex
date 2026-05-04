@@ -11,6 +11,16 @@ defmodule Jido.Connect.GitHub do
     fragments: [
       Jido.Connect.GitHub.Actions.Repositories,
       Jido.Connect.GitHub.Actions.Issues,
+      Jido.Connect.GitHub.Actions.IssueLabels,
+      Jido.Connect.GitHub.Actions.IssueAssignments,
+      Jido.Connect.GitHub.Actions.PullRequests,
+      Jido.Connect.GitHub.Actions.Search,
+      Jido.Connect.GitHub.Actions.WorkflowRuns,
+      Jido.Connect.GitHub.Actions.Releases,
+      Jido.Connect.GitHub.Actions.WorkflowRunControls,
+      Jido.Connect.GitHub.Actions.PullRequestDetails,
+      Jido.Connect.GitHub.Actions.IssueUpdates,
+      Jido.Connect.GitHub.Actions.IssueComments,
       Jido.Connect.GitHub.Triggers.Issues
     ]
 
