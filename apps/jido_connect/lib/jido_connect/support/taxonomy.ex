@@ -35,9 +35,11 @@ defmodule Jido.Connect.Taxonomy do
   @visibilities [:public, :private, :internal]
 
   @verbs [
+    :append,
     :archive,
     :call,
     :cancel,
+    :clear,
     :create,
     :delete,
     :dispatch,

@@ -1,0 +1,24 @@
+defmodule Jido.Connect.Google.ScopesTest do
+  use ExUnit.Case, async: true
+
+  alias Jido.Connect.Google.Scopes
+
+  test "normalizes and checks Google scopes" do
+    assert Scopes.normalize("openid email,profile") == ["openid", "email", "profile"]
+    assert Scopes.encode(["openid", "email"]) == "openid email"
+    assert Scopes.include?(["openid", "email"], ["email"])
+    assert Scopes.missing(["openid"], ["openid", "email"]) == ["email"]
+  end
+
+  test "exposes initial product scope catalog" do
+    assert "https://www.googleapis.com/auth/spreadsheets.readonly" in Scopes.product(:sheets)
+    assert "https://www.googleapis.com/auth/gmail.metadata" in Scopes.product(:gmail)
+    assert "https://www.googleapis.com/auth/drive.file" in Scopes.product(:drive)
+    assert "https://www.googleapis.com/auth/calendar.events" in Scopes.product(:calendar)
+    assert "https://www.googleapis.com/auth/analytics.readonly" in Scopes.product(:analytics)
+
+    assert "https://www.googleapis.com/auth/webmasters.readonly" in Scopes.product(
+             :search_console
+           )
+  end
+end

@@ -25,6 +25,7 @@ defmodule Jido.Connect.Schema do
   defp zoi_type(:integer), do: Zoi.integer()
   defp zoi_type(:boolean), do: Zoi.boolean()
   defp zoi_type(:map), do: Zoi.map()
+  defp zoi_type(:any), do: Zoi.any()
   defp zoi_type({:array, type}), do: Zoi.list(zoi_type(type))
 
   defp zoi_type(type) do
