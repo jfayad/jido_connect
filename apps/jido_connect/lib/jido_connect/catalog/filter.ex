@@ -22,6 +22,7 @@ defmodule Jido.Connect.Catalog.Filter do
         ]
   def tool_entries(tools, opts) do
     tools
+    |> filter_tool_equal(:provider, Keyword.get(opts, :provider))
     |> filter_tool_equal(:type, Keyword.get(opts, :type))
     |> filter_tool_equal(:resource, Keyword.get(opts, :resource))
     |> filter_tool_equal(:verb, Keyword.get(opts, :verb))

@@ -23,7 +23,8 @@ Current slice:
 - Slack actions for `slack.channel.list`, `slack.message.post`,
   `slack.message.update`, `slack.message.delete`, and `slack.file.upload`
 - MCP actions for `mcp.tools.list` and `mcp.tool.call`
-- Catalog discovery through `Jido.Connect.Catalog`
+- Catalog discovery, deterministic tool search, descriptors, and safe action
+  calling through `Jido.Connect.Catalog`
 - Generic ngrok tunnel helper: `mix jido.connect.ngrok`
 - Local Phoenix demo host under `dev/demo`
 
@@ -63,6 +64,47 @@ mix quality
 
 See `docs/release_checklist.md` for the full baseline verification checklist
 before a release candidate or another large connector expansion pass.
+
+## Catalog Tool Lookup
+
+Host apps can use `Jido.Connect.Catalog` as an executor-style catalog for the
+installed providers. Core search is deterministic and offline-capable:
+
+```elixir
+Jido.Connect.Catalog.search_tools("post slack message",
+  type: :action,
+  provider: :slack
+)
+```
+
+Describe a tool before rendering a form or handing it to an agent:
+
+```elixir
+{:ok, descriptor} =
+  Jido.Connect.Catalog.describe_tool({:github, "github.issue.create"},
+    modules: [Jido.Connect.GitHub]
+  )
+
+Jido.Connect.Catalog.to_map(descriptor)
+```
+
+Execute only through `call_tool/4`; it delegates to `Jido.Connect.invoke/4`, so
+connections, credential leases, expiry, scopes, policy, and confirmation still
+apply:
+
+```elixir
+Jido.Connect.Catalog.call_tool(
+  {:github, "github.issue.create"},
+  %{repo: "acme/app", title: "Follow up"},
+  modules: [Jido.Connect.GitHub],
+  context: context,
+  credential_lease: lease
+)
+```
+
+Optional rankers can reorder sanitized catalog candidates, but they cannot
+execute tools or see credentials. Future `req_llm` support should live in a
+separate optional package that returns ranked candidate ids and reasons only.
 
 Live GitHub App validation has covered app creation, app installation,
 installation-token minting, generated issue creation/listing, issue cleanup,

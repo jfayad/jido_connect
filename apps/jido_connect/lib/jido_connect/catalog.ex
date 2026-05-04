@@ -22,9 +22,14 @@ defmodule Jido.Connect.Catalog do
     Entry,
     Filter,
     Manifest,
+    Ranker,
     Search,
     Serializer,
-    ToolEntry
+    ToolDescriber,
+    ToolEntry,
+    ToolLookup,
+    ToolDescriptor,
+    ToolSearchResult
   }
 
   @spec entry(module(), keyword()) :: Entry.t()
@@ -59,15 +64,100 @@ defmodule Jido.Connect.Catalog do
   @doc "Returns a flattened catalog of actions and triggers across discovered providers."
   @spec tools(keyword()) :: [ToolEntry.t()]
   def tools(opts \\ []) do
+    opts
+    |> tool_entries()
+    |> Search.tools(Keyword.get(opts, :query, Keyword.get(opts, :q)))
+  end
+
+  @doc "Returns ranked tool search results across discovered providers."
+  @spec search_tools(String.t() | nil, keyword()) :: [ToolSearchResult.t()]
+  def search_tools(query, opts \\ []) do
+    opts
+    |> Keyword.drop([:query, :q, :ranker])
+    |> tool_entries()
+    |> Search.ranked_tools(query)
+    |> Ranker.apply(query, Keyword.get(opts, :ranker))
+  end
+
+  @doc "Looks up one catalog tool by id, `{provider, id}`, or `%ToolEntry{}`."
+  @spec lookup_tool(term(), keyword()) ::
+          {:ok, ToolEntry.t()} | {:error, Jido.Connect.Error.error()}
+  def lookup_tool(tool_ref, opts \\ []) do
+    opts
+    |> Keyword.drop([:query, :q, :ranker])
+    |> tool_entries()
+    |> ToolLookup.lookup(tool_ref)
+  end
+
+  @doc "Returns a schema-rich description for one catalog tool."
+  @spec describe_tool(term(), keyword()) ::
+          {:ok, ToolDescriptor.t()} | {:error, Jido.Connect.Error.error()}
+  def describe_tool(tool_ref, opts \\ []) do
+    with {:ok, tool} <- lookup_tool(tool_ref, opts) do
+      ToolDescriber.describe(tool)
+    end
+  end
+
+  @doc "Invokes an action catalog tool through the core runtime boundary."
+  @spec call_tool(term(), map(), keyword() | map()) ::
+          {:ok, map()} | {:error, Jido.Connect.Error.error()}
+  def call_tool(tool_ref, input, opts \\ [])
+
+  def call_tool(tool_ref, input, opts) when is_map(input) do
+    with {:ok, tool} <- lookup_tool(tool_ref, call_lookup_opts(opts)),
+         :ok <- require_callable(tool) do
+      Jido.Connect.invoke(tool.integration_module, tool.id, input, opts)
+    end
+  end
+
+  def call_tool(tool_ref, input, _opts) do
+    {:error,
+     Jido.Connect.Error.validation("Invalid catalog tool invocation",
+       reason: :invalid_tool_invocation,
+       subject: tool_ref,
+       details: %{input_type: type_name(input)}
+     )}
+  end
+
+  @spec to_map(
+          Entry.t()
+          | Manifest.t()
+          | ToolEntry.t()
+          | ToolSearchResult.t()
+          | ToolDescriptor.t()
+        ) ::
+          map()
+  defdelegate to_map(entry_or_tool), to: Serializer
+
+  defp tool_entries(opts) do
     provider_opts = Keyword.drop(opts, [:query, :q, :type, :risk, :confirmation])
 
     provider_opts
     |> discover()
     |> Enum.flat_map(&Builder.tool_entries/1)
     |> Filter.tool_entries(opts)
-    |> Search.tools(Keyword.get(opts, :query, Keyword.get(opts, :q)))
   end
 
-  @spec to_map(Entry.t() | Manifest.t() | ToolEntry.t()) :: map()
-  defdelegate to_map(entry_or_tool), to: Serializer
+  defp require_callable(%ToolEntry{type: :action}), do: :ok
+
+  defp require_callable(%ToolEntry{} = tool) do
+    {:error,
+     Jido.Connect.Error.validation("Catalog tool is not callable through call_tool/4",
+       reason: :trigger_not_callable,
+       subject: tool.id,
+       details: %{provider: tool.provider, type: tool.type}
+     )}
+  end
+
+  defp call_lookup_opts(opts) when is_list(opts), do: opts
+  defp call_lookup_opts(opts) when is_map(opts), do: Map.to_list(opts)
+  defp call_lookup_opts(_opts), do: []
+
+  defp type_name(value) when is_map(value), do: :map
+  defp type_name(value) when is_list(value), do: :list
+  defp type_name(value) when is_binary(value), do: :string
+  defp type_name(value) when is_atom(value), do: :atom
+  defp type_name(value) when is_integer(value), do: :integer
+  defp type_name(value) when is_float(value), do: :float
+  defp type_name(_value), do: :unknown
 end

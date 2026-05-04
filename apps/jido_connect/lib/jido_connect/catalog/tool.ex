@@ -19,7 +19,8 @@ defmodule Jido.Connect.Catalog.Tool do
               scopes: Zoi.list(Zoi.string()) |> Zoi.default([]),
               risk: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
               confirmation: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
-              trigger_kind: Zoi.atom() |> Zoi.nullish() |> Zoi.optional()
+              trigger_kind: Zoi.atom() |> Zoi.nullish() |> Zoi.optional(),
+              source: Zoi.atom() |> Zoi.default(:curated)
             },
             coerce: true
           )

@@ -60,6 +60,142 @@ returns provider entries; `Catalog.tools/1` returns a flattened action/trigger
 catalog for search and tool pickers, including filters such as `:tag`,
 `:resource`, `:verb`, `:auth_kind`, `:auth_profile`, and `:scope`.
 
+## Catalog Search And Tool Calling
+
+`Jido.Connect.Catalog` is the host-facing lookup layer for installed connector
+tools. It is designed for tool pickers, admin catalogs, MCP adapters, and agent
+planning surfaces that need to find and describe available actions without
+loading provider credentials.
+
+Search is deterministic in core. Exact ids and names rank first, then
+resource/verb/label matches, then description, provider, tags, scopes, policies,
+and source metadata. Results are stable by score, provider, then id:
+
+```elixir
+Jido.Connect.Catalog.search_tools("create github issue",
+  type: :action,
+  provider: :github
+)
+#=> [
+#=>   %Jido.Connect.Catalog.ToolSearchResult{
+#=>     tool: %Jido.Connect.Catalog.ToolEntry{
+#=>       provider: :github,
+#=>       id: "github.issue.create",
+#=>       resource: :issue,
+#=>       verb: :create,
+#=>       scopes: ["repo"]
+#=>     },
+#=>     score: 1650,
+#=>     matched_fields: [:id, :label, :resource, :verb]
+#=>   }
+#=> ]
+```
+
+Lookups accept a bare tool id when it is unique, a provider-qualified string, a
+`{provider, id}` tuple, or a `%Jido.Connect.Catalog.ToolEntry{}`:
+
+```elixir
+{:ok, tool} =
+  Jido.Connect.Catalog.lookup_tool({"github", "github.issue.create"},
+    modules: [Jido.Connect.GitHub]
+  )
+
+{:ok, same_tool} =
+  Jido.Connect.Catalog.lookup_tool("github.issue.create",
+    modules: [Jido.Connect.GitHub]
+  )
+```
+
+Use `describe_tool/2` when a UI, agent, or bridge needs the full schema-rich
+contract before asking a user for inputs:
+
+```elixir
+{:ok, descriptor} =
+  Jido.Connect.Catalog.describe_tool({:github, "github.issue.create"},
+    modules: [Jido.Connect.GitHub]
+  )
+
+Jido.Connect.Catalog.to_map(descriptor)
+#=> %{
+#=>   tool: %{id: "github.issue.create", type: :action, ...},
+#=>   provider: %{id: :github, name: "GitHub", ...},
+#=>   input: [%{name: :repo, type: :string, required?: true}, ...],
+#=>   output: [%{name: :issue, type: :map, required?: true}],
+#=>   auth: [%{id: :user, kind: :oauth2, ...}],
+#=>   scopes: ["repo"],
+#=>   policies: [%{id: :issue_write, decision: :allow_if, ...}],
+#=>   risk: :write,
+#=>   confirmation: :required_for_ai,
+#=>   source: :curated
+#=> }
+```
+
+Only action tools are executable through `call_tool/4`. Trigger tools are
+discoverable and describable, but return a structured validation error if a
+caller tries to execute them through this path. `call_tool/4` delegates to
+`Jido.Connect.invoke/4`, so it still enforces connection, credential lease,
+expiry, auth profile, scopes, policy, and confirmation checks:
+
+```elixir
+connection =
+  Jido.Connect.Connection.new!(%{
+  id: "github-user-123",
+  provider: :github,
+  profile: :user,
+  tenant_id: "tenant_123",
+  owner_type: :user,
+  owner_id: "user_123",
+  subject: %{login: "octocat"},
+  status: :connected,
+  scopes: ["repo"]
+})
+
+lease =
+  Jido.Connect.CredentialLease.from_connection!(connection,
+    %{access_token: System.fetch_env!("GITHUB_ACCESS_TOKEN")},
+    expires_at: DateTime.add(DateTime.utc_now(), 300, :second)
+  )
+
+context = %Jido.Connect.Context{
+  actor: %{type: :user, id: "user_123"},
+  connection: connection
+}
+
+Jido.Connect.Catalog.call_tool(
+  {:github, "github.issue.create"},
+  %{repo: "acme/app", title: "Follow up", body: "Opened from a catalog call"},
+  modules: [Jido.Connect.GitHub],
+  context: context,
+  credential_lease: lease
+)
+```
+
+Rankers can optionally reorder deterministic candidates. Rankers receive only
+sanitized catalog metadata: tool ids, labels, schemas, auth/scopes/policy names,
+scores, and matched fields. They never receive credentials, leases, provider
+responses, or raw host-private context. If a ranker raises or returns invalid
+ids, core falls back to deterministic order and annotates result metadata:
+
+```elixir
+defmodule MyApp.ConnectToolRanker do
+  def rank(_query, candidates) do
+    candidates
+    |> Enum.filter(&(&1.tool.provider == :github))
+    |> Enum.map(&%{provider: &1.tool.provider, id: &1.tool.id, reason: "GitHub preferred"})
+  end
+end
+
+Jido.Connect.Catalog.search_tools("open issue",
+  modules: [Jido.Connect.GitHub, Jido.Connect.Linear],
+  ranker: MyApp.ConnectToolRanker
+)
+```
+
+AI-assisted lookup belongs in an optional package, not core. A future
+`jido_connect_ai` package can use `req_llm` to suggest ranked candidate ids and
+reasons, but execution should still go through `Jido.Connect.Catalog.call_tool/4`
+and the same runtime safety checks.
+
 Host apps can install only the provider packages they need. For example, a
 Phoenix app that wants GitHub but not Slack should depend on
 `jido_connect_github`; the provider package depends on `jido_connect` and

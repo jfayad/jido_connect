@@ -64,6 +64,10 @@ defmodule Jido.Connect.MCPTest do
     def list_tools(:filesystem, _opts), do: raise("mcp exploded")
   end
 
+  defmodule PreferCallRanker do
+    def rank(_query, _candidates), do: [%{provider: :mcp, id: "mcp.tool.call"}]
+  end
+
   setup do
     register_endpoint!(:filesystem)
 
@@ -325,6 +329,147 @@ defmodule Jido.Connect.MCPTest do
 
     assert missing_scopes.state == :missing_scopes
     assert missing_scopes.missing_scopes == ["mcp:tools:list"]
+  end
+
+  test "catalog adapter exposes search, describe, and call tools through core catalog APIs" do
+    assert Enum.map(Jido.Connect.MCP.CatalogAdapter.tools(), & &1.name) == [
+             "jido_connect.catalog.search",
+             "jido_connect.catalog.describe",
+             "jido_connect.catalog.call"
+           ]
+
+    assert {:ok, %{results: [%{tool: %{id: "mcp.tools.list"}} | _]}} =
+             Jido.Connect.MCP.CatalogAdapter.call(
+               "jido_connect.catalog.search",
+               %{query: "list MCP tools", limit: 1},
+               modules: [Jido.Connect.MCP]
+             )
+
+    assert {:ok,
+            %{
+              descriptor: %{
+                tool: %{id: "mcp.tools.list"},
+                input: [%{name: :endpoint_id} | _],
+                scopes: ["mcp:tools:list"],
+                source: :mcp
+              }
+            }} =
+             Jido.Connect.MCP.CatalogAdapter.call(
+               "jido_connect.catalog.describe",
+               %{tool_id: "mcp.tools.list"},
+               modules: [Jido.Connect.MCP]
+             )
+
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{result: %{endpoint_id: "filesystem", tools: [%{name: "read_text_file"}]}}} =
+             Jido.Connect.MCP.CatalogAdapter.call(
+               "jido_connect.catalog.call",
+               %{tool_id: "mcp.tools.list", input: %{endpoint_id: "filesystem"}},
+               modules: [Jido.Connect.MCP],
+               runtime_opts: [
+                 modules: [Jido.Connect.MCP],
+                 context: context,
+                 credential_lease: lease
+               ]
+             )
+
+    assert {:error, %Connect.Error.ValidationError{reason: :unknown_catalog_mcp_tool}} =
+             Jido.Connect.MCP.CatalogAdapter.call("missing", %{}, modules: [Jido.Connect.MCP])
+  end
+
+  test "catalog adapter supports filters, provider-qualified refs, and safe errors" do
+    assert {:ok, %{results: []}} =
+             Jido.Connect.MCP.CatalogAdapter.search(
+               %{
+                 "query" => "mcp",
+                 "limit" => 0,
+                 "filters" => %{"type" => "action", "unknown" => "ignored"}
+               },
+               modules: [Jido.Connect.MCP]
+             )
+
+    assert {:ok, %{results: [%{tool: %{id: "mcp.tool.call", type: :action}}]}} =
+             Jido.Connect.MCP.CatalogAdapter.search(
+               %{"query" => "call", "filters" => %{"type" => "action"}},
+               modules: [Jido.Connect.MCP]
+             )
+
+    assert {:ok, %{descriptor: %{tool: %{id: "mcp.tool.call"}}}} =
+             Jido.Connect.MCP.CatalogAdapter.describe(
+               %{"provider" => "mcp", "tool_id" => "mcp.tool.call"},
+               modules: [Jido.Connect.MCP]
+             )
+
+    assert {:error, %Connect.Error.ValidationError{reason: :unknown_tool}} =
+             Jido.Connect.MCP.CatalogAdapter.describe(
+               %{"tool_id" => "missing"},
+               modules: [Jido.Connect.MCP]
+             )
+
+    assert {:error, %Connect.Error.AuthError{reason: :context_required}} =
+             Jido.Connect.MCP.CatalogAdapter.call_catalog_tool(
+               %{"tool_id" => "mcp.tools.list", "input" => %{"endpoint_id" => "filesystem"}},
+               modules: [Jido.Connect.MCP]
+             )
+  end
+
+  test "catalog adapter handles atom filters, invalid limits, and missing tool calls" do
+    [search_tool, describe_tool, call_tool] = Jido.Connect.MCP.CatalogAdapter.tools()
+
+    assert search_tool.annotations.readOnlyHint
+    assert describe_tool.annotations.readOnlyHint
+    refute call_tool.annotations.readOnlyHint
+
+    assert {:ok, %{results: [%{tool: %{id: "mcp.tools.list"}} | _]}} =
+             Jido.Connect.MCP.CatalogAdapter.search(
+               %{
+                 query: "tools",
+                 limit: "not-an-integer",
+                 filters: %{
+                   "missing_filter_for_rescue" => true,
+                   type: :action,
+                   resource: :mcp_tool
+                 }
+               },
+               modules: [Jido.Connect.MCP]
+             )
+
+    assert {:ok, %{descriptor: %{tool: %{id: "mcp.tools.list"}}}} =
+             Jido.Connect.MCP.CatalogAdapter.describe(
+               %{provider: :mcp, id: "mcp.tools.list", filters: %{type: :action}},
+               modules: [Jido.Connect.MCP]
+             )
+
+    assert {:ok,
+            %{results: [%{tool: %{id: "mcp.tool.call"}, metadata: %{ranker: %{rank: 1}}} | _]}} =
+             Jido.Connect.MCP.CatalogAdapter.search(
+               %{query: "mcp", filters: "invalid-filter-shape"},
+               modules: [Jido.Connect.MCP],
+               ranker: PreferCallRanker
+             )
+
+    assert {:error, %Connect.Error.ValidationError{reason: :unknown_tool}} =
+             Jido.Connect.MCP.CatalogAdapter.call_catalog_tool(
+               %{provider: :mcp, tool_id: "missing", input: %{}},
+               modules: [Jido.Connect.MCP],
+               runtime_opts: []
+             )
+  end
+
+  test "catalog adapter accepts map runtime opts for catalog calls" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{result: %{endpoint_id: "filesystem", tools: [%{name: "read_text_file"}]}}} =
+             Jido.Connect.MCP.CatalogAdapter.call_catalog_tool(
+               %{tool_id: "mcp.tools.list", input: %{endpoint_id: "filesystem"}},
+               modules: [Jido.Connect.MCP],
+               runtime_opts: %{
+                 modules: [Jido.Connect.MCP],
+                 context: context,
+                 credential_lease: lease
+               }
+             )
   end
 
   defp context_and_lease(opts \\ []) do

@@ -4,6 +4,22 @@ defmodule Jido.Connect.CatalogTest do
   alias Jido.Connect.Catalog
   alias Jido.Connect.CatalogFixtures
 
+  defmodule PreferActionRanker do
+    def rank(_query, candidates) do
+      Process.put(:catalog_ranker_candidates, candidates)
+
+      [
+        %{provider: :catalog, id: "catalog.item.get", reason: "prefer action"},
+        %{provider: :catalog, id: "missing"},
+        "missing.provider.tool"
+      ]
+    end
+  end
+
+  defmodule ExplodingRanker do
+    def rank(_query, _candidates), do: raise("ranker exploded")
+  end
+
   test "catalog entries derive host-facing metadata from specs" do
     entry = Catalog.entry(CatalogFixtures.Integration)
     manifest = Catalog.manifest(CatalogFixtures.Integration)
@@ -175,6 +191,148 @@ defmodule Jido.Connect.CatalogTest do
              %Catalog.ToolEntry{id: "catalog.item.get"},
              %Catalog.ToolEntry{id: "catalog.item.created"}
            ] = Catalog.tools(modules: [CatalogFixtures.Integration])
+  end
+
+  test "ranked tool search prefers exact matches and combines with filters" do
+    modules = [CatalogFixtures.Integration, CatalogFixtures.OtherIntegration]
+
+    assert [
+             %Catalog.ToolSearchResult{
+               tool: %Catalog.ToolEntry{id: "catalog.item.get", type: :action},
+               score: score,
+               matched_fields: matched_fields
+             }
+             | _
+           ] = Catalog.search_tools("catalog.item.get", modules: modules)
+
+    assert score >= 1_000
+    assert :id in matched_fields
+
+    assert [
+             %Catalog.ToolSearchResult{tool: %Catalog.ToolEntry{id: "catalog.item.created"}},
+             %Catalog.ToolSearchResult{tool: %Catalog.ToolEntry{id: "catalog.item.created"}}
+           ] =
+             Catalog.search_tools("item", modules: modules, type: :trigger)
+
+    assert [%Catalog.ToolSearchResult{tool: %Catalog.ToolEntry{provider: :other_catalog}}] =
+             Catalog.search_tools("item",
+               modules: modules,
+               provider: :other_catalog,
+               type: :action
+             )
+
+    assert [] = Catalog.search_tools("missing", modules: modules)
+  end
+
+  test "tool lookup resolves ids and provider-qualified references" do
+    modules = [CatalogFixtures.Integration, CatalogFixtures.OtherIntegration]
+
+    assert {:error, %Jido.Connect.Error.ValidationError{reason: :ambiguous_tool}} =
+             Catalog.lookup_tool("catalog.item.get", modules: modules)
+
+    assert {:ok, %Catalog.ToolEntry{provider: :catalog, id: "catalog.item.get"}} =
+             Catalog.lookup_tool({:catalog, "catalog.item.get"}, modules: modules)
+
+    assert {:ok, %Catalog.ToolEntry{provider: :other_catalog, id: "catalog.item.get"}} =
+             Catalog.lookup_tool("other_catalog.catalog.item.get", modules: modules)
+
+    assert {:error, %Jido.Connect.Error.ValidationError{reason: :unknown_tool}} =
+             Catalog.lookup_tool("missing.tool", modules: modules)
+
+    assert {:error, %Jido.Connect.Error.ValidationError{reason: :invalid_tool_ref}} =
+             Catalog.lookup_tool(%{bad: :ref}, modules: modules)
+  end
+
+  test "tool descriptors include provider, schema, auth, policy, and source metadata" do
+    modules = [CatalogFixtures.Integration]
+
+    assert {:ok,
+            %Catalog.ToolDescriptor{
+              tool: %Catalog.ToolEntry{id: "catalog.item.get", source: :curated},
+              provider: %{id: :catalog, package: :jido_connect_catalog},
+              input: [%{name: :id}],
+              output: [%{name: :id}],
+              auth: [%{id: :user, kind: :oauth2}],
+              policies: [%{id: :item_access}],
+              scopes: ["read"],
+              source: :curated
+            } = descriptor} =
+             Catalog.describe_tool("catalog.item.get", modules: modules)
+
+    assert %{
+             tool: %{id: "catalog.item.get", source: :curated},
+             provider: %{id: :catalog},
+             input: [%{name: :id}],
+             output: [%{name: :id}],
+             auth: [%{id: :user}],
+             policies: [%{id: :item_access}],
+             source: :curated
+           } = Catalog.to_map(descriptor)
+
+    assert {:ok,
+            %Catalog.ToolDescriptor{
+              tool: %Catalog.ToolEntry{id: "catalog.item.created"},
+              config: [%{name: :id}],
+              signal: [%{name: :id}]
+            }} = Catalog.describe_tool("catalog.item.created", modules: modules)
+  end
+
+  test "call_tool invokes actions and rejects triggers through the catalog boundary" do
+    modules = [CatalogFixtures.Integration]
+    {context, lease} = CatalogFixtures.context_and_lease()
+
+    assert {:ok, %{id: "item_1"}} =
+             Catalog.call_tool("catalog.item.get", %{id: "item_1"},
+               modules: modules,
+               context: context,
+               credential_lease: lease
+             )
+
+    assert {:error, %Jido.Connect.Error.ValidationError{reason: :trigger_not_callable}} =
+             Catalog.call_tool("catalog.item.created", %{id: "item_1"},
+               modules: modules,
+               context: context,
+               credential_lease: lease
+             )
+
+    assert {:error, %Jido.Connect.Error.ValidationError{reason: :invalid_tool_invocation}} =
+             Catalog.call_tool("catalog.item.get", [:bad_input], modules: modules)
+  end
+
+  test "ranker extension reorders valid candidates and receives sanitized metadata only" do
+    modules = [CatalogFixtures.Integration]
+
+    assert [
+             %Catalog.ToolSearchResult{
+               tool: %Catalog.ToolEntry{id: "catalog.item.get"},
+               metadata: %{ranker: %{rank: 1, reason: "prefer action"}}
+             },
+             %Catalog.ToolSearchResult{tool: %Catalog.ToolEntry{id: "catalog.item.created"}}
+           ] = Catalog.search_tools("item", modules: modules, ranker: PreferActionRanker)
+
+    assert [%{"tool" => candidate, "score" => _, "matched_fields" => _} | _] =
+             Process.get(:catalog_ranker_candidates)
+
+    assert candidate["id"] in ["catalog.item.get", "catalog.item.created"]
+    refute Map.has_key?(candidate, :credentials)
+    refute Map.has_key?(candidate, :credential_lease)
+    refute Map.has_key?(candidate, "credentials")
+    refute Map.has_key?(candidate, "credential_lease")
+  end
+
+  test "ranker failures fall back to deterministic results with diagnostic metadata" do
+    modules = [CatalogFixtures.Integration]
+
+    assert [
+             %Catalog.ToolSearchResult{
+               tool: %Catalog.ToolEntry{id: "catalog.item.created"},
+               metadata: %{ranker: %{status: :fallback, error: %{type: :execution_error}}}
+             },
+             %Catalog.ToolSearchResult{
+               tool: %Catalog.ToolEntry{id: "catalog.item.get"},
+               metadata: %{ranker: %{status: :fallback, error: %{type: :execution_error}}}
+             }
+           ] = Catalog.search_tools("item", modules: modules, ranker: ExplodingRanker)
   end
 
   defp restore_env(key, nil), do: Application.delete_env(:jido_connect, key)

@@ -219,7 +219,8 @@ defmodule Jido.Connect.Catalog.Builder do
       scopes: tool.scopes,
       risk: tool.risk,
       confirmation: tool.confirmation,
-      trigger_kind: tool.trigger_kind
+      trigger_kind: tool.trigger_kind,
+      source: source(entry)
     })
   end
 
@@ -228,5 +229,30 @@ defmodule Jido.Connect.Catalog.Builder do
     |> Enum.filter(&(&1.id in auth_profiles))
     |> Enum.map(& &1.kind)
     |> Enum.uniq()
+  end
+
+  defp source(%Entry{} = entry) do
+    (Map.get(entry.metadata, :source) ||
+       Map.get(entry.metadata, "source") ||
+       bridge_source(entry) ||
+       :curated)
+    |> normalize_source()
+  end
+
+  defp bridge_source(%Entry{} = entry) do
+    cond do
+      entry.package == :jido_connect_mcp -> :mcp
+      :mcp in entry.tags -> :mcp
+      Map.get(entry.metadata, :bridge?) -> Map.get(entry.metadata, :bridge_kind, :mcp)
+      true -> nil
+    end
+  end
+
+  defp normalize_source(source) when is_atom(source), do: source
+
+  defp normalize_source(source) when is_binary(source) do
+    source
+    |> String.trim()
+    |> String.to_atom()
   end
 end

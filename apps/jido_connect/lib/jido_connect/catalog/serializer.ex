@@ -2,9 +2,25 @@ defmodule Jido.Connect.Catalog.Serializer do
   @moduledoc false
 
   alias Jido.Connect.{ConnectorCapability, NamedSchema, PolicyRequirement}
-  alias Jido.Connect.Catalog.{AuthProfileSummary, Entry, Manifest, Tool, ToolEntry}
 
-  @spec to_map(Entry.t() | Manifest.t() | ToolEntry.t()) :: map()
+  alias Jido.Connect.Catalog.{
+    AuthProfileSummary,
+    Entry,
+    Manifest,
+    Tool,
+    ToolDescriptor,
+    ToolEntry,
+    ToolSearchResult
+  }
+
+  @spec to_map(
+          Entry.t()
+          | Manifest.t()
+          | ToolEntry.t()
+          | ToolSearchResult.t()
+          | ToolDescriptor.t()
+        ) ::
+          map()
   def to_map(%Entry{} = entry) do
     %{
       id: entry.id,
@@ -73,7 +89,35 @@ defmodule Jido.Connect.Catalog.Serializer do
       scopes: tool.scopes,
       risk: tool.risk,
       confirmation: tool.confirmation,
-      trigger_kind: tool.trigger_kind
+      trigger_kind: tool.trigger_kind,
+      source: tool.source
+    }
+  end
+
+  def to_map(%ToolSearchResult{} = result) do
+    %{
+      tool: to_map(result.tool),
+      score: result.score,
+      matched_fields: result.matched_fields,
+      metadata: json_safe(result.metadata)
+    }
+  end
+
+  def to_map(%ToolDescriptor{} = descriptor) do
+    %{
+      tool: to_map(descriptor.tool),
+      provider: json_safe(descriptor.provider),
+      input: Enum.map(descriptor.input, &field_to_map/1),
+      output: Enum.map(descriptor.output, &field_to_map/1),
+      config: Enum.map(descriptor.config, &field_to_map/1),
+      signal: Enum.map(descriptor.signal, &field_to_map/1),
+      auth: Enum.map(descriptor.auth, &auth_profile_to_map/1),
+      policies: Enum.map(descriptor.policies, &policy_to_map/1),
+      scopes: descriptor.scopes,
+      risk: descriptor.risk,
+      confirmation: descriptor.confirmation,
+      source: descriptor.source,
+      metadata: json_safe(descriptor.metadata)
     }
   end
 
@@ -131,8 +175,16 @@ defmodule Jido.Connect.Catalog.Serializer do
       scopes: tool.scopes,
       risk: tool.risk,
       confirmation: tool.confirmation,
-      trigger_kind: tool.trigger_kind
+      trigger_kind: tool.trigger_kind,
+      source: tool.source
     }
+  end
+
+  defp field_to_map(field) do
+    field
+    |> Map.from_struct()
+    |> Map.delete(:__spark_metadata__)
+    |> json_safe()
   end
 
   defp module_name(nil), do: nil
