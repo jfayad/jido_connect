@@ -60,12 +60,12 @@ returns provider entries; `Catalog.tools/1` returns a flattened action/trigger
 catalog for search and tool pickers, including filters such as `:tag`,
 `:resource`, `:verb`, `:auth_kind`, `:auth_profile`, and `:scope`.
 
-## Catalog Search And Tool Calling
+## Catalog Plugin, Search, And Tool Calling
 
 `Jido.Connect.Catalog` is the host-facing lookup layer for installed connector
-tools. It is designed for tool pickers, admin catalogs, MCP adapters, and agent
-planning surfaces that need to find and describe available actions without
-loading provider credentials.
+tools. `Jido.Connect.Catalog.Plugin` is the canonical Jido plugin surface for
+agents and hosts that want catalog lookup as actions. Both surfaces use the
+same storage-free catalog data and the same `call_tool/4` execution boundary.
 
 Search is deterministic in core. Exact ids and names rank first, then
 resource/verb/label matches, then description, provider, tags, scopes, policies,
@@ -89,6 +89,34 @@ Jido.Connect.Catalog.search_tools("create github issue",
 #=>     matched_fields: [:id, :label, :resource, :verb]
 #=>   }
 #=> ]
+```
+
+Install the catalog plugin when an agent should search, describe, or call tools
+through stable Jido actions:
+
+```elixir
+Jido.Connect.Catalog.Plugin.plugin_spec(%{
+  modules: [Jido.Connect.GitHub],
+  packs: [
+    %Jido.Connect.Catalog.Pack{
+      id: "safe_github_issues",
+      label: "Safe GitHub issue tools",
+      filters: %{provider: :github, type: :action, resource: :issue},
+      allowed_tools: ["github.issue.list", "github.issue.create"],
+      metadata: %{}
+    }
+  ]
+})
+```
+
+The plugin exposes these routes:
+
+```elixir
+[
+  {"connect.catalog.search", Jido.Connect.Catalog.Actions.SearchTools},
+  {"connect.catalog.describe", Jido.Connect.Catalog.Actions.DescribeTool},
+  {"connect.catalog.call", Jido.Connect.Catalog.Actions.CallTool}
+]
 ```
 
 Lookups accept a bare tool id when it is unique, a provider-qualified string, a
@@ -167,6 +195,50 @@ Jido.Connect.Catalog.call_tool(
   modules: [Jido.Connect.GitHub],
   context: context,
   credential_lease: lease
+)
+```
+
+The same runtime values can come from action context when calling through the
+catalog plugin:
+
+```elixir
+safe_issue_pack =
+  Jido.Connect.Catalog.Pack.new!(%{
+    id: "safe_github_issues",
+    filters: %{provider: :github, type: :action, resource: :issue},
+    allowed_tools: ["github.issue.list", "github.issue.create"]
+  })
+
+Jido.Connect.Catalog.Actions.CallTool.run(
+  %{
+    tool_id: "github.issue.create",
+    input: %{repo: "acme/app", title: "Follow up"},
+    pack: "safe_github_issues"
+  },
+  %{
+    config: %{modules: [Jido.Connect.GitHub], packs: [safe_issue_pack]},
+    context: context,
+    credential_lease: lease
+  }
+)
+```
+
+Packs are restrictive curated views. Search only returns matching allowed tools,
+and describe/call reject tools outside the pack:
+
+```elixir
+safe_issue_pack =
+  Jido.Connect.Catalog.Pack.new!(%{
+    id: "safe_github_issues",
+    label: "Safe GitHub issue tools",
+    filters: %{provider: :github, type: :action, resource: :issue},
+    allowed_tools: ["github.issue.list", "github.issue.create"]
+  })
+
+Jido.Connect.Catalog.describe_tool("github.issue.create",
+  modules: [Jido.Connect.GitHub],
+  pack: "safe_github_issues",
+  packs: [safe_issue_pack]
 )
 ```
 

@@ -22,6 +22,7 @@ defmodule Jido.Connect.Catalog do
     Entry,
     Filter,
     Manifest,
+    Pack,
     Ranker,
     Search,
     Serializer,
@@ -64,33 +65,59 @@ defmodule Jido.Connect.Catalog do
   @doc "Returns a flattened catalog of actions and triggers across discovered providers."
   @spec tools(keyword()) :: [ToolEntry.t()]
   def tools(opts \\ []) do
-    opts
-    |> tool_entries()
-    |> Search.tools(Keyword.get(opts, :query, Keyword.get(opts, :q)))
+    opts = normalize_opts(opts)
+
+    case Pack.resolve(Keyword.get(opts, :pack), opts) do
+      {:ok, pack} ->
+        opts
+        |> Pack.apply_filters(pack)
+        |> tool_entries()
+        |> Pack.filter_tools(pack)
+        |> Search.tools(Keyword.get(opts, :query, Keyword.get(opts, :q)))
+
+      {:error, _error} ->
+        []
+    end
   end
 
   @doc "Returns ranked tool search results across discovered providers."
-  @spec search_tools(String.t() | nil, keyword()) :: [ToolSearchResult.t()]
+  @spec search_tools(String.t() | nil, keyword() | map()) ::
+          [ToolSearchResult.t()] | {:error, Jido.Connect.Error.error()}
   def search_tools(query, opts \\ []) do
-    opts
-    |> Keyword.drop([:query, :q, :ranker])
-    |> tool_entries()
-    |> Search.ranked_tools(query)
-    |> Ranker.apply(query, Keyword.get(opts, :ranker))
+    opts = normalize_opts(opts)
+
+    with {:ok, pack} <- Pack.resolve(Keyword.get(opts, :pack), opts) do
+      opts
+      |> Keyword.drop([:query, :q, :ranker])
+      |> Pack.apply_filters(pack)
+      |> tool_entries()
+      |> Pack.filter_tools(pack)
+      |> Search.ranked_tools(query)
+      |> Ranker.apply(query, Keyword.get(opts, :ranker))
+      |> Pack.filter_search_results(pack)
+    end
   end
 
   @doc "Looks up one catalog tool by id, `{provider, id}`, or `%ToolEntry{}`."
-  @spec lookup_tool(term(), keyword()) ::
+  @spec lookup_tool(term(), keyword() | map()) ::
           {:ok, ToolEntry.t()} | {:error, Jido.Connect.Error.error()}
   def lookup_tool(tool_ref, opts \\ []) do
-    opts
-    |> Keyword.drop([:query, :q, :ranker])
-    |> tool_entries()
-    |> ToolLookup.lookup(tool_ref)
+    opts = normalize_opts(opts)
+
+    with {:ok, pack} <- Pack.resolve(Keyword.get(opts, :pack), opts),
+         {:ok, tool} <-
+           opts
+           |> Keyword.drop([:query, :q, :ranker])
+           |> Pack.apply_filters(pack)
+           |> tool_entries()
+           |> ToolLookup.lookup(tool_ref),
+         :ok <- Pack.require_tool_allowed(pack, tool) do
+      {:ok, tool}
+    end
   end
 
   @doc "Returns a schema-rich description for one catalog tool."
-  @spec describe_tool(term(), keyword()) ::
+  @spec describe_tool(term(), keyword() | map()) ::
           {:ok, ToolDescriptor.t()} | {:error, Jido.Connect.Error.error()}
   def describe_tool(tool_ref, opts \\ []) do
     with {:ok, tool} <- lookup_tool(tool_ref, opts) do
@@ -122,6 +149,7 @@ defmodule Jido.Connect.Catalog do
   @spec to_map(
           Entry.t()
           | Manifest.t()
+          | Pack.t()
           | ToolEntry.t()
           | ToolSearchResult.t()
           | ToolDescriptor.t()
@@ -130,7 +158,7 @@ defmodule Jido.Connect.Catalog do
   defdelegate to_map(entry_or_tool), to: Serializer
 
   defp tool_entries(opts) do
-    provider_opts = Keyword.drop(opts, [:query, :q, :type, :risk, :confirmation])
+    provider_opts = Keyword.drop(opts, [:query, :q, :type, :risk, :confirmation, :pack, :packs])
 
     provider_opts
     |> discover()
@@ -152,6 +180,10 @@ defmodule Jido.Connect.Catalog do
   defp call_lookup_opts(opts) when is_list(opts), do: opts
   defp call_lookup_opts(opts) when is_map(opts), do: Map.to_list(opts)
   defp call_lookup_opts(_opts), do: []
+
+  defp normalize_opts(opts) when is_list(opts), do: opts
+  defp normalize_opts(opts) when is_map(opts), do: Map.to_list(opts)
+  defp normalize_opts(_opts), do: []
 
   defp type_name(value) when is_map(value), do: :map
   defp type_name(value) when is_list(value), do: :list

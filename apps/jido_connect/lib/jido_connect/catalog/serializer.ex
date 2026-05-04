@@ -7,6 +7,7 @@ defmodule Jido.Connect.Catalog.Serializer do
     AuthProfileSummary,
     Entry,
     Manifest,
+    Pack,
     Tool,
     ToolDescriptor,
     ToolEntry,
@@ -16,6 +17,7 @@ defmodule Jido.Connect.Catalog.Serializer do
   @spec to_map(
           Entry.t()
           | Manifest.t()
+          | Pack.t()
           | ToolEntry.t()
           | ToolSearchResult.t()
           | ToolDescriptor.t()
@@ -63,6 +65,17 @@ defmodule Jido.Connect.Catalog.Serializer do
       triggers: Enum.map(manifest.triggers, &tool_to_map/1),
       generated_modules: generated_modules_to_map(manifest.generated_modules),
       metadata: manifest.metadata
+    }
+  end
+
+  def to_map(%Pack{} = pack) do
+    %{
+      id: pack.id,
+      label: pack.label,
+      description: pack.description,
+      filters: json_safe(pack.filters),
+      allowed_tools: pack.allowed_tools,
+      metadata: json_safe(pack.metadata)
     }
   end
 

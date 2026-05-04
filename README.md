@@ -65,16 +65,34 @@ mix quality
 See `docs/release_checklist.md` for the full baseline verification checklist
 before a release candidate or another large connector expansion pass.
 
-## Catalog Tool Lookup
+## Catalog Plugin And Tool Lookup
 
-Host apps can use `Jido.Connect.Catalog` as an executor-style catalog for the
-installed providers. Core search is deterministic and offline-capable:
+Host apps can use `Jido.Connect.Catalog` directly, or install
+`Jido.Connect.Catalog.Plugin` as the canonical Jido runtime surface for
+catalog search, description, and execution. Core search is deterministic and
+offline-capable:
 
 ```elixir
 Jido.Connect.Catalog.search_tools("post slack message",
   type: :action,
   provider: :slack
 )
+```
+
+The plugin exposes exactly three actions and routes:
+
+```elixir
+plugin = Jido.Connect.Catalog.Plugin.plugin_spec(%{
+  modules: [Jido.Connect.GitHub],
+  ranker: MyApp.ConnectToolRanker
+})
+
+Jido.Connect.Catalog.Plugin.signal_routes(plugin.config)
+#=> [
+#=>   {"connect.catalog.search", Jido.Connect.Catalog.Actions.SearchTools},
+#=>   {"connect.catalog.describe", Jido.Connect.Catalog.Actions.DescribeTool},
+#=>   {"connect.catalog.call", Jido.Connect.Catalog.Actions.CallTool}
+#=> ]
 ```
 
 Describe a tool before rendering a form or handing it to an agent:
@@ -99,6 +117,23 @@ Jido.Connect.Catalog.call_tool(
   modules: [Jido.Connect.GitHub],
   context: context,
   credential_lease: lease
+)
+```
+
+Curated packs can restrict what a tool picker or agent sees without adding a
+registry process or persistence:
+
+```elixir
+safe_issue_pack =
+  Jido.Connect.Catalog.Pack.new!(%{
+    id: "safe_github_issues",
+    filters: %{provider: :github, type: :action, resource: :issue},
+    allowed_tools: ["github.issue.list", "github.issue.create"]
+  })
+
+Jido.Connect.Catalog.search_tools("issue",
+  modules: [Jido.Connect.GitHub],
+  pack: safe_issue_pack
 )
 ```
 

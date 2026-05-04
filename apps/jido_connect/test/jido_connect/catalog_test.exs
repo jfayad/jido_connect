@@ -3,6 +3,7 @@ defmodule Jido.Connect.CatalogTest do
 
   alias Jido.Connect.Catalog
   alias Jido.Connect.CatalogFixtures
+  alias Jido.Connect.Catalog.Actions.{CallTool, DescribeTool, SearchTools}
 
   defmodule PreferActionRanker do
     def rank(_query, candidates) do
@@ -297,6 +298,112 @@ defmodule Jido.Connect.CatalogTest do
 
     assert {:error, %Jido.Connect.Error.ValidationError{reason: :invalid_tool_invocation}} =
              Catalog.call_tool("catalog.item.get", [:bad_input], modules: modules)
+  end
+
+  test "catalog packs restrict search, describe, and call" do
+    modules = [CatalogFixtures.Integration]
+
+    pack =
+      Catalog.Pack.new!(%{
+        id: :items,
+        filters: %{type: :action},
+        allowed_tools: ["catalog.item.get"]
+      })
+
+    {context, lease} = CatalogFixtures.context_and_lease()
+
+    assert [%Catalog.ToolSearchResult{tool: %Catalog.ToolEntry{id: "catalog.item.get"}}] =
+             Catalog.search_tools("item", modules: modules, pack: pack)
+
+    assert {:ok, %Catalog.ToolDescriptor{tool: %Catalog.ToolEntry{id: "catalog.item.get"}}} =
+             Catalog.describe_tool("catalog.item.get",
+               modules: modules,
+               pack: :items,
+               packs: [pack]
+             )
+
+    assert {:ok, %{id: "item_1"}} =
+             Catalog.call_tool("catalog.item.get", %{id: "item_1"},
+               modules: modules,
+               pack: :items,
+               packs: [pack],
+               context: context,
+               credential_lease: lease
+             )
+
+    assert {:error, %Jido.Connect.Error.ValidationError{reason: :unknown_tool}} =
+             Catalog.describe_tool("catalog.item.created", modules: modules, pack: pack)
+
+    allow_list_pack = Catalog.Pack.new!(%{id: :only_get, allowed_tools: ["catalog.item.get"]})
+
+    assert {:error, %Jido.Connect.Error.ValidationError{reason: :tool_not_in_pack}} =
+             Catalog.describe_tool("catalog.item.created",
+               modules: modules,
+               pack: allow_list_pack
+             )
+
+    assert {:error, %Jido.Connect.Error.ValidationError{reason: :unknown_pack}} =
+             Catalog.describe_tool("catalog.item.get",
+               modules: modules,
+               pack: :missing,
+               packs: [pack]
+             )
+  end
+
+  test "catalog actions normalize inputs and delegate to core catalog APIs" do
+    modules = [CatalogFixtures.Integration]
+    {context, lease} = CatalogFixtures.context_and_lease()
+
+    pack =
+      Catalog.Pack.new!(%{
+        id: "actions",
+        filters: %{type: :action},
+        allowed_tools: ["catalog.item.get"]
+      })
+
+    action_context = %{
+      config: %{modules: modules, packs: [pack]},
+      context: context,
+      credential_lease: lease
+    }
+
+    assert {:ok, %{results: [%{tool: %{id: "catalog.item.get"}}]}} =
+             SearchTools.run(
+               %{
+                 "query" => "item",
+                 "filters" => %{"type" => "action"},
+                 "limit" => "1",
+                 "pack" => "actions"
+               },
+               action_context
+             )
+
+    assert {:ok, %{descriptor: %{tool: %{id: "catalog.item.get"}}}} =
+             DescribeTool.run(%{"tool_id" => "catalog.item.get"}, action_context)
+
+    assert {:ok, %{result: %{id: "item_1"}}} =
+             CallTool.run(
+               %{"tool_id" => "catalog.item.get", "input" => %{"id" => "item_1"}},
+               action_context
+             )
+
+    assert {:error, %Jido.Connect.Error.ValidationError{reason: :trigger_not_callable}} =
+             CallTool.run(%{"tool_id" => "catalog.item.created", "input" => %{}}, action_context)
+
+    assert {:error, %Jido.Connect.Error.ValidationError{reason: :invalid_filters}} =
+             SearchTools.run(%{"query" => "item", "filters" => "bad"}, action_context)
+  end
+
+  test "catalog plugin exposes exactly search, describe, and call actions" do
+    spec = Catalog.Plugin.plugin_spec(%{modules: [CatalogFixtures.Integration]})
+
+    assert spec.actions == [SearchTools, DescribeTool, CallTool]
+
+    assert Catalog.Plugin.signal_routes(%{}) == [
+             {"connect.catalog.search", SearchTools},
+             {"connect.catalog.describe", DescribeTool},
+             {"connect.catalog.call", CallTool}
+           ]
   end
 
   test "ranker extension reorders valid candidates and receives sanitized metadata only" do
