@@ -18,6 +18,9 @@ the Google Contacts epic.
 - `google.contacts.person.list`
 - `google.contacts.person.get`
 - `google.contacts.person.search`
+- `google.contacts.person.create`
+- `google.contacts.person.update`
+- `google.contacts.person.delete`
 
 ## Scopes
 

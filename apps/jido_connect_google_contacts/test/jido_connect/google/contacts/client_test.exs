@@ -102,6 +102,98 @@ defmodule Jido.Connect.Google.Contacts.ClientTest do
     assert person.resource_name == "people/c123"
   end
 
+  test "creates contacts" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/v1/people:createContact"
+      assert conn.query_params["personFields"] =~ "organizations"
+      assert conn.query_params["fields"] =~ "resourceName"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "names" => [
+                 %{"givenName" => "Ada", "familyName" => "Lovelace"}
+               ],
+               "emailAddresses" => [
+                 %{"value" => "ada@example.com", "type" => "work"}
+               ],
+               "phoneNumbers" => [
+                 %{"value" => "+1 555 0100", "type" => "mobile"}
+               ],
+               "organizations" => [
+                 %{"name" => "Analytical Engines", "title" => "Programmer"}
+               ]
+             }
+
+      Req.Test.json(conn, person_payload())
+    end)
+
+    assert {:ok, %Person{} = person} =
+             Client.create_contact(
+               %{
+                 given_name: "Ada",
+                 family_name: "Lovelace",
+                 email_addresses: [%{value: "ada@example.com", type: "work"}],
+                 phone_numbers: [%{value: "+1 555 0100", type: "mobile"}],
+                 organizations: [%{name: "Analytical Engines", title: "Programmer"}]
+               },
+               "token"
+             )
+
+    assert person.resource_name == "people/c123"
+  end
+
+  test "updates contacts" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "PATCH"
+      assert conn.request_path == "/v1/people/c123:updateContact"
+      assert conn.query_params["updatePersonFields"] == "names,emailAddresses"
+      assert conn.query_params["personFields"] =~ "emailAddresses"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "resourceName" => "people/c123",
+               "etag" => "etag123",
+               "names" => [
+                 %{"givenName" => "Ada"}
+               ],
+               "emailAddresses" => [
+                 %{"value" => "ada@example.com"}
+               ]
+             }
+
+      Req.Test.json(conn, Map.put(person_payload(), "etag", "etag456"))
+    end)
+
+    assert {:ok, %Person{} = person} =
+             Client.update_contact(
+               %{
+                 resource_name: "people/c123",
+                 etag: "etag123",
+                 given_name: "Ada",
+                 email_addresses: [%{value: "ada@example.com"}],
+                 update_person_fields: "names,emailAddresses"
+               },
+               "token"
+             )
+
+    assert person.etag == "etag456"
+  end
+
+  test "deletes contacts" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "DELETE"
+      assert conn.request_path == "/v1/people/c123:deleteContact"
+
+      Plug.Conn.resp(conn, 200, "")
+    end)
+
+    assert {:ok, %{resource_name: "people/c123", deleted?: true}} =
+             Client.delete_contact(%{resource_name: "people/c123"}, "token")
+  end
+
   test "returns provider errors for malformed people list items" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

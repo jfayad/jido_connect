@@ -63,6 +63,17 @@ defmodule Jido.Connect.Google.Contacts.Client.Response do
 
   def handle_person_search_response(response), do: Transport.handle_error_response(response)
 
+  def handle_contact_delete_response({:ok, %{status: status}}, params) when status in 200..299 do
+    {:ok,
+     %{
+       resource_name: Data.get(params, :resource_name),
+       deleted?: true
+     }}
+  end
+
+  def handle_contact_delete_response(response, _params),
+    do: Transport.handle_error_response(response)
+
   defp normalize_one(body, normalizer, message) do
     case normalizer.(body) do
       {:ok, item} -> {:ok, item}

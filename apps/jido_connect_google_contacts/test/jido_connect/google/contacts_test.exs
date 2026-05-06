@@ -8,7 +8,10 @@ defmodule Jido.Connect.Google.ContactsTest do
   @contacts_action_modules [
     Jido.Connect.Google.Contacts.Actions.ListPeople,
     Jido.Connect.Google.Contacts.Actions.GetPerson,
-    Jido.Connect.Google.Contacts.Actions.SearchPeople
+    Jido.Connect.Google.Contacts.Actions.SearchPeople,
+    Jido.Connect.Google.Contacts.Actions.CreateContact,
+    Jido.Connect.Google.Contacts.Actions.UpdateContact,
+    Jido.Connect.Google.Contacts.Actions.DeleteContact
   ]
 
   @contacts_dsl_fragments [
@@ -54,6 +57,43 @@ defmodule Jido.Connect.Google.ContactsTest do
          ]
        }}
     end
+
+    def create_contact(
+          %{
+            given_name: "Ada",
+            family_name: "Lovelace",
+            email_addresses: [%{value: "ada@example.com"}],
+            phone_numbers: [%{value: "+1 555 0100"}],
+            organizations: [%{name: "Analytical Engines"}]
+          },
+          "token"
+        ) do
+      {:ok,
+       Contacts.Person.new!(%{
+         resource_name: "people/c123",
+         display_name: "Ada Lovelace"
+       })}
+    end
+
+    def update_contact(
+          %{
+            resource_name: "people/c123",
+            etag: "etag123",
+            given_name: "Ada"
+          },
+          "token"
+        ) do
+      {:ok,
+       Contacts.Person.new!(%{
+         resource_name: "people/c123",
+         etag: "etag456",
+         given_name: "Ada"
+       })}
+    end
+
+    def delete_contact(%{resource_name: "people/c123"}, "token") do
+      {:ok, %{resource_name: "people/c123", deleted?: true}}
+    end
   end
 
   test "declares Google Contacts provider metadata" do
@@ -74,7 +114,10 @@ defmodule Jido.Connect.Google.ContactsTest do
     assert Enum.map(spec.actions, & &1.id) == [
              "google.contacts.person.list",
              "google.contacts.person.get",
-             "google.contacts.person.search"
+             "google.contacts.person.search",
+             "google.contacts.person.create",
+             "google.contacts.person.update",
+             "google.contacts.person.delete"
            ]
 
     assert [] = spec.triggers
@@ -126,13 +169,51 @@ defmodule Jido.Connect.Google.ContactsTest do
              )
   end
 
-  defp context_and_lease do
-    scopes = [
-      "openid",
-      "email",
-      "profile",
-      "https://www.googleapis.com/auth/contacts.readonly"
-    ]
+  test "invokes Contacts contact mutation actions through the runtime" do
+    {context, lease} = context_and_lease(scopes: ["https://www.googleapis.com/auth/contacts"])
+
+    assert {:ok, %{person: %{resource_name: "people/c123", display_name: "Ada Lovelace"}}} =
+             Connect.invoke(
+               Contacts,
+               "google.contacts.person.create",
+               %{
+                 given_name: "Ada",
+                 family_name: "Lovelace",
+                 email_addresses: [%{value: "ada@example.com"}],
+                 phone_numbers: [%{value: "+1 555 0100"}],
+                 organizations: [%{name: "Analytical Engines"}]
+               },
+               context: context,
+               credential_lease: lease
+             )
+
+    assert {:ok, %{person: %{resource_name: "people/c123", etag: "etag456"}}} =
+             Connect.invoke(
+               Contacts,
+               "google.contacts.person.update",
+               %{resource_name: "people/c123", etag: "etag123", given_name: "Ada"},
+               context: context,
+               credential_lease: lease
+             )
+
+    assert {:ok, %{result: %{resource_name: "people/c123", deleted?: true}}} =
+             Connect.invoke(
+               Contacts,
+               "google.contacts.person.delete",
+               %{resource_name: "people/c123"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  defp context_and_lease(opts \\ []) do
+    scopes =
+      [
+        "openid",
+        "email",
+        "profile",
+        "https://www.googleapis.com/auth/contacts.readonly"
+      ] ++ Keyword.get(opts, :scopes, [])
 
     connection =
       Connect.Connection.new!(%{
