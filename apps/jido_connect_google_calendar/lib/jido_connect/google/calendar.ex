@@ -52,4 +52,8 @@ defmodule Jido.Connect.Google.Calendar do
       revoke?(true)
     end
   end
+
+  defdelegate catalog_packs, to: Jido.Connect.Google.Calendar.CatalogPacks, as: :all
+  defdelegate reader_pack, to: Jido.Connect.Google.Calendar.CatalogPacks, as: :reader
+  defdelegate scheduler_pack, to: Jido.Connect.Google.Calendar.CatalogPacks, as: :scheduler
 end
