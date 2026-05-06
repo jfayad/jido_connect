@@ -187,6 +187,19 @@ defmodule Jido.Connect.Google.TestSupport.ConnectorContracts do
     assert Enum.all?(expected_default_scopes, &is_binary/1)
   end
 
+  @doc "Asserts a table of operation/scopes pairs against a scope resolver."
+  def assert_scope_matrix(resolver, matrix) when is_list(matrix) do
+    for row <- matrix do
+      operation_id = Map.fetch!(row, :operation)
+      scopes = Map.fetch!(row, :granted)
+      expected = row |> Map.fetch!(:expected) |> List.wrap()
+      label = Map.get(row, :label, operation_id)
+
+      assert resolver.required_scopes(%{id: operation_id}, %{}, %{scopes: scopes}) == expected,
+             label
+    end
+  end
+
   @doc "Asserts Zoi-backed normalized structs expose required defaults and schemas."
   def assert_struct_defaults(module, attrs, expected_defaults) do
     assert {:module, ^module} = Code.ensure_loaded(module)
