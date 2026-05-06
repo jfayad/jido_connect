@@ -1,0 +1,27 @@
+{
+  "timeMin": "2026-05-06T08:00:00Z",
+  "timeMax": "2026-05-06T11:00:00Z",
+  "calendars": {
+    "primary": {
+      "busy": [
+        {
+          "start": "2026-05-06T09:00:00Z",
+          "end": "2026-05-06T10:00:00Z"
+        }
+      ]
+    },
+    "missing@example.com": {
+      "errors": [
+        {"domain": "global", "reason": "notFound"}
+      ],
+      "busy": []
+    }
+  },
+  "groups": {
+    "team@example.com": {
+      "errors": [
+        {"domain": "global", "reason": "groupTooBig"}
+      ]
+    }
+  }
+}

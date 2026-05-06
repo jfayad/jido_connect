@@ -1,0 +1,9 @@
+{
+  "range": "Summary!A1:C3",
+  "majorDimension": "ROWS",
+  "values": [
+    ["Name", "Amount", "Notes"],
+    ["Budget", 10, ""],
+    ["Forecast", null, "Missing amount"]
+  ]
+}

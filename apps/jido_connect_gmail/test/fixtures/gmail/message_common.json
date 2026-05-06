@@ -1,0 +1,26 @@
+{
+  "id": "18c-common",
+  "threadId": "thread-common",
+  "labelIds": ["INBOX", "UNREAD"],
+  "snippet": "Quarterly budget update",
+  "historyId": "456",
+  "internalDate": "1767225600000",
+  "sizeEstimate": 2048,
+  "payload": {
+    "partId": "",
+    "mimeType": "multipart/alternative",
+    "headers": [
+      {"name": "From", "value": "sender@example.com"},
+      {"name": "Subject", "value": "Quarterly budget"}
+    ],
+    "body": {"size": 0},
+    "parts": [
+      {
+        "partId": "0",
+        "mimeType": "text/plain",
+        "filename": "",
+        "body": {"size": 128}
+      }
+    ]
+  }
+}

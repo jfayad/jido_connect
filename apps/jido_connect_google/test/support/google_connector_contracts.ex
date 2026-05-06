@@ -227,6 +227,13 @@ defmodule Jido.Connect.Google.TestSupport.ConnectorContracts do
     end
   end
 
+  @doc "Loads an offline JSON fixture as a map."
+  def json_fixture!(path) do
+    path
+    |> File.read!()
+    |> Jason.decode!()
+  end
+
   @doc "Asserts Zoi-backed normalized structs expose required defaults and schemas."
   def assert_struct_defaults(module, attrs, expected_defaults) do
     assert {:module, ^module} = Code.ensure_loaded(module)

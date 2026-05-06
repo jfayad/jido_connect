@@ -1,0 +1,27 @@
+{
+  "id": "18c-edge",
+  "threadId": "thread-edge",
+  "snippet": "Sensitive body should not leak",
+  "historyId": 789,
+  "raw": "raw-message-secret",
+  "payload": {
+    "mimeType": "text/html",
+    "headers": [
+      {"name": "Subject", "value": "Sensitive"},
+      {"name": "Invalid"}
+    ],
+    "body": {
+      "size": "321",
+      "data": "encoded-body-secret"
+    },
+    "parts": [
+      {
+        "mimeType": "text/plain",
+        "body": {
+          "size": 12,
+          "data": "part-secret"
+        }
+      }
+    ]
+  }
+}

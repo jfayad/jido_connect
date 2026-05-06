@@ -1,0 +1,23 @@
+{
+  "spreadsheetId": "sheet123",
+  "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/sheet123/edit",
+  "properties": {
+    "title": "Budget",
+    "locale": "en_US",
+    "timeZone": "America/Chicago"
+  },
+  "sheets": [
+    {
+      "properties": {
+        "sheetId": 0,
+        "title": "Summary",
+        "index": 0,
+        "sheetType": "GRID",
+        "gridProperties": {
+          "rowCount": 1000,
+          "columnCount": 26
+        }
+      }
+    }
+  ]
+}
