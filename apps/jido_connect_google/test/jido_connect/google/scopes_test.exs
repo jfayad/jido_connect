@@ -4,7 +4,10 @@ defmodule Jido.Connect.Google.ScopesTest do
   alias Jido.Connect.Google.Scopes
 
   test "normalizes and checks Google scopes" do
+    assert Scopes.user_default() == ["openid", "email", "profile"]
     assert Scopes.normalize("openid email,profile") == ["openid", "email", "profile"]
+    assert Scopes.normalize(nil) == []
+    assert Scopes.normalize([:openid, "email", :openid]) == ["openid", "email"]
     assert Scopes.encode(["openid", "email"]) == "openid email"
     assert Scopes.include?(["openid", "email"], ["email"])
     assert Scopes.missing(["openid"], ["openid", "email"]) == ["email"]
@@ -20,5 +23,9 @@ defmodule Jido.Connect.Google.ScopesTest do
     assert "https://www.googleapis.com/auth/webmasters.readonly" in Scopes.product(
              :search_console
            )
+
+    assert Scopes.product(:unknown) == []
+    assert Scopes.catalog().identity == ["openid", "email", "profile"]
+    assert "https://www.googleapis.com/auth/drive.file" in Scopes.user_optional()
   end
 end

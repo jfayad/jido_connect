@@ -2,6 +2,7 @@ defmodule Jido.Connect.Gmail.ClientTest do
   use ExUnit.Case, async: false
 
   alias Jido.Connect.Gmail.{Client, Label, Message, Profile, Thread}
+  alias Jido.Connect.Gmail.Client.Response
 
   setup {Req.Test, :verify_on_exit!}
 
@@ -105,6 +106,41 @@ defmodule Jido.Connect.Gmail.ClientTest do
               provider: :google,
               reason: :invalid_response
             }} = Client.list_messages(%{}, "token")
+  end
+
+  test "response handlers reject malformed successful collection bodies" do
+    assert {:error, %Jido.Connect.Error.ProviderError{reason: :invalid_response}} =
+             Response.handle_label_list_response({:ok, %{status: 200, body: %{"labels" => :bad}}})
+
+    assert {:error, %Jido.Connect.Error.ProviderError{reason: :invalid_response}} =
+             Response.handle_message_list_response(
+               {:ok, %{status: 200, body: %{"messages" => :bad}}}
+             )
+
+    assert {:error, %Jido.Connect.Error.ProviderError{reason: :invalid_response}} =
+             Response.handle_thread_list_response(
+               {:ok, %{status: 200, body: %{"threads" => :bad}}}
+             )
+
+    assert {:error, %Jido.Connect.Error.ProviderError{reason: :invalid_response}} =
+             Response.handle_history_list_response({:ok, %{status: 200, body: "bad body"}})
+  end
+
+  test "response handlers reject malformed successful single-object bodies" do
+    assert {:error, %Jido.Connect.Error.ProviderError{reason: :invalid_response}} =
+             Response.handle_profile_response({:ok, %{status: 200, body: "bad body"}})
+
+    assert {:error, %Jido.Connect.Error.ProviderError{reason: :invalid_response}} =
+             Response.handle_label_response({:ok, %{status: 200, body: "bad body"}})
+
+    assert {:error, %Jido.Connect.Error.ProviderError{reason: :invalid_response}} =
+             Response.handle_message_response({:ok, %{status: 200, body: "bad body"}})
+
+    assert {:error, %Jido.Connect.Error.ProviderError{reason: :invalid_response}} =
+             Response.handle_thread_response({:ok, %{status: 200, body: "bad body"}})
+
+    assert {:error, %Jido.Connect.Error.ProviderError{reason: :invalid_response}} =
+             Response.handle_draft_response({:ok, %{status: 200, body: "bad body"}})
   end
 
   test "gets Gmail message metadata without body data" do

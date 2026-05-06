@@ -145,4 +145,89 @@ defmodule Jido.Connect.Google.Calendar.NormalizerTest do
              }
            ]
   end
+
+  test "normalizes freebusy per-calendar and per-group errors" do
+    assert {:ok, %FreeBusy{} = free_busy} =
+             Normalizer.free_busy(%{
+               "timeMin" => "2026-05-06T00:00:00Z",
+               "timeMax" => "2026-05-07T00:00:00Z",
+               "calendars" => %{
+                 "missing@example.com" => %{
+                   "errors" => [%{"domain" => "global", "reason" => "notFound"}],
+                   "busy" => []
+                 }
+               },
+               "groups" => %{
+                 "team@example.com" => %{
+                   "errors" => [%{"domain" => "global", "reason" => "groupTooBig"}],
+                   "calendars" => []
+                 }
+               }
+             })
+
+    assert free_busy.errors == [
+             %{
+               target_type: :calendar,
+               target_id: "missing@example.com",
+               domain: "global",
+               reason: "notFound"
+             },
+             %{
+               target_type: :group,
+               target_id: "team@example.com",
+               domain: "global",
+               reason: "groupTooBig"
+             }
+           ]
+  end
+
+  test "struct constructors expose schema defaults" do
+    assert %Calendar{
+             selected?: false,
+             hidden?: false,
+             primary?: false,
+             deleted?: false,
+             default_reminders: [],
+             notification_settings: %{},
+             metadata: %{}
+           } = Calendar.new!(%{calendar_id: "primary"})
+
+    assert {:error, _error} = Calendar.new(%{})
+
+    assert %Attendee{
+             additional_guests: 0,
+             optional?: false,
+             organizer?: false,
+             resource?: false,
+             self?: false,
+             metadata: %{}
+           } = Attendee.new!(%{email: "guest@example.com"})
+
+    assert {:error, _error} = Attendee.new(%{})
+
+    assert %Event{
+             recurrence: [],
+             attendees: [],
+             all_day?: false,
+             reminders: %{},
+             attachments: [],
+             extended_properties: %{},
+             metadata: %{}
+           } = Event.new!(%{event_id: "event123"})
+
+    assert {:error, _error} = Event.new(%{})
+
+    assert %FreeBusy{calendars: %{}, groups: %{}, busy: [], errors: [], metadata: %{}} =
+             FreeBusy.new!(%{
+               time_min: "2026-05-06T00:00:00Z",
+               time_max: "2026-05-07T00:00:00Z"
+             })
+
+    assert {:error, _error} = FreeBusy.new(%{time_min: "2026-05-06T00:00:00Z"})
+
+    assert Calendar.schema()
+    assert Attendee.schema()
+    assert Event.schema()
+    assert FreeBusy.schema()
+  end
 end

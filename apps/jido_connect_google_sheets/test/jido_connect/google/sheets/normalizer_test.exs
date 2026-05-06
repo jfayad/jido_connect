@@ -1,7 +1,14 @@
 defmodule Jido.Connect.Google.Sheets.NormalizerTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Connect.Google.Sheets.{Normalizer, Spreadsheet, UpdateResult, ValueRange}
+  alias Jido.Connect.Google.Sheets.{
+    Normalizer,
+    Range,
+    Sheet,
+    Spreadsheet,
+    UpdateResult,
+    ValueRange
+  }
 
   test "normalizes spreadsheet payloads" do
     payload = %{
@@ -85,5 +92,38 @@ defmodule Jido.Connect.Google.Sheets.NormalizerTest do
 
     assert result.cleared_range == "Sheet1!A1:B2"
     assert result.updated_cells == 0
+  end
+
+  test "struct constructors expose schema defaults" do
+    assert %Sheet{hidden?: false, metadata: %{}} =
+             Sheet.new!(%{sheet_id: 0, title: "Sheet1"})
+
+    assert {:error, _error} = Sheet.new(%{title: "Missing id"})
+
+    assert %Spreadsheet{sheets: [], metadata: %{}} =
+             Spreadsheet.new!(%{spreadsheet_id: "sheet123"})
+
+    assert {:error, _error} = Spreadsheet.new(%{})
+
+    assert %ValueRange{major_dimension: "ROWS", values: [], metadata: %{}} =
+             ValueRange.new!(%{range: "Sheet1!A1:B2"})
+
+    assert {:error, _error} = ValueRange.new(%{})
+
+    assert %UpdateResult{
+             updated_rows: 0,
+             updated_columns: 0,
+             updated_cells: 0,
+             metadata: %{}
+           } = UpdateResult.new!(%{})
+
+    assert %Range{metadata: %{}} = Range.new!(%{a1: "Sheet1!A1:B2"})
+    assert {:error, _error} = Range.new(%{})
+
+    assert Sheet.schema()
+    assert Spreadsheet.schema()
+    assert ValueRange.schema()
+    assert UpdateResult.schema()
+    assert Range.schema()
   end
 end

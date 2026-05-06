@@ -35,9 +35,15 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Triggers.EventChangedPoller do
       |> Map.put(:sync_token, checkpoint)
       |> Map.put(:show_deleted, true)
 
-    fetch_event_pages(client, params, access_token, [], nil, MapSet.new([checkpoint]),
-      emit?: true
-    )
+    case fetch_event_pages(client, params, access_token, [], nil, MapSet.new([checkpoint]),
+           emit?: true
+         ) do
+      {:error, %Error.ProviderError{status: 410} = error} ->
+        expired_sync_token(checkpoint, error)
+
+      result ->
+        result
+    end
   end
 
   defp fetch_event_pages(client, params, access_token, signals, latest_sync_token, seen, opts) do
@@ -139,6 +145,20 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Triggers.EventChangedPoller do
        provider: :google,
        reason: :invalid_response,
        details: %{next_page_token: page_token}
+     )}
+  end
+
+  defp expired_sync_token(checkpoint, error) do
+    {:error,
+     Error.provider("Google Calendar event sync token expired",
+       provider: :google,
+       reason: :checkpoint_expired,
+       status: 410,
+       details: %{
+         checkpoint: checkpoint,
+         provider_reason: error.reason,
+         provider_details: error.details
+       }
      )}
   end
 

@@ -4,6 +4,26 @@ defmodule Jido.Connect.GmailTest do
   alias Jido.Connect
   alias Jido.Connect.Gmail
 
+  @gmail_action_modules [
+    Jido.Connect.Gmail.Actions.GetProfile,
+    Jido.Connect.Gmail.Actions.ListLabels,
+    Jido.Connect.Gmail.Actions.ListMessages,
+    Jido.Connect.Gmail.Actions.GetMessage,
+    Jido.Connect.Gmail.Actions.ListThreads,
+    Jido.Connect.Gmail.Actions.GetThread,
+    Jido.Connect.Gmail.Actions.SendMessage,
+    Jido.Connect.Gmail.Actions.CreateDraft,
+    Jido.Connect.Gmail.Actions.SendDraft,
+    Jido.Connect.Gmail.Actions.CreateLabel,
+    Jido.Connect.Gmail.Actions.ApplyMessageLabels
+  ]
+
+  @gmail_dsl_fragments [
+    Jido.Connect.Gmail.Actions.Read,
+    Jido.Connect.Gmail.Actions.Write,
+    Jido.Connect.Gmail.Triggers.Messages
+  ]
+
   defmodule FakeGmailClient do
     def get_profile(%{}, "token") do
       {:ok,
@@ -286,6 +306,105 @@ defmodule Jido.Connect.GmailTest do
               scope_resolver: Jido.Connect.Gmail.ScopeResolver
             }} =
              Connect.trigger(spec, "google.gmail.message.received")
+  end
+
+  test "compiles generated Jido modules for actions, sensors, and plugin" do
+    assert Application.get_env(:jido_connect_gmail, :jido_connect_providers) == [
+             Gmail
+           ]
+
+    assert Gmail.jido_action_modules() == @gmail_action_modules
+    assert Gmail.jido_sensor_modules() == [Jido.Connect.Gmail.Sensors.MessageReceived]
+    assert Gmail.jido_plugin_module() == Jido.Connect.Gmail.Plugin
+
+    assert %Connect.Catalog.Manifest{
+             id: :gmail,
+             package: :jido_connect_gmail,
+             generated_modules: %{
+               actions: @gmail_action_modules,
+               sensors: [Jido.Connect.Gmail.Sensors.MessageReceived],
+               plugin: Jido.Connect.Gmail.Plugin
+             }
+           } = Gmail.jido_connect_manifest()
+
+    action_ids = Gmail.integration().actions |> Enum.map(& &1.id) |> MapSet.new()
+
+    for module <- @gmail_action_modules do
+      assert {:module, ^module} = Code.ensure_loaded(module)
+      assert function_exported?(module, :run, 2)
+
+      projection = module.jido_connect_projection()
+      tool = module.to_tool()
+
+      assert projection.module == module
+      assert projection.action_id in action_ids
+      assert module.operation_id() == projection.action_id
+      assert module.name() == projection.name
+      assert tool.name == projection.name
+    end
+
+    sensor = Jido.Connect.Gmail.Sensors.MessageReceived
+
+    assert {:module, ^sensor} = Code.ensure_loaded(sensor)
+    assert function_exported?(sensor, :handle_event, 2)
+    assert sensor.name() == "google_gmail_message_received"
+    assert sensor.trigger_id() == "google.gmail.message.received"
+    assert sensor.signal_type() == "google.gmail.message.received"
+
+    assert %Jido.Plugin.Spec{
+             name: "gmail",
+             module: Jido.Connect.Gmail.Plugin,
+             actions: @gmail_action_modules
+           } = Jido.Connect.Gmail.Plugin.plugin_spec()
+
+    assert Gmail.metadata_pack().id == :google_gmail_metadata
+    assert Gmail.triage_pack().id == :google_gmail_triage
+    assert Gmail.send_pack().id == :google_gmail_send
+
+    assert Enum.map(Gmail.catalog_packs(), & &1.id) == [
+             :google_gmail_metadata,
+             :google_gmail_triage,
+             :google_gmail_send
+           ]
+  end
+
+  test "loads Gmail Spark DSL fragments" do
+    for fragment <- @gmail_dsl_fragments do
+      assert {:module, ^fragment} = Code.ensure_loaded(fragment)
+      assert fragment.extensions() == [Jido.Connect.Dsl.Extension]
+      assert fragment.opts() == [of: Jido.Connect]
+      assert %{extensions: [Jido.Connect.Dsl.Extension]} = fragment.persisted()
+      assert is_map(fragment.spark_dsl_config())
+
+      assert [{_section, Jido.Connect.Dsl.Extension, Jido.Connect.Dsl.Extension}] =
+               fragment.validate_sections()
+    end
+  end
+
+  test "resolves Gmail scopes for broad grants and operation shapes" do
+    resolver = Jido.Connect.Gmail.ScopeResolver
+
+    assert resolver.required_scopes(
+             %{id: "google.gmail.message.send"},
+             %{},
+             %{scopes: ["https://www.googleapis.com/auth/gmail.compose"]}
+           ) == ["https://www.googleapis.com/auth/gmail.compose"]
+
+    assert resolver.required_scopes(
+             %{action_id: "google.gmail.draft.create"},
+             %{},
+             %{scopes: ["https://www.googleapis.com/auth/gmail.modify"]}
+           ) == ["https://www.googleapis.com/auth/gmail.modify"]
+
+    assert resolver.required_scopes(
+             %{id: "google.gmail.message.get"},
+             %{},
+             %{scopes: ["https://www.googleapis.com/auth/gmail.readonly"]}
+           ) == ["https://www.googleapis.com/auth/gmail.readonly"]
+
+    assert resolver.required_scopes(%{}, %{}, %{}) == [
+             "https://www.googleapis.com/auth/gmail.metadata"
+           ]
   end
 
   test "invokes get profile through injected client and lease" do

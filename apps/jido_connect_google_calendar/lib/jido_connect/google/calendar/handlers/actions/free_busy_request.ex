@@ -5,7 +5,9 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.FreeBusyRequest do
 
   def validate(input) do
     with :ok <- validate_calendar_ids(input),
-         :ok <- validate_time_range(input) do
+         :ok <- validate_time_range(input),
+         :ok <- validate_limit(input, :group_expansion_max, 100),
+         :ok <- validate_limit(input, :calendar_expansion_max, 50) do
       :ok
     end
   end
@@ -53,7 +55,7 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.FreeBusyRequest do
   end
 
   defp parse_datetime(value, field) when is_binary(value) do
-    case DateTime.from_iso8601(value) do
+    case value |> String.trim() |> DateTime.from_iso8601() do
       {:ok, datetime, _offset} ->
         {:ok, datetime}
 
@@ -93,6 +95,24 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.FreeBusyRequest do
 
   defp present_string?(value) when is_binary(value), do: String.trim(value) != ""
   defp present_string?(_value), do: false
+
+  defp validate_limit(input, field, max) do
+    case Data.get(input, field) do
+      nil ->
+        :ok
+
+      value when is_integer(value) and value > 0 and value <= max ->
+        :ok
+
+      value ->
+        validation_error("Google Calendar freebusy limit is outside the supported range",
+          reason: :invalid_freebusy_request,
+          field: field,
+          value: value,
+          max: max
+        )
+    end
+  end
 
   defp validation_error(message, opts) do
     {reason, details} = Keyword.pop!(opts, :reason)

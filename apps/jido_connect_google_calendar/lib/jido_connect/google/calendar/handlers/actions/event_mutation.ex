@@ -11,6 +11,7 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.EventMutation do
     with :ok <- validate_time_pair(input, required?: true),
          :ok <- validate_attendees(input),
          :ok <- validate_recurrence(input),
+         :ok <- validate_recurrence_timezone(input),
          :ok <- validate_send_updates(input) do
       :ok
     end
@@ -20,6 +21,7 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.EventMutation do
     with :ok <- validate_time_pair(input, required?: false),
          :ok <- validate_attendees(input),
          :ok <- validate_recurrence(input),
+         :ok <- validate_recurrence_timezone(input),
          :ok <- validate_send_updates(input) do
       :ok
     end
@@ -65,7 +67,7 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.EventMutation do
         validate_date_range(start, finish)
 
       true ->
-        validate_datetime_range(start, finish)
+        validate_datetime_range(start, finish, input)
     end
   end
 
@@ -83,10 +85,12 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.EventMutation do
     end
   end
 
-  defp validate_datetime_range(start, finish) do
-    with {:ok, start_datetime} <- parse_datetime(start, :start),
-         {:ok, end_datetime} <- parse_datetime(finish, :end) do
-      if DateTime.compare(end_datetime, start_datetime) == :gt do
+  defp validate_datetime_range(start, finish, input) do
+    with {:ok, start_datetime} <-
+           parse_datetime(start, :start, effective_time_zone(input, :start)),
+         {:ok, end_datetime} <- parse_datetime(finish, :end, effective_time_zone(input, :end)),
+         {:ok, order} <- compare_datetimes(start_datetime, end_datetime) do
+      if order == :gt do
         :ok
       else
         validation_error("Google Calendar event end time must be after start time",
@@ -98,7 +102,7 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.EventMutation do
   end
 
   defp parse_date(value, field) when is_binary(value) do
-    case Date.from_iso8601(value) do
+    case value |> String.trim() |> Date.from_iso8601() do
       {:ok, date} ->
         {:ok, date}
 
@@ -119,25 +123,68 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.EventMutation do
     )
   end
 
-  defp parse_datetime(value, field) when is_binary(value) do
+  defp parse_datetime(value, field, time_zone) when is_binary(value) do
+    value = String.trim(value)
+
     case DateTime.from_iso8601(value) do
       {:ok, datetime, _offset} ->
-        {:ok, datetime}
+        {:ok, {:instant, datetime}}
 
       {:error, _reason} ->
-        validation_error("Google Calendar event times must be RFC3339 datetimes with offsets",
-          reason: :invalid_event_time,
-          field: field,
-          value: value
-        )
+        parse_local_datetime(value, field, time_zone)
     end
   end
 
-  defp parse_datetime(value, field) do
+  defp parse_datetime(value, field, _time_zone) do
     validation_error("Google Calendar event times must be strings",
       reason: :invalid_event_time,
       field: field,
       value: value
+    )
+  end
+
+  defp parse_local_datetime(value, field, time_zone) do
+    if present_string?(time_zone) do
+      case NaiveDateTime.from_iso8601(value) do
+        {:ok, datetime} ->
+          {:ok, {:local, datetime, String.trim(time_zone)}}
+
+        {:error, _reason} ->
+          validation_error("Google Calendar event times must be RFC3339 datetimes",
+            reason: :invalid_event_time,
+            field: field,
+            value: value
+          )
+      end
+    else
+      validation_error("Google Calendar event times require an offset or explicit time zone",
+        reason: :invalid_event_time,
+        field: field,
+        value: value
+      )
+    end
+  end
+
+  defp compare_datetimes({:instant, start_time}, {:instant, end_time}) do
+    {:ok, DateTime.compare(end_time, start_time)}
+  end
+
+  defp compare_datetimes({:local, start_time, time_zone}, {:local, end_time, time_zone}) do
+    {:ok, NaiveDateTime.compare(end_time, start_time)}
+  end
+
+  defp compare_datetimes({:local, _start_time, _start_zone}, {:local, _end_time, _end_zone}) do
+    validation_error("Google Calendar local event times must use the same time zone",
+      reason: :invalid_event_time,
+      field: :time_zone
+    )
+  end
+
+  defp compare_datetimes(_start_time, _end_time) do
+    validation_error(
+      "Google Calendar event start and end must both use offsets or both use local times with time zones",
+      reason: :invalid_event_time,
+      field: :start_end
     )
   end
 
@@ -279,6 +326,27 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.EventMutation do
     )
   end
 
+  defp validate_recurrence_timezone(input) do
+    if Data.get(input, :all_day, false) or not recurrence_present?(input) do
+      :ok
+    else
+      cond do
+        present_string?(Data.get(input, :time_zone)) ->
+          :ok
+
+        present_string?(Data.get(input, :start_time_zone)) and
+            present_string?(Data.get(input, :end_time_zone)) ->
+          :ok
+
+        true ->
+          validation_error("Google Calendar recurring timed events require an explicit time zone",
+            reason: :invalid_event_time,
+            field: :time_zone
+          )
+      end
+    end
+  end
+
   defp validate_send_updates(input) do
     case Data.get(input, :send_updates) do
       nil ->
@@ -301,6 +369,11 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.EventMutation do
     input
     |> trim_string(:calendar_id)
     |> trim_string(:event_id)
+    |> trim_string(:start)
+    |> trim_string(:end)
+    |> trim_string(:time_zone)
+    |> trim_string(:start_time_zone)
+    |> trim_string(:end_time_zone)
     |> normalize_attendees()
     |> normalize_recurrence()
   end
@@ -349,7 +422,26 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Actions.EventMutation do
     )
   end
 
-  defp blank?(value), do: is_nil(value) or value == ""
+  defp recurrence_present?(input) do
+    case Data.get(input, :recurrence) do
+      recurrence when is_list(recurrence) -> recurrence != []
+      _other -> false
+    end
+  end
+
+  defp effective_time_zone(input, :start) do
+    Data.get(input, :start_time_zone) || Data.get(input, :time_zone)
+  end
+
+  defp effective_time_zone(input, :end) do
+    Data.get(input, :end_time_zone) || Data.get(input, :time_zone)
+  end
+
+  defp present_string?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present_string?(_value), do: false
+
+  defp blank?(value) when is_binary(value), do: String.trim(value) == ""
+  defp blank?(value), do: is_nil(value)
 
   defp validation_error(message, opts) do
     {reason, details} = Keyword.pop!(opts, :reason)

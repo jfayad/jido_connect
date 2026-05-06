@@ -4,6 +4,28 @@ defmodule Jido.Connect.Google.DriveTest do
   alias Jido.Connect
   alias Jido.Connect.Google.Drive
 
+  @drive_action_modules [
+    Jido.Connect.Google.Drive.Actions.ListFiles,
+    Jido.Connect.Google.Drive.Actions.GetFile,
+    Jido.Connect.Google.Drive.Actions.CreateFile,
+    Jido.Connect.Google.Drive.Actions.CreateFolder,
+    Jido.Connect.Google.Drive.Actions.CopyFile,
+    Jido.Connect.Google.Drive.Actions.UpdateFile,
+    Jido.Connect.Google.Drive.Actions.ExportFile,
+    Jido.Connect.Google.Drive.Actions.DownloadFile,
+    Jido.Connect.Google.Drive.Actions.DeleteFile,
+    Jido.Connect.Google.Drive.Actions.ListPermissions,
+    Jido.Connect.Google.Drive.Actions.CreatePermission
+  ]
+
+  @drive_dsl_fragments [
+    Jido.Connect.Google.Drive.Actions.Read,
+    Jido.Connect.Google.Drive.Actions.Write,
+    Jido.Connect.Google.Drive.Actions.FileContent,
+    Jido.Connect.Google.Drive.Actions.Permissions,
+    Jido.Connect.Google.Drive.Triggers.Changes
+  ]
+
   defmodule FakeDriveClient do
     def list_files(
           %{
@@ -349,6 +371,103 @@ defmodule Jido.Connect.Google.DriveTest do
               scope_resolver: Jido.Connect.Google.Drive.ScopeResolver
             }} =
              Connect.trigger(spec, "google.drive.file.changed")
+  end
+
+  test "compiles generated Jido modules for actions, sensors, and plugin" do
+    assert Application.get_env(:jido_connect_google_drive, :jido_connect_providers) == [
+             Drive
+           ]
+
+    assert Drive.jido_action_modules() == @drive_action_modules
+    assert Drive.jido_sensor_modules() == [Jido.Connect.Google.Drive.Sensors.FileChanged]
+    assert Drive.jido_plugin_module() == Jido.Connect.Google.Drive.Plugin
+
+    assert %Connect.Catalog.Manifest{
+             id: :google_drive,
+             package: :jido_connect_google_drive,
+             generated_modules: %{
+               actions: @drive_action_modules,
+               sensors: [Jido.Connect.Google.Drive.Sensors.FileChanged],
+               plugin: Jido.Connect.Google.Drive.Plugin
+             }
+           } = Drive.jido_connect_manifest()
+
+    action_ids = Drive.integration().actions |> Enum.map(& &1.id) |> MapSet.new()
+
+    for module <- @drive_action_modules do
+      assert {:module, ^module} = Code.ensure_loaded(module)
+      assert function_exported?(module, :run, 2)
+
+      projection = module.jido_connect_projection()
+      tool = module.to_tool()
+
+      assert projection.module == module
+      assert projection.action_id in action_ids
+      assert module.operation_id() == projection.action_id
+      assert module.name() == projection.name
+      assert tool.name == projection.name
+    end
+
+    sensor = Jido.Connect.Google.Drive.Sensors.FileChanged
+
+    assert {:module, ^sensor} = Code.ensure_loaded(sensor)
+    assert function_exported?(sensor, :handle_event, 2)
+    assert sensor.name() == "google_drive_file_changed"
+    assert sensor.trigger_id() == "google.drive.file.changed"
+    assert sensor.signal_type() == "google.drive.file.changed"
+
+    assert %Jido.Plugin.Spec{
+             name: "google_drive",
+             module: Jido.Connect.Google.Drive.Plugin,
+             actions: @drive_action_modules
+           } = Jido.Connect.Google.Drive.Plugin.plugin_spec()
+
+    assert Drive.readonly_pack().id == :google_drive_readonly
+    assert Drive.file_writer_pack().id == :google_drive_file_writer
+
+    assert Enum.map(Drive.catalog_packs(), & &1.id) == [
+             :google_drive_readonly,
+             :google_drive_file_writer
+           ]
+  end
+
+  test "loads Drive Spark DSL fragments" do
+    for fragment <- @drive_dsl_fragments do
+      assert {:module, ^fragment} = Code.ensure_loaded(fragment)
+      assert fragment.extensions() == [Jido.Connect.Dsl.Extension]
+      assert fragment.opts() == [of: Jido.Connect]
+      assert %{extensions: [Jido.Connect.Dsl.Extension]} = fragment.persisted()
+      assert is_map(fragment.spark_dsl_config())
+
+      assert [{_section, Jido.Connect.Dsl.Extension, Jido.Connect.Dsl.Extension}] =
+               fragment.validate_sections()
+    end
+  end
+
+  test "resolves Drive scopes for broad grants and operation shapes" do
+    resolver = Jido.Connect.Google.Drive.ScopeResolver
+
+    assert resolver.required_scopes(
+             %{id: "google.drive.file.update"},
+             %{},
+             %{scopes: ["https://www.googleapis.com/auth/drive.readonly"]}
+           ) == ["https://www.googleapis.com/auth/drive.file"]
+
+    assert resolver.required_scopes(
+             %{action_id: "google.drive.file.export"},
+             %{},
+             %{scopes: ["https://www.googleapis.com/auth/drive.file"]}
+           ) == ["https://www.googleapis.com/auth/drive.file"]
+
+    assert resolver.required_scopes(
+             %{id: "google.drive.file.export"},
+             %{},
+             %{scopes: []}
+           ) == ["https://www.googleapis.com/auth/drive.readonly"]
+
+    assert resolver.required_scopes(%{}, %{}, %{}) == [
+             "https://www.googleapis.com/auth/drive.metadata.readonly"
+           ]
   end
 
   test "invokes list files through injected client and lease" do

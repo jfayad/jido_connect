@@ -106,13 +106,15 @@ defmodule Jido.Connect.Google.Calendar.Normalizer do
   @spec free_busy(map()) :: {:ok, FreeBusy.t()} | {:error, term()}
   def free_busy(payload) when is_map(payload) do
     calendars = Data.get(payload, "calendars", %{}) || %{}
+    groups = Data.get(payload, "groups", %{}) || %{}
 
     %{
       time_min: Data.get(payload, "timeMin"),
       time_max: Data.get(payload, "timeMax"),
       calendars: calendars,
-      groups: Data.get(payload, "groups", %{}) || %{},
-      busy: busy_windows(calendars)
+      groups: groups,
+      busy: busy_windows(calendars),
+      errors: free_busy_errors(calendars, groups)
     }
     |> Data.compact()
     |> FreeBusy.new()
@@ -161,4 +163,26 @@ defmodule Jido.Connect.Google.Calendar.Normalizer do
   end
 
   defp busy_windows(_calendars), do: []
+
+  defp free_busy_errors(calendars, groups) do
+    flatten_free_busy_errors(:calendar, calendars) ++ flatten_free_busy_errors(:group, groups)
+  end
+
+  defp flatten_free_busy_errors(type, entries) when is_map(entries) do
+    Enum.flat_map(entries, fn {id, payload} ->
+      payload
+      |> Data.get("errors", [])
+      |> Enum.map(fn error ->
+        %{
+          target_type: type,
+          target_id: id,
+          domain: Data.get(error, "domain"),
+          reason: Data.get(error, "reason")
+        }
+        |> Data.compact()
+      end)
+    end)
+  end
+
+  defp flatten_free_busy_errors(_type, _entries), do: []
 end

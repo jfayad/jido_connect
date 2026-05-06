@@ -59,4 +59,35 @@ defmodule Jido.Connect.Google.ConnectionsTest do
     assert connection.subject.delegated_subject == "admin@example.com"
     assert connection.metadata.mode == :google_domain_delegation
   end
+
+  test "builds keyword user connections with explicit owner metadata" do
+    assert {:ok, %Connection{} = connection} =
+             Connections.user_connection(
+               tenant_id: "tenant_1",
+               owner_id: :user_1,
+               scopes: [:openid, :email],
+               subject: %{workspace_id: "workspace_1"},
+               metadata: %{source: :test}
+             )
+
+    assert connection.id == "google-user-user_1"
+    assert connection.owner_id == "user_1"
+    assert connection.scopes == ["openid", "email"]
+    assert connection.subject.workspace_id == "workspace_1"
+    assert connection.metadata == %{mode: :google_oauth, source: :test}
+  end
+
+  test "raises when required connection inputs are missing" do
+    assert_raise ArgumentError, ~r/Google connection requires :tenant_id/, fn ->
+      Connections.user_connection(%{}, [])
+    end
+
+    assert_raise ArgumentError, ~r/Google user connection requires :owner_id/, fn ->
+      Connections.user_connection(%{}, tenant_id: "tenant_1")
+    end
+
+    assert_raise ArgumentError, ~r/Google connection requires :subject/, fn ->
+      Connections.domain_delegated_service_account_connection(%{}, tenant_id: "tenant_1")
+    end
+  end
 end

@@ -4,6 +4,24 @@ defmodule Jido.Connect.Google.CalendarTest do
   alias Jido.Connect
   alias Jido.Connect.Google.Calendar
 
+  @calendar_action_modules [
+    Jido.Connect.Google.Calendar.Actions.ListCalendars,
+    Jido.Connect.Google.Calendar.Actions.ListEvents,
+    Jido.Connect.Google.Calendar.Actions.GetEvent,
+    Jido.Connect.Google.Calendar.Actions.CreateEvent,
+    Jido.Connect.Google.Calendar.Actions.UpdateEvent,
+    Jido.Connect.Google.Calendar.Actions.DeleteEvent,
+    Jido.Connect.Google.Calendar.Actions.QueryFreeBusy,
+    Jido.Connect.Google.Calendar.Actions.FindAvailability
+  ]
+
+  @calendar_dsl_fragments [
+    Jido.Connect.Google.Calendar.Actions.Read,
+    Jido.Connect.Google.Calendar.Actions.Write,
+    Jido.Connect.Google.Calendar.Actions.FreeBusy,
+    Jido.Connect.Google.Calendar.Triggers.Events
+  ]
+
   defmodule FakeCalendarClient do
     def list_calendars(
           %{page_size: 100, show_deleted: false, show_hidden: false},
@@ -47,6 +65,26 @@ defmodule Jido.Connect.Google.CalendarTest do
          ],
          next_page_token: "events-next"
        }}
+    end
+
+    def list_events(
+          %{
+            calendar_id: "primary",
+            sync_token: "expired-sync",
+            page_size: 250,
+            single_events: true,
+            show_deleted: true,
+            show_hidden_invitations: false
+          },
+          "token"
+        ) do
+      {:error,
+       Connect.Error.provider("Google API request failed",
+         provider: :google,
+         reason: :http_error,
+         status: 410,
+         details: %{message: "Sync token is no longer valid"}
+       )}
     end
 
     def list_events(
@@ -182,6 +220,31 @@ defmodule Jido.Connect.Google.CalendarTest do
     def create_event(
           %{
             calendar_id: "primary",
+            summary: "Local",
+            start: "2026-05-06T09:00:00",
+            end: "2026-05-06T10:00:00",
+            time_zone: "America/Chicago",
+            all_day: false,
+            attendees: [],
+            recurrence: []
+          },
+          "token"
+        ) do
+      {:ok,
+       Calendar.Event.new!(%{
+         event_id: "local123",
+         calendar_id: "primary",
+         summary: "Local",
+         start: "2026-05-06T09:00:00",
+         end: "2026-05-06T10:00:00",
+         start_time_zone: "America/Chicago",
+         end_time_zone: "America/Chicago"
+       })}
+    end
+
+    def create_event(
+          %{
+            calendar_id: "primary",
             summary: "Planning",
             start: "2026-05-06T09:00:00-05:00",
             end: "2026-05-06T10:00:00-05:00",
@@ -262,6 +325,35 @@ defmodule Jido.Connect.Google.CalendarTest do
          ]
        })}
     end
+
+    def query_free_busy(
+          %{
+            calendar_ids: ["broken"],
+            time_min: "2026-05-06T08:00:00Z",
+            time_max: "2026-05-06T11:00:00Z"
+          },
+          "token"
+        ) do
+      {:ok,
+       Calendar.FreeBusy.new!(%{
+         time_min: "2026-05-06T08:00:00Z",
+         time_max: "2026-05-06T11:00:00Z",
+         calendars: %{
+           "broken" => %{
+             "errors" => [%{"domain" => "global", "reason" => "notFound"}],
+             "busy" => []
+           }
+         },
+         errors: [
+           %{
+             target_type: :calendar,
+             target_id: "broken",
+             domain: "global",
+             reason: "notFound"
+           }
+         ]
+       })}
+    end
   end
 
   test "declares Google Calendar provider metadata" do
@@ -292,6 +384,7 @@ defmodule Jido.Connect.Google.CalendarTest do
     assert "https://www.googleapis.com/auth/calendar.calendarlist.readonly" in profile.optional_scopes
 
     assert "https://www.googleapis.com/auth/calendar.freebusy" in profile.optional_scopes
+    assert "https://www.googleapis.com/auth/calendar.events.freebusy" in profile.optional_scopes
     assert "https://www.googleapis.com/auth/calendar.events.readonly" in profile.optional_scopes
     assert "https://www.googleapis.com/auth/calendar.events" in profile.optional_scopes
 
@@ -311,6 +404,109 @@ defmodule Jido.Connect.Google.CalendarTest do
               scope_resolver: Jido.Connect.Google.Calendar.ScopeResolver
             }} =
              Connect.trigger(spec, "google.calendar.event.changed")
+  end
+
+  test "compiles generated Jido modules for actions, sensors, and plugin" do
+    assert Application.get_env(:jido_connect_google_calendar, :jido_connect_providers) == [
+             Calendar
+           ]
+
+    assert Calendar.jido_action_modules() == @calendar_action_modules
+    assert Calendar.jido_sensor_modules() == [Jido.Connect.Google.Calendar.Sensors.EventChanged]
+    assert Calendar.jido_plugin_module() == Jido.Connect.Google.Calendar.Plugin
+
+    assert %Connect.Catalog.Manifest{
+             id: :google_calendar,
+             package: :jido_connect_google_calendar,
+             generated_modules: %{
+               actions: @calendar_action_modules,
+               sensors: [Jido.Connect.Google.Calendar.Sensors.EventChanged],
+               plugin: Jido.Connect.Google.Calendar.Plugin
+             }
+           } = Calendar.jido_connect_manifest()
+
+    action_ids = Calendar.integration().actions |> Enum.map(& &1.id) |> MapSet.new()
+
+    for module <- @calendar_action_modules do
+      assert {:module, ^module} = Code.ensure_loaded(module)
+      assert function_exported?(module, :run, 2)
+
+      projection = module.jido_connect_projection()
+      tool = module.to_tool()
+
+      assert projection.module == module
+      assert projection.action_id in action_ids
+      assert module.operation_id() == projection.action_id
+      assert module.name() == projection.name
+      assert tool.name == projection.name
+    end
+
+    sensor = Jido.Connect.Google.Calendar.Sensors.EventChanged
+
+    assert {:module, ^sensor} = Code.ensure_loaded(sensor)
+    assert function_exported?(sensor, :handle_event, 2)
+    assert sensor.name() == "google_calendar_event_changed"
+    assert sensor.trigger_id() == "google.calendar.event.changed"
+    assert sensor.signal_type() == "google.calendar.event.changed"
+
+    assert %Jido.Plugin.Spec{
+             name: "google_calendar",
+             module: Jido.Connect.Google.Calendar.Plugin,
+             actions: @calendar_action_modules
+           } = Jido.Connect.Google.Calendar.Plugin.plugin_spec()
+
+    assert Calendar.reader_pack().id == :google_calendar_reader
+    assert Calendar.scheduler_pack().id == :google_calendar_scheduler
+
+    assert Enum.map(Calendar.catalog_packs(), & &1.id) == [
+             :google_calendar_reader,
+             :google_calendar_scheduler
+           ]
+  end
+
+  test "loads Calendar Spark DSL fragments" do
+    for fragment <- @calendar_dsl_fragments do
+      assert {:module, ^fragment} = Code.ensure_loaded(fragment)
+      assert fragment.extensions() == [Jido.Connect.Dsl.Extension]
+      assert fragment.opts() == [of: Jido.Connect]
+      assert %{extensions: [Jido.Connect.Dsl.Extension]} = fragment.persisted()
+      assert is_map(fragment.spark_dsl_config())
+
+      assert [{_section, Jido.Connect.Dsl.Extension, Jido.Connect.Dsl.Extension}] =
+               fragment.validate_sections()
+    end
+  end
+
+  test "resolves Calendar scopes for broad grants and operation shapes" do
+    resolver = Jido.Connect.Google.Calendar.ScopeResolver
+
+    assert resolver.required_scopes(
+             %{id: "google.calendar.calendar.list"},
+             %{},
+             %{scopes: ["https://www.googleapis.com/auth/calendar"]}
+           ) == ["https://www.googleapis.com/auth/calendar"]
+
+    assert resolver.required_scopes(
+             %{action_id: "google.calendar.freebusy.query"},
+             %{},
+             %{scopes: ["https://www.googleapis.com/auth/calendar.readonly"]}
+           ) == ["https://www.googleapis.com/auth/calendar.readonly"]
+
+    assert resolver.required_scopes(
+             %{id: "google.calendar.availability.find"},
+             %{},
+             %{scopes: []}
+           ) == ["https://www.googleapis.com/auth/calendar.events.freebusy"]
+
+    assert resolver.required_scopes(
+             %{id: "google.calendar.event.update"},
+             %{},
+             %{scopes: ["https://www.googleapis.com/auth/calendar"]}
+           ) == ["https://www.googleapis.com/auth/calendar"]
+
+    assert resolver.required_scopes(%{}, %{}, %{}) == [
+             "https://www.googleapis.com/auth/calendar.events.readonly"
+           ]
   end
 
   test "invokes list calendars through injected client and lease" do
@@ -482,7 +678,27 @@ defmodule Jido.Connect.Google.CalendarTest do
                  attendees: [
                    %{email: " guest@example.com ", response_status: "accepted"}
                  ],
-                 recurrence: [" RRULE:FREQ=DAILY;COUNT=2 "]
+                 recurrence: [" RRULE:FREQ=DAILY;COUNT=2 "],
+                 time_zone: "America/Chicago"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "create event accepts local datetimes when explicit time zone is provided" do
+    {context, lease} = context_and_lease(scopes: event_write_scopes())
+
+    assert {:ok, %{event: %{event_id: "local123", start_time_zone: "America/Chicago"}}} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.event.create",
+               %{
+                 calendar_id: "primary",
+                 summary: "Local",
+                 start: "2026-05-06T09:00:00",
+                 end: "2026-05-06T10:00:00",
+                 time_zone: "America/Chicago"
                },
                context: context,
                credential_lease: lease
@@ -601,6 +817,28 @@ defmodule Jido.Connect.Google.CalendarTest do
              )
   end
 
+  test "recurring timed events require an explicit time zone" do
+    {context, lease} = context_and_lease(scopes: event_write_scopes())
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_event_time,
+              details: %{field: :time_zone}
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.event.create",
+               %{
+                 calendar_id: "primary",
+                 start: "2026-05-06T09:00:00-05:00",
+                 end: "2026-05-06T10:00:00-05:00",
+                 recurrence: ["RRULE:FREQ=DAILY;COUNT=2"]
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   test "invokes freebusy query through injected client and lease" do
     {context, lease} = context_and_lease(scopes: freebusy_scopes())
 
@@ -618,6 +856,23 @@ defmodule Jido.Connect.Google.CalendarTest do
                 ]
               }
             }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.freebusy.query",
+               %{
+                 calendar_ids: ["primary"],
+                 time_min: "2026-05-06T08:00:00Z",
+                 time_max: "2026-05-06T11:00:00Z"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "freebusy actions accept legacy calendar.freebusy scope" do
+    {context, lease} = context_and_lease(scopes: freebusy_legacy_scopes())
+
+    assert {:ok, %{free_busy: %{time_min: "2026-05-06T08:00:00Z"}}} =
              Connect.invoke(
                Calendar.integration(),
                "google.calendar.freebusy.query",
@@ -670,13 +925,35 @@ defmodule Jido.Connect.Google.CalendarTest do
              )
   end
 
+  test "availability rejects partial freebusy errors" do
+    {context, lease} = context_and_lease(scopes: freebusy_scopes())
+
+    assert {:error,
+            %Connect.Error.ProviderError{
+              provider: :google,
+              reason: :partial_response,
+              details: %{errors: [%{target_id: "broken", reason: "notFound"}]}
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.availability.find",
+               %{
+                 calendar_ids: ["broken"],
+                 time_min: "2026-05-06T08:00:00Z",
+                 time_max: "2026-05-06T11:00:00Z"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   test "freebusy actions require freebusy scope" do
     {context, lease} = context_and_lease(scopes: event_read_scopes())
 
     assert {:error,
             %Connect.Error.AuthError{
               reason: :missing_scopes,
-              missing_scopes: ["https://www.googleapis.com/auth/calendar.freebusy"]
+              missing_scopes: ["https://www.googleapis.com/auth/calendar.events.freebusy"]
             }} =
              Connect.invoke(
                Calendar.integration(),
@@ -706,6 +983,28 @@ defmodule Jido.Connect.Google.CalendarTest do
                  calendar_ids: ["  "],
                  time_min: "2026-05-06T08:00:00Z",
                  time_max: "2026-05-06T11:00:00Z"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "freebusy actions validate expansion limits" do
+    {context, lease} = context_and_lease(scopes: freebusy_scopes())
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_freebusy_request,
+              details: %{field: :calendar_expansion_max, max: 50}
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.freebusy.query",
+               %{
+                 calendar_ids: ["primary"],
+                 time_min: "2026-05-06T08:00:00Z",
+                 time_max: "2026-05-06T11:00:00Z",
+                 calendar_expansion_max: 51
                },
                context: context,
                credential_lease: lease
@@ -783,6 +1082,26 @@ defmodule Jido.Connect.Google.CalendarTest do
              )
   end
 
+  test "event change poll surfaces expired sync tokens as checkpoint errors" do
+    {context, lease} = context_and_lease(scopes: event_read_scopes())
+
+    assert {:error,
+            %Connect.Error.ProviderError{
+              provider: :google,
+              reason: :checkpoint_expired,
+              status: 410,
+              details: %{checkpoint: "expired-sync"}
+            }} =
+             Connect.poll(
+               Calendar.integration(),
+               "google.calendar.event.changed",
+               %{calendar_id: "primary"},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "expired-sync"
+             )
+  end
+
   defp event_read_scopes do
     [
       "openid",
@@ -802,6 +1121,15 @@ defmodule Jido.Connect.Google.CalendarTest do
   end
 
   defp freebusy_scopes do
+    [
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/calendar.events.freebusy"
+    ]
+  end
+
+  defp freebusy_legacy_scopes do
     [
       "openid",
       "email",

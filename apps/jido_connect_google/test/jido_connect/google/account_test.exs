@@ -28,4 +28,21 @@ defmodule Jido.Connect.Google.AccountTest do
              hosted_domain: "example.com"
            }
   end
+
+  test "supports alternate profile ids, metadata, and direct constructors" do
+    assert %Account{email: "direct@example.com", metadata: %{source: :direct}} =
+             Account.new!(%{email: "direct@example.com", metadata: %{source: :direct}})
+
+    assert {:ok, account} =
+             Account.from_userinfo(
+               %{"id" => "legacy-123", "email" => "legacy@example.com"},
+               %{source: :userinfo}
+             )
+
+    assert account.id == "legacy-123"
+    assert account.email == "legacy@example.com"
+    assert account.verified_email? == false
+    assert account.metadata == %{source: :userinfo}
+    assert Account.schema()
+  end
 end

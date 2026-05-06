@@ -9,6 +9,7 @@ defmodule Jido.Connect.Google.Calendar.FreeBusy do
               calendars: Zoi.map() |> Zoi.default(%{}),
               groups: Zoi.map() |> Zoi.default(%{}),
               busy: Zoi.list(Zoi.map()) |> Zoi.default([]),
+              errors: Zoi.list(Zoi.map()) |> Zoi.default([]),
               metadata: Zoi.map() |> Zoi.default(%{})
             },
             coerce: true

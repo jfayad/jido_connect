@@ -94,4 +94,34 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
     assert Normalizer.folder?(%{"mimeType" => "application/vnd.google-apps.folder"})
     refute Normalizer.folder?(%{"mimeType" => "application/pdf"})
   end
+
+  test "struct constructors expose schema defaults" do
+    assert %File{
+             parents: [],
+             owners: [],
+             shared?: false,
+             trashed?: false,
+             starred?: false,
+             metadata: %{}
+           } = File.new!(%{file_id: "file123", name: "Budget.pdf"})
+
+    assert {:error, _error} = File.new(%{name: "Missing id"})
+
+    assert %Folder{parents: [], shared?: false, trashed?: false, metadata: %{}} =
+             Folder.new!(%{folder_id: "folder123", name: "Reports"})
+
+    assert {:error, _error} = Folder.new(%{name: "Missing id"})
+
+    assert %Permission{deleted?: false, metadata: %{}} =
+             Permission.new!(%{permission_id: "perm123", type: "user", role: "reader"})
+
+    assert {:error, _error} = Permission.new(%{permission_id: "perm123"})
+
+    assert %Change{removed?: false, metadata: %{}} = Change.new!(%{})
+
+    assert File.schema()
+    assert Folder.schema()
+    assert Permission.schema()
+    assert Change.schema()
+  end
 end

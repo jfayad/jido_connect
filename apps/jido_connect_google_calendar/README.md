@@ -47,4 +47,5 @@ The connector prefers narrow Calendar scopes:
 - `calendar.calendarlist.readonly` for listing visible calendars.
 - `calendar.events.readonly` for event reads and polling.
 - `calendar.events` for event creation, updates, and deletes.
-- `calendar.freebusy` for free/busy and availability helpers.
+- `calendar.events.freebusy` or `calendar.freebusy` for free/busy and
+  availability helpers.

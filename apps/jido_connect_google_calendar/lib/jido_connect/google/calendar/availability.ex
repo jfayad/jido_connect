@@ -6,7 +6,8 @@ defmodule Jido.Connect.Google.Calendar.Availability do
 
   @doc "Returns candidate windows that fit inside free gaps across all busy calendars."
   def candidate_windows(%FreeBusy{} = free_busy, opts) do
-    with {:ok, range_start} <- parse_datetime(Data.get(opts, :time_min), :time_min),
+    with :ok <- reject_free_busy_errors(free_busy),
+         {:ok, range_start} <- parse_datetime(Data.get(opts, :time_min), :time_min),
          {:ok, range_end} <- parse_datetime(Data.get(opts, :time_max), :time_max),
          :ok <- validate_range(range_start, range_end),
          {:ok, duration_seconds} <- positive_minutes(opts, :duration_minutes, 30),
@@ -27,6 +28,17 @@ defmodule Jido.Connect.Google.Calendar.Availability do
       reason: :invalid_availability,
       field: :free_busy
     )
+  end
+
+  defp reject_free_busy_errors(%FreeBusy{errors: []}), do: :ok
+
+  defp reject_free_busy_errors(%FreeBusy{errors: errors}) do
+    {:error,
+     Error.provider("Google Calendar freebusy response contained errors",
+       provider: :google,
+       reason: :partial_response,
+       details: %{errors: errors}
+     )}
   end
 
   defp busy_intervals(%FreeBusy{busy: busy}) do

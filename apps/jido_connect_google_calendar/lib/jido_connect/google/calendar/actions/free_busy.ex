@@ -3,7 +3,7 @@ defmodule Jido.Connect.Google.Calendar.Actions.FreeBusy do
 
   use Spark.Dsl.Fragment, of: Jido.Connect
 
-  @freebusy_scope "https://www.googleapis.com/auth/calendar.freebusy"
+  @freebusy_scope "https://www.googleapis.com/auth/calendar.events.freebusy"
   @scope_resolver Jido.Connect.Google.Calendar.ScopeResolver
 
   actions do

@@ -99,6 +99,45 @@ defmodule Jido.Connect.Google.OAuthTest do
              )
   end
 
+  test "returns non-success OAuth HTTP errors" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      conn
+      |> Plug.Conn.put_status(500)
+      |> Req.Test.json(%{"error_description" => "token service unavailable"})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :google,
+              reason: :http_error,
+              status: 500,
+              details: %{message: "token service unavailable"}
+            }} =
+             OAuth.refresh_token("refresh",
+               client_id: "client",
+               client_secret: "secret",
+               token_url: "https://oauth.test/token"
+             )
+  end
+
+  test "rejects malformed successful token responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      Req.Test.json(conn, %{"scope" => "openid email"})
+    end)
+
+    assert {:error,
+            %Error.ProviderError{
+              provider: :google,
+              reason: :invalid_response,
+              details: %{body_summary: %{type: :map, keys: ["scope"]}}
+            }} =
+             OAuth.exchange_code("code",
+               client_id: "client",
+               client_secret: "secret",
+               token_url: "https://oauth.test/token"
+             )
+  end
+
   test "builds credential leases from token responses" do
     {:ok, connection} =
       Connections.user_connection(
@@ -128,5 +167,30 @@ defmodule Jido.Connect.Google.OAuthTest do
     assert lease.scopes == ["openid", "email"]
     assert lease.expires_at == ~U[2026-01-01 01:00:00Z]
     assert lease.metadata.credential_mode == :google_oauth_access_token
+  end
+
+  test "credential leases validate access tokens and use caller overrides" do
+    {:ok, connection} =
+      Connections.user_connection(
+        %{"sub" => "123", "email" => "user@example.com"},
+        tenant_id: "tenant_1",
+        scopes: ["openid", "email", "profile"]
+      )
+
+    assert {:error, %Error.ProviderError{reason: :invalid_response}} =
+             OAuth.credential_lease(connection, %{"expires_in" => "120"})
+
+    assert {:ok, lease} =
+             OAuth.credential_lease(
+               connection,
+               %{"access_token" => "access", "expires_in" => "120"},
+               issued_at: ~U[2026-01-01 00:00:00Z],
+               scopes: ["openid"],
+               metadata: %{source: :override}
+             )
+
+    assert lease.scopes == ["openid"]
+    assert lease.expires_at == ~U[2026-01-01 00:02:00Z]
+    assert lease.metadata.source == :override
   end
 end

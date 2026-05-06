@@ -10,6 +10,7 @@ defmodule Jido.Connect.Google.Calendar.ScopeResolver do
   @calendar_readonly_scope "https://www.googleapis.com/auth/calendar.readonly"
   @calendar_list_scope "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
   @freebusy_scope "https://www.googleapis.com/auth/calendar.freebusy"
+  @events_freebusy_scope "https://www.googleapis.com/auth/calendar.events.freebusy"
   @events_readonly_scope "https://www.googleapis.com/auth/calendar.events.readonly"
   @events_scope "https://www.googleapis.com/auth/calendar.events"
   @calendar_list_actions ["google.calendar.calendar.list"]
@@ -49,14 +50,15 @@ defmodule Jido.Connect.Google.Calendar.ScopeResolver do
     cond do
       @calendar_scope in scopes -> [@calendar_scope]
       @calendar_readonly_scope in scopes -> [@calendar_readonly_scope]
+      @events_freebusy_scope in scopes -> [@events_freebusy_scope]
       @freebusy_scope in scopes -> [@freebusy_scope]
-      true -> [@freebusy_scope]
+      true -> [@events_freebusy_scope]
     end
   end
 
   defp required_for_operation(operation_id, _connection)
        when operation_id in @freebusy_actions do
-    [@freebusy_scope]
+    [@events_freebusy_scope]
   end
 
   defp required_for_operation(operation_id, %{scopes: scopes})

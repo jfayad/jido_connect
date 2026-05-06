@@ -4,6 +4,24 @@ defmodule Jido.Connect.Google.SheetsTest do
   alias Jido.Connect
   alias Jido.Connect.Google.Sheets
 
+  @sheets_action_modules [
+    Jido.Connect.Google.Sheets.Actions.GetSpreadsheet,
+    Jido.Connect.Google.Sheets.Actions.GetValues,
+    Jido.Connect.Google.Sheets.Actions.UpdateValues,
+    Jido.Connect.Google.Sheets.Actions.AppendValues,
+    Jido.Connect.Google.Sheets.Actions.ClearValues,
+    Jido.Connect.Google.Sheets.Actions.AddSheet,
+    Jido.Connect.Google.Sheets.Actions.DeleteSheet,
+    Jido.Connect.Google.Sheets.Actions.RenameSheet,
+    Jido.Connect.Google.Sheets.Actions.BatchUpdate
+  ]
+
+  @sheets_dsl_fragments [
+    Jido.Connect.Google.Sheets.Actions.Read,
+    Jido.Connect.Google.Sheets.Actions.Write,
+    Jido.Connect.Google.Sheets.Actions.ManageSheets
+  ]
+
   defmodule FakeSheetsClient do
     def get_spreadsheet(
           %{spreadsheet_id: "sheet123", ranges: [], include_grid_data: false},
@@ -140,6 +158,89 @@ defmodule Jido.Connect.Google.SheetsTest do
              "google.sheets.sheet.delete",
              "google.sheets.sheet.rename",
              "google.sheets.batch_update"
+           ]
+  end
+
+  test "compiles generated Jido modules for actions and plugin" do
+    assert Application.get_env(:jido_connect_google_sheets, :jido_connect_providers) == [
+             Sheets
+           ]
+
+    assert Sheets.jido_action_modules() == @sheets_action_modules
+    assert Sheets.jido_sensor_modules() == []
+    assert Sheets.jido_plugin_module() == Jido.Connect.Google.Sheets.Plugin
+
+    assert %Connect.Catalog.Manifest{
+             id: :google_sheets,
+             package: :jido_connect_google_sheets,
+             generated_modules: %{
+               actions: @sheets_action_modules,
+               sensors: [],
+               plugin: Jido.Connect.Google.Sheets.Plugin
+             }
+           } = Sheets.jido_connect_manifest()
+
+    action_ids = Sheets.integration().actions |> Enum.map(& &1.id) |> MapSet.new()
+
+    for module <- @sheets_action_modules do
+      assert {:module, ^module} = Code.ensure_loaded(module)
+      assert function_exported?(module, :run, 2)
+
+      projection = module.jido_connect_projection()
+      tool = module.to_tool()
+
+      assert projection.module == module
+      assert projection.action_id in action_ids
+      assert module.operation_id() == projection.action_id
+      assert module.name() == projection.name
+      assert tool.name == projection.name
+    end
+
+    assert %Jido.Plugin.Spec{
+             name: "google_sheets",
+             module: Jido.Connect.Google.Sheets.Plugin,
+             actions: @sheets_action_modules
+           } = Jido.Connect.Google.Sheets.Plugin.plugin_spec()
+
+    assert Sheets.readonly_pack().id == :google_sheets_readonly
+    assert Sheets.writer_pack().id == :google_sheets_writer
+
+    assert Enum.map(Sheets.catalog_packs(), & &1.id) == [
+             :google_sheets_readonly,
+             :google_sheets_writer
+           ]
+  end
+
+  test "loads Sheets Spark DSL fragments" do
+    for fragment <- @sheets_dsl_fragments do
+      assert {:module, ^fragment} = Code.ensure_loaded(fragment)
+      assert fragment.extensions() == [Jido.Connect.Dsl.Extension]
+      assert fragment.opts() == [of: Jido.Connect]
+      assert %{extensions: [Jido.Connect.Dsl.Extension]} = fragment.persisted()
+      assert is_map(fragment.spark_dsl_config())
+
+      assert [{_section, Jido.Connect.Dsl.Extension, Jido.Connect.Dsl.Extension}] =
+               fragment.validate_sections()
+    end
+  end
+
+  test "resolves Sheets scopes for read/write operation shapes" do
+    resolver = Jido.Connect.Google.Sheets.ScopeResolver
+
+    assert resolver.required_scopes(
+             %{id: "google.sheets.values.update"},
+             %{},
+             %{scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"]}
+           ) == ["https://www.googleapis.com/auth/spreadsheets"]
+
+    assert resolver.required_scopes(
+             %{action_id: "google.sheets.values.get"},
+             %{},
+             %{scopes: ["https://www.googleapis.com/auth/spreadsheets"]}
+           ) == ["https://www.googleapis.com/auth/spreadsheets"]
+
+    assert resolver.required_scopes(%{}, %{}, %{}) == [
+             "https://www.googleapis.com/auth/spreadsheets.readonly"
            ]
   end
 

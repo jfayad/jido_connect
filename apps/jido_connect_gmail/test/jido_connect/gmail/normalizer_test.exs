@@ -116,6 +116,62 @@ defmodule Jido.Connect.Gmail.NormalizerTest do
     assert :headers in Privacy.message_content_fields()
   end
 
+  test "normalizer public helpers reject malformed payloads safely" do
+    assert {:error, :invalid_profile_payload} = Normalizer.profile(:bad)
+    assert {:error, :invalid_label_payload} = Normalizer.label(:bad)
+    assert {:error, :invalid_message_payload} = Normalizer.message(:bad)
+    assert {:error, :invalid_thread_payload} = Normalizer.thread(:bad)
+    assert {:error, :invalid_draft_payload} = Normalizer.draft(:bad)
+
+    assert {:ok, %Draft{message: nil}} = Normalizer.draft(%{"id" => "draft123"})
+    assert Normalizer.summarize_payload(:bad) == %{}
+    assert Normalizer.normalize_headers(:bad) == []
+
+    assert Normalizer.normalize_headers([
+             %{"name" => "Subject", "value" => "Budget"},
+             %{"name" => "Missing value"},
+             :bad
+           ]) == [%{name: "Subject", value: "Budget"}]
+
+    assert Normalizer.reject_raw_body_keys(%{
+             "raw" => "secret",
+             :data => "secret",
+             "safe" => true
+           }) ==
+             %{"safe" => true}
+  end
+
+  test "struct constructors expose schema defaults" do
+    assert %Profile{metadata: %{}} = Profile.new!(%{email_address: "user@example.com"})
+    assert {:error, _error} = Profile.new(%{})
+
+    assert %Label{color: %{}, metadata: %{}} =
+             Label.new!(%{label_id: "INBOX", name: "INBOX"})
+
+    assert {:error, _error} = Label.new(%{label_id: "INBOX"})
+
+    assert %Message{
+             label_ids: [],
+             headers: [],
+             payload_summary: %{},
+             metadata: %{}
+           } = Message.new!(%{message_id: "msg123"})
+
+    assert {:error, _error} = Message.new(%{})
+
+    assert %Thread{messages: [], metadata: %{}} = Thread.new!(%{thread_id: "thread123"})
+    assert {:error, _error} = Thread.new(%{})
+
+    assert %Draft{metadata: %{}} = Draft.new!(%{draft_id: "draft123"})
+    assert {:error, _error} = Draft.new(%{})
+
+    assert Profile.schema()
+    assert Label.schema()
+    assert Message.schema()
+    assert Thread.schema()
+    assert Draft.schema()
+  end
+
   defp message_payload do
     %{
       "id" => "msg123",
