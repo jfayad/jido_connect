@@ -12,7 +12,7 @@ defmodule Jido.Connect.Google.Sheets.Actions.Write do
       resource :spreadsheet_values
       verb :update
       data_classification :workspace_content
-      label "Update values"
+      label "Update sheet values"
       description "Overwrite values in a Google Sheets A1 range."
       handler Jido.Connect.Google.Sheets.Handlers.Actions.UpdateValues
       effect :write, confirmation: :required_for_ai
@@ -43,7 +43,7 @@ defmodule Jido.Connect.Google.Sheets.Actions.Write do
       resource :spreadsheet_values
       verb :append
       data_classification :workspace_content
-      label "Append values"
+      label "Append sheet values"
       description "Append values after a Google Sheets table range."
       handler Jido.Connect.Google.Sheets.Handlers.Actions.AppendValues
       effect :write, confirmation: :required_for_ai
@@ -75,7 +75,7 @@ defmodule Jido.Connect.Google.Sheets.Actions.Write do
       resource :spreadsheet_values
       verb :clear
       data_classification :workspace_content
-      label "Clear values"
+      label "Clear sheet values"
       description "Clear values from a Google Sheets A1 range."
       handler Jido.Connect.Google.Sheets.Handlers.Actions.ClearValues
       effect :destructive, confirmation: :always

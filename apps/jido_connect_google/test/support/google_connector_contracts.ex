@@ -200,6 +200,33 @@ defmodule Jido.Connect.Google.TestSupport.ConnectorContracts do
     end
   end
 
+  @doc "Asserts every action and trigger has reviewed privacy and risk metadata."
+  def assert_privacy_matrix(provider, action_rows, trigger_rows \\ []) do
+    spec = provider.integration()
+    actions_by_id = Map.new(spec.actions, &{&1.id, &1})
+    triggers_by_id = Map.new(spec.triggers, &{&1.id, &1})
+
+    assert MapSet.new(Map.keys(actions_by_id)) == row_ids(action_rows)
+    assert MapSet.new(Map.keys(triggers_by_id)) == row_ids(trigger_rows)
+
+    for row <- action_rows do
+      action = Map.fetch!(actions_by_id, Map.fetch!(row, :id))
+
+      assert action.data_classification == Map.fetch!(row, :classification)
+      assert action.risk == Map.fetch!(row, :risk)
+      assert action.confirmation == Map.fetch!(row, :confirmation)
+
+      assert_text_includes(action, Map.get(row, :text_includes, []))
+    end
+
+    for row <- trigger_rows do
+      trigger = Map.fetch!(triggers_by_id, Map.fetch!(row, :id))
+
+      assert trigger.data_classification == Map.fetch!(row, :classification)
+      assert_text_includes(trigger, Map.get(row, :text_includes, []))
+    end
+  end
+
   @doc "Asserts Zoi-backed normalized structs expose required defaults and schemas."
   def assert_struct_defaults(module, attrs, expected_defaults) do
     assert {:module, ^module} = Code.ensure_loaded(module)
@@ -236,5 +263,21 @@ defmodule Jido.Connect.Google.TestSupport.ConnectorContracts do
 
   defp assert_known_confirmation(confirmation) do
     assert Taxonomy.known_confirmation?(confirmation)
+  end
+
+  defp row_ids(rows), do: rows |> Enum.map(&Map.fetch!(&1, :id)) |> MapSet.new()
+
+  defp assert_text_includes(_operation, []), do: :ok
+
+  defp assert_text_includes(operation, expected_fragments) do
+    text =
+      [operation.id, operation.label, Map.get(operation, :description)]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" ")
+      |> String.downcase()
+
+    for fragment <- expected_fragments do
+      assert text =~ String.downcase(fragment)
+    end
   end
 end

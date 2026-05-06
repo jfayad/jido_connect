@@ -38,7 +38,7 @@ defmodule Jido.Connect.Google.Sheets.Actions.Read do
       resource :spreadsheet_values
       verb :get
       data_classification :workspace_content
-      label "Get values"
+      label "Get sheet values"
       description "Fetch values from a Google Sheets A1 range."
       handler Jido.Connect.Google.Sheets.Handlers.Actions.GetValues
       effect :read

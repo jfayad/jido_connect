@@ -13,8 +13,8 @@ defmodule Jido.Connect.Google.Drive.Actions.FileContent do
       resource(:file)
       verb(:download)
       data_classification(:workspace_content)
-      label("Export file")
-      description("Export a Google Workspace Drive file to the requested MIME type.")
+      label("Export file content")
+      description("Export Google Workspace Drive file content to the requested MIME type.")
       handler(Jido.Connect.Google.Drive.Handlers.Actions.ExportFile)
       effect(:read)
 
@@ -38,8 +38,8 @@ defmodule Jido.Connect.Google.Drive.Actions.FileContent do
       resource(:file)
       verb(:download)
       data_classification(:workspace_content)
-      label("Download file")
-      description("Download raw bytes for a non-Google-Workspace Drive file.")
+      label("Download file content")
+      description("Download raw content bytes for a non-Google-Workspace Drive file.")
       handler(Jido.Connect.Google.Drive.Handlers.Actions.DownloadFile)
       effect(:read)
 

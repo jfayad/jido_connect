@@ -1,0 +1,42 @@
+defmodule Jido.Connect.Google.Sheets.PrivacyAuditTest do
+  use ExUnit.Case, async: true
+
+  alias Jido.Connect.Google.Sheets
+  alias Jido.Connect.Google.TestSupport.ConnectorContracts
+
+  test "classifies every Sheets action privacy boundary" do
+    ConnectorContracts.assert_privacy_matrix(Sheets, [
+      action("google.sheets.spreadsheet.get", :workspace_metadata, :read, :none,
+        text_includes: ["metadata"]
+      ),
+      action("google.sheets.values.get", :workspace_content, :read, :none,
+        text_includes: ["sheet values", "range"]
+      ),
+      action("google.sheets.values.update", :workspace_content, :write, :required_for_ai,
+        text_includes: ["sheet values"]
+      ),
+      action("google.sheets.values.append", :workspace_content, :write, :required_for_ai,
+        text_includes: ["sheet values"]
+      ),
+      action("google.sheets.values.clear", :workspace_content, :destructive, :always,
+        text_includes: ["sheet values"]
+      ),
+      action("google.sheets.sheet.add", :workspace_metadata, :write, :required_for_ai),
+      action("google.sheets.sheet.delete", :workspace_metadata, :destructive, :always),
+      action("google.sheets.sheet.rename", :workspace_metadata, :write, :required_for_ai),
+      action("google.sheets.batch_update", :workspace_content, :destructive, :always,
+        text_includes: ["batch update"]
+      )
+    ])
+  end
+
+  defp action(id, classification, risk, confirmation, opts \\ []) do
+    %{
+      id: id,
+      classification: classification,
+      risk: risk,
+      confirmation: confirmation,
+      text_includes: Keyword.get(opts, :text_includes, [])
+    }
+  end
+end
