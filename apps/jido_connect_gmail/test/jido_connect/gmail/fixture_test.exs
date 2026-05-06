@@ -36,8 +36,6 @@ defmodule Jido.Connect.Gmail.FixtureTest do
   end
 
   defp fixture!(name) do
-    "../../fixtures/gmail/#{name}"
-    |> Path.expand(__DIR__)
-    |> ConnectorContracts.json_fixture!()
+    ConnectorContracts.google_fixture!(:gmail, name, __DIR__)
   end
 end

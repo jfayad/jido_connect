@@ -5,6 +5,13 @@ defmodule Jido.Connect.Google.TestSupport.ConnectorContracts do
 
   alias Jido.Connect.Taxonomy
 
+  @google_fixture_roots %{
+    gmail: "../../fixtures/gmail",
+    google_calendar: "../../../fixtures/google_calendar",
+    google_drive: "../../../fixtures/google_drive",
+    google_sheets: "../../../fixtures/google_sheets"
+  }
+
   @doc "Asserts the generated Jido action, sensor, manifest, and plugin surface."
   def assert_generated_surface(provider, opts) do
     otp_app = Keyword.fetch!(opts, :otp_app)
@@ -234,6 +241,16 @@ defmodule Jido.Connect.Google.TestSupport.ConnectorContracts do
     |> Jason.decode!()
   end
 
+  @doc "Loads an offline Google fixture while keeping the product and filename explicit at call sites."
+  def google_fixture!(product, name, caller_dir)
+      when is_atom(product) and is_binary(name) and is_binary(caller_dir) do
+    product
+    |> google_fixture_root!()
+    |> Path.join(name)
+    |> Path.expand(caller_dir)
+    |> json_fixture!()
+  end
+
   @doc "Asserts Zoi-backed normalized structs expose required defaults and schemas."
   def assert_struct_defaults(module, attrs, expected_defaults) do
     assert {:module, ^module} = Code.ensure_loaded(module)
@@ -285,6 +302,23 @@ defmodule Jido.Connect.Google.TestSupport.ConnectorContracts do
 
     for fragment <- expected_fragments do
       assert text =~ String.downcase(fragment)
+    end
+  end
+
+  defp google_fixture_root!(product) do
+    case Map.fetch(@google_fixture_roots, product) do
+      {:ok, root} ->
+        root
+
+      :error ->
+        products =
+          @google_fixture_roots
+          |> Map.keys()
+          |> Enum.sort()
+          |> Enum.map_join(", ", &inspect/1)
+
+        raise ArgumentError,
+              "unknown Google fixture product #{inspect(product)}; expected one of: #{products}"
     end
   end
 end

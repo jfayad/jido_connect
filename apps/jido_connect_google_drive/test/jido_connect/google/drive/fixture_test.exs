@@ -29,8 +29,6 @@ defmodule Jido.Connect.Google.Drive.FixtureTest do
   end
 
   defp fixture!(name) do
-    "../../../fixtures/google_drive/#{name}"
-    |> Path.expand(__DIR__)
-    |> ConnectorContracts.json_fixture!()
+    ConnectorContracts.google_fixture!(:google_drive, name, __DIR__)
   end
 end

@@ -38,8 +38,6 @@ defmodule Jido.Connect.Google.Calendar.FixtureTest do
   end
 
   defp fixture!(name) do
-    "../../../fixtures/google_calendar/#{name}"
-    |> Path.expand(__DIR__)
-    |> ConnectorContracts.json_fixture!()
+    ConnectorContracts.google_fixture!(:google_calendar, name, __DIR__)
   end
 end

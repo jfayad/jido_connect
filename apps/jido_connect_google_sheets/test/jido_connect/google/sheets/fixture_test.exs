@@ -31,8 +31,6 @@ defmodule Jido.Connect.Google.Sheets.FixtureTest do
   end
 
   defp fixture!(name) do
-    "../../../fixtures/google_sheets/#{name}"
-    |> Path.expand(__DIR__)
-    |> ConnectorContracts.json_fixture!()
+    ConnectorContracts.google_fixture!(:google_sheets, name, __DIR__)
   end
 end
