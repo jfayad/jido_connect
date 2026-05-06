@@ -1,0 +1,79 @@
+defmodule Jido.Connect.Google.Drive.Actions.Permissions do
+  @moduledoc false
+
+  use Spark.Dsl.Fragment, of: Jido.Connect
+
+  @metadata_scope "https://www.googleapis.com/auth/drive.metadata.readonly"
+  @file_scope "https://www.googleapis.com/auth/drive.file"
+  @permission_types ["user", "group", "domain", "anyone"]
+  @permission_roles ["owner", "organizer", "fileOrganizer", "writer", "commenter", "reader"]
+  @scope_resolver Jido.Connect.Google.Drive.ScopeResolver
+
+  actions do
+    action :list_permissions do
+      id("google.drive.permissions.list")
+      resource(:permission)
+      verb(:list)
+      data_classification(:personal_data)
+      label("List file permissions")
+      description("List Google Drive permissions for a file.")
+      handler(Jido.Connect.Google.Drive.Handlers.Actions.ListPermissions)
+      effect(:read)
+
+      access do
+        auth(:user)
+        scopes([@metadata_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:file_id, :string, required?: true, example: "1abc...")
+        field(:page_size, :integer, default: 100)
+        field(:page_token, :string)
+        field(:fields, :string)
+        field(:supports_all_drives, :boolean, default: false)
+        field(:use_domain_admin_access, :boolean, default: false)
+      end
+
+      output do
+        field(:permissions, {:array, :map})
+        field(:next_page_token, :string)
+      end
+    end
+
+    action :create_permission do
+      id("google.drive.permission.create")
+      resource(:permission)
+      verb(:share)
+      data_classification(:personal_data)
+      label("Create file permission")
+      description("Create a Google Drive permission for a user, group, domain, or anyone.")
+      handler(Jido.Connect.Google.Drive.Handlers.Actions.CreatePermission)
+      effect(:external_write, confirmation: :always)
+
+      access do
+        auth(:user)
+        scopes([@file_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:file_id, :string, required?: true, example: "1abc...")
+        field(:type, :string, required?: true, enum: @permission_types, example: "user")
+        field(:role, :string, required?: true, enum: @permission_roles, example: "reader")
+        field(:email_address, :string)
+        field(:domain, :string)
+        field(:allow_file_discovery, :boolean)
+        field(:expiration_time, :string)
+        field(:send_notification_email, :boolean)
+        field(:email_message, :string)
+        field(:transfer_ownership, :boolean, default: false)
+        field(:fields, :string)
+        field(:supports_all_drives, :boolean, default: false)
+        field(:use_domain_admin_access, :boolean, default: false)
+      end
+
+      output do
+        field(:permission, :map)
+      end
+    end
+  end
+end

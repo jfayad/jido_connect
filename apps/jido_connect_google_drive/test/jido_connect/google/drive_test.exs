@@ -133,6 +133,50 @@ defmodule Jido.Connect.Google.DriveTest do
     def delete_file(%{file_id: "file123", supports_all_drives: false}, "token") do
       {:ok, %{file_id: "file123", deleted?: true}}
     end
+
+    def list_permissions(
+          %{
+            file_id: "file123",
+            page_size: 100,
+            supports_all_drives: false,
+            use_domain_admin_access: false
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         permissions: [
+           Drive.Permission.new!(%{
+             permission_id: "perm123",
+             type: "user",
+             role: "reader",
+             email_address: "reader@example.com"
+           })
+         ],
+         next_page_token: "next-perm"
+       }}
+    end
+
+    def create_permission(
+          %{
+            file_id: "file123",
+            type: "user",
+            role: "reader",
+            email_address: "reader@example.com",
+            transfer_ownership: false,
+            supports_all_drives: false,
+            use_domain_admin_access: false
+          },
+          "token"
+        ) do
+      {:ok,
+       Drive.Permission.new!(%{
+         permission_id: "perm456",
+         type: "user",
+         role: "reader",
+         email_address: "reader@example.com"
+       })}
+    end
   end
 
   test "declares Google Drive provider metadata" do
@@ -160,12 +204,25 @@ defmodule Jido.Connect.Google.DriveTest do
              "google.drive.file.update",
              "google.drive.file.export",
              "google.drive.file.download",
-             "google.drive.file.delete"
+             "google.drive.file.delete",
+             "google.drive.permissions.list",
+             "google.drive.permission.create"
            ]
 
     delete_action = Enum.find(spec.actions, &(&1.id == "google.drive.file.delete"))
     assert delete_action.risk == :destructive
     assert delete_action.confirmation == :always
+
+    create_permission = Enum.find(spec.actions, &(&1.id == "google.drive.permission.create"))
+    assert create_permission.risk == :external_write
+    assert create_permission.confirmation == :always
+
+    assert Enum.find(create_permission.input, &(&1.name == :type)).enum == [
+             "user",
+             "group",
+             "domain",
+             "anyone"
+           ]
   end
 
   test "invokes list files through injected client and lease" do
@@ -404,6 +461,73 @@ defmodule Jido.Connect.Google.DriveTest do
                Drive.integration(),
                "google.drive.file.update",
                %{file_id: "file123", name: "Renamed.pdf"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes list permissions through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              permissions: [
+                %{
+                  permission_id: "perm123",
+                  type: "user",
+                  role: "reader",
+                  email_address: "reader@example.com"
+                }
+              ],
+              next_page_token: "next-perm"
+            }} =
+             Connect.invoke(
+               Drive.integration(),
+               "google.drive.permissions.list",
+               %{file_id: "file123"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes create permission through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: write_scopes())
+
+    assert {:ok,
+            %{
+              permission: %{
+                permission_id: "perm456",
+                type: "user",
+                role: "reader",
+                email_address: "reader@example.com"
+              }
+            }} =
+             Connect.invoke(
+               Drive.integration(),
+               "google.drive.permission.create",
+               %{
+                 file_id: "file123",
+                 type: "user",
+                 role: "reader",
+                 email_address: "reader@example.com"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "create permission validates role and target input" do
+    {context, lease} = context_and_lease(scopes: write_scopes())
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_permission,
+              details: %{field: :email_address}
+            }} =
+             Connect.invoke(
+               Drive.integration(),
+               "google.drive.permission.create",
+               %{file_id: "file123", type: "user", role: "reader"},
                context: context,
                credential_lease: lease
              )

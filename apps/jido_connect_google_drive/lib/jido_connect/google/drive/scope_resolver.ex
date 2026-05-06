@@ -14,7 +14,8 @@ defmodule Jido.Connect.Google.Drive.ScopeResolver do
     "google.drive.folder.create",
     "google.drive.file.copy",
     "google.drive.file.update",
-    "google.drive.file.delete"
+    "google.drive.file.delete",
+    "google.drive.permission.create"
   ]
   @content_actions [
     "google.drive.file.export",

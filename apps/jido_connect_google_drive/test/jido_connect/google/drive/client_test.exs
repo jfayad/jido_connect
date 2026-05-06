@@ -1,7 +1,7 @@
 defmodule Jido.Connect.Google.Drive.ClientTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Connect.Google.Drive.{Client, File, Folder}
+  alias Jido.Connect.Google.Drive.{Client, File, Folder, Permission}
 
   setup {Req.Test, :verify_on_exit!}
 
@@ -251,5 +251,82 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
 
     assert {:ok, %{file_id: "file123", deleted?: true}} =
              Client.delete_file(%{file_id: "file123", supports_all_drives: true}, "token")
+  end
+
+  test "lists file permissions" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/v3/files/file123/permissions"
+      assert conn.query_params["pageSize"] == "50"
+      assert conn.query_params["supportsAllDrives"] == "true"
+      assert conn.query_params["useDomainAdminAccess"] == "false"
+      assert conn.query_params["fields"] =~ "permissions(id,type,role"
+
+      Req.Test.json(conn, %{
+        "permissions" => [
+          %{
+            "id" => "perm123",
+            "type" => "user",
+            "role" => "reader",
+            "emailAddress" => "reader@example.com"
+          }
+        ],
+        "nextPageToken" => "next-perm"
+      })
+    end)
+
+    assert {:ok, %{permissions: [%Permission{} = permission], next_page_token: "next-perm"}} =
+             Client.list_permissions(
+               %{
+                 file_id: "file123",
+                 page_size: 50,
+                 supports_all_drives: true,
+                 use_domain_admin_access: false
+               },
+               "token"
+             )
+
+    assert permission.permission_id == "perm123"
+    assert permission.email_address == "reader@example.com"
+  end
+
+  test "creates file permissions" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/v3/files/file123/permissions"
+      assert conn.query_params["sendNotificationEmail"] == "false"
+      assert conn.query_params["transferOwnership"] == "false"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "type" => "user",
+               "role" => "reader",
+               "emailAddress" => "reader@example.com"
+             }
+
+      Req.Test.json(conn, %{
+        "id" => "perm456",
+        "type" => "user",
+        "role" => "reader",
+        "emailAddress" => "reader@example.com"
+      })
+    end)
+
+    assert {:ok, %Permission{} = permission} =
+             Client.create_permission(
+               %{
+                 file_id: "file123",
+                 type: "user",
+                 role: "reader",
+                 email_address: "reader@example.com",
+                 send_notification_email: false,
+                 transfer_ownership: false
+               },
+               "token"
+             )
+
+    assert permission.permission_id == "perm456"
+    assert permission.role == "reader"
   end
 end

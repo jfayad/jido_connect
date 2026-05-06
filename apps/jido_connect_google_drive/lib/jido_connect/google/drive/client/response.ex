@@ -62,6 +62,40 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
   def handle_file_delete_response(response, _params),
     do: Transport.handle_error_response(response)
 
+  def handle_permission_list_response({:ok, %{status: status, body: body}})
+      when status in 200..299 and is_map(body) do
+    permissions =
+      body
+      |> Data.get("permissions", [])
+      |> Enum.map(&permission!/1)
+
+    {:ok,
+     %{
+       permissions: permissions,
+       next_page_token: Data.get(body, "nextPageToken")
+     }
+     |> Data.compact()}
+  end
+
+  def handle_permission_list_response({:ok, %{status: status, body: body}})
+      when status in 200..299 do
+    Transport.invalid_success_response("Google Drive permission list response was invalid", body)
+  end
+
+  def handle_permission_list_response(response), do: Transport.handle_error_response(response)
+
+  def handle_permission_response({:ok, %{status: status, body: body}})
+      when status in 200..299 and is_map(body) do
+    Normalizer.permission(body)
+  end
+
+  def handle_permission_response({:ok, %{status: status, body: body}})
+      when status in 200..299 do
+    Transport.invalid_success_response("Google Drive permission response was invalid", body)
+  end
+
+  def handle_permission_response(response), do: Transport.handle_error_response(response)
+
   def file_to_folder({:ok, file}) do
     %{
       "id" => file.file_id,
@@ -82,6 +116,13 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
   defp file!(payload) do
     case Normalizer.file(payload) do
       {:ok, file} -> file
+      {:error, error} -> raise error
+    end
+  end
+
+  defp permission!(payload) do
+    case Normalizer.permission(payload) do
+      {:ok, permission} -> permission
       {:error, error} -> raise error
     end
   end

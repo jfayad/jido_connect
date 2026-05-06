@@ -23,9 +23,23 @@ defmodule Jido.Connect.Google.Drive.Client.Params do
     "starred",
     "driveId"
   ]
+  @default_permission_fields [
+    "id",
+    "type",
+    "role",
+    "emailAddress",
+    "domain",
+    "displayName",
+    "allowFileDiscovery",
+    "deleted",
+    "expirationTime"
+  ]
 
   @doc "Default file metadata fields used by read actions."
   def default_file_fields, do: Enum.join(@default_file_fields, ",")
+
+  @doc "Default permission metadata fields used by permission actions."
+  def default_permission_fields, do: Enum.join(@default_permission_fields, ",")
 
   @doc "Builds query params for `files.list`."
   def list_files_params(params) do
@@ -112,5 +126,46 @@ defmodule Jido.Connect.Google.Drive.Client.Params do
     |> Data.compact()
   end
 
+  @doc "Builds query params for `permissions.list`."
+  def list_permissions_params(params) do
+    %{
+      pageSize: Data.get(params, :page_size, 100),
+      pageToken: Data.get(params, :page_token),
+      fields: Data.get(params, :fields, permission_list_fields()),
+      supportsAllDrives: Data.get(params, :supports_all_drives),
+      useDomainAdminAccess: Data.get(params, :use_domain_admin_access)
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds query params for `permissions.create`."
+  def create_permission_params(params) do
+    %{
+      fields: Data.get(params, :fields, default_permission_fields()),
+      sendNotificationEmail: Data.get(params, :send_notification_email),
+      emailMessage: Data.get(params, :email_message),
+      transferOwnership: Data.get(params, :transfer_ownership),
+      supportsAllDrives: Data.get(params, :supports_all_drives),
+      useDomainAdminAccess: Data.get(params, :use_domain_admin_access)
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds a JSON body for permission create requests."
+  def permission_body(params) do
+    %{
+      type: Data.get(params, :type),
+      role: Data.get(params, :role),
+      emailAddress: Data.get(params, :email_address),
+      domain: Data.get(params, :domain),
+      allowFileDiscovery: Data.get(params, :allow_file_discovery),
+      expirationTime: Data.get(params, :expiration_time)
+    }
+    |> Data.compact()
+  end
+
   defp list_fields, do: "nextPageToken,files(#{default_file_fields()})"
+
+  defp permission_list_fields,
+    do: "nextPageToken,permissions(#{default_permission_fields()})"
 end

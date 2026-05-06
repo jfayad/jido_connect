@@ -7,7 +7,8 @@ defmodule Jido.Connect.Google.Drive do
     fragments: [
       Jido.Connect.Google.Drive.Actions.Read,
       Jido.Connect.Google.Drive.Actions.Write,
-      Jido.Connect.Google.Drive.Actions.FileContent
+      Jido.Connect.Google.Drive.Actions.FileContent,
+      Jido.Connect.Google.Drive.Actions.Permissions
     ]
 
   integration do
