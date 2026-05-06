@@ -74,6 +74,18 @@ defmodule Jido.Connect.Google.Calendar.Client.Response do
 
   def handle_event_response(response, _params), do: Transport.handle_error_response(response)
 
+  def handle_event_delete_response({:ok, %{status: status}}, params) when status in 200..299 do
+    {:ok,
+     %{
+       calendar_id: Data.get(params, :calendar_id),
+       event_id: Data.get(params, :event_id),
+       deleted?: true
+     }}
+  end
+
+  def handle_event_delete_response(response, _params),
+    do: Transport.handle_error_response(response)
+
   defp normalize_one(body, normalizer, message) do
     case normalizer.(body) do
       {:ok, item} -> {:ok, item}

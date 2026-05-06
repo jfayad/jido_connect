@@ -148,6 +148,120 @@ defmodule Jido.Connect.Google.Calendar.ClientTest do
     assert event.calendar_id == "primary"
   end
 
+  test "creates events" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/v3/calendars/primary/events"
+      assert conn.query_params["sendUpdates"] == "all"
+      assert conn.query_params["conferenceDataVersion"] == "1"
+      assert conn.query_params["fields"] =~ "id,iCalUID,status"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "summary" => "Planning",
+               "start" => %{
+                 "dateTime" => "2026-05-06T09:00:00-05:00",
+                 "timeZone" => "America/Chicago"
+               },
+               "end" => %{
+                 "dateTime" => "2026-05-06T10:00:00-05:00",
+                 "timeZone" => "America/Chicago"
+               },
+               "attendees" => [
+                 %{
+                   "email" => "guest@example.com",
+                   "responseStatus" => "accepted"
+                 }
+               ],
+               "recurrence" => ["RRULE:FREQ=DAILY;COUNT=2"]
+             }
+
+      Req.Test.json(conn, %{
+        "id" => "created123",
+        "status" => "confirmed",
+        "summary" => "Planning",
+        "start" => %{"dateTime" => "2026-05-06T09:00:00-05:00"},
+        "end" => %{"dateTime" => "2026-05-06T10:00:00-05:00"}
+      })
+    end)
+
+    assert {:ok, %Event{} = event} =
+             Client.create_event(
+               %{
+                 calendar_id: "primary",
+                 summary: "Planning",
+                 start: "2026-05-06T09:00:00-05:00",
+                 end: "2026-05-06T10:00:00-05:00",
+                 time_zone: "America/Chicago",
+                 attendees: [
+                   %{email: "guest@example.com", response_status: "accepted"}
+                 ],
+                 recurrence: ["RRULE:FREQ=DAILY;COUNT=2"],
+                 send_updates: "all",
+                 conference_data_version: 1
+               },
+               "token"
+             )
+
+    assert event.event_id == "created123"
+    assert event.calendar_id == "primary"
+  end
+
+  test "updates events" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "PATCH"
+      assert conn.request_path == "/v3/calendars/primary/events/event123"
+      assert conn.query_params["sendUpdates"] == "externalOnly"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "summary" => "Updated",
+               "transparency" => "transparent"
+             }
+
+      Req.Test.json(conn, %{
+        "id" => "event123",
+        "status" => "confirmed",
+        "summary" => "Updated",
+        "start" => %{"dateTime" => "2026-05-06T09:00:00-05:00"},
+        "end" => %{"dateTime" => "2026-05-06T10:00:00-05:00"}
+      })
+    end)
+
+    assert {:ok, %Event{} = event} =
+             Client.update_event(
+               %{
+                 calendar_id: "primary",
+                 event_id: "event123",
+                 summary: "Updated",
+                 transparency: "transparent",
+                 send_updates: "externalOnly"
+               },
+               "token"
+             )
+
+    assert event.event_id == "event123"
+    assert event.summary == "Updated"
+  end
+
+  test "deletes events" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "DELETE"
+      assert conn.request_path == "/v3/calendars/primary/events/event123"
+      assert conn.query_params["sendUpdates"] == "all"
+
+      Plug.Conn.resp(conn, 204, "")
+    end)
+
+    assert {:ok, %{calendar_id: "primary", event_id: "event123", deleted?: true}} =
+             Client.delete_event(
+               %{calendar_id: "primary", event_id: "event123", send_updates: "all"},
+               "token"
+             )
+  end
+
   test "returns provider errors for malformed event responses" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"

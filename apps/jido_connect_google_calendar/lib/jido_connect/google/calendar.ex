@@ -5,7 +5,8 @@ defmodule Jido.Connect.Google.Calendar do
 
   use Jido.Connect,
     fragments: [
-      Jido.Connect.Google.Calendar.Actions.Read
+      Jido.Connect.Google.Calendar.Actions.Read,
+      Jido.Connect.Google.Calendar.Actions.Write
     ]
 
   integration do

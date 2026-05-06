@@ -59,6 +59,58 @@ defmodule Jido.Connect.Google.CalendarTest do
          end: "2026-05-06T10:00:00-05:00"
        })}
     end
+
+    def create_event(
+          %{
+            calendar_id: "primary",
+            summary: "Planning",
+            start: "2026-05-06T09:00:00-05:00",
+            end: "2026-05-06T10:00:00-05:00",
+            all_day: false,
+            attendees: [
+              %{email: "guest@example.com", response_status: "accepted"}
+            ],
+            recurrence: ["RRULE:FREQ=DAILY;COUNT=2"]
+          },
+          "token"
+        ) do
+      {:ok,
+       Calendar.Event.new!(%{
+         event_id: "created123",
+         calendar_id: "primary",
+         summary: "Planning",
+         start: "2026-05-06T09:00:00-05:00",
+         end: "2026-05-06T10:00:00-05:00",
+         attendees: [
+           Calendar.Attendee.new!(%{
+             email: "guest@example.com",
+             response_status: "accepted"
+           })
+         ],
+         recurrence: ["RRULE:FREQ=DAILY;COUNT=2"]
+       })}
+    end
+
+    def update_event(
+          %{calendar_id: "primary", event_id: "event123", summary: "Updated"},
+          "token"
+        ) do
+      {:ok,
+       Calendar.Event.new!(%{
+         event_id: "event123",
+         calendar_id: "primary",
+         summary: "Updated",
+         start: "2026-05-06T09:00:00-05:00",
+         end: "2026-05-06T10:00:00-05:00"
+       })}
+    end
+
+    def delete_event(
+          %{calendar_id: "primary", event_id: "event123", send_updates: "all"},
+          "token"
+        ) do
+      {:ok, %{calendar_id: "primary", event_id: "event123", deleted?: true}}
+    end
   end
 
   test "declares Google Calendar provider metadata" do
@@ -73,7 +125,10 @@ defmodule Jido.Connect.Google.CalendarTest do
     assert Enum.map(spec.actions, & &1.id) == [
              "google.calendar.calendar.list",
              "google.calendar.event.list",
-             "google.calendar.event.get"
+             "google.calendar.event.get",
+             "google.calendar.event.create",
+             "google.calendar.event.update",
+             "google.calendar.event.delete"
            ]
 
     assert spec.triggers == []
@@ -91,6 +146,10 @@ defmodule Jido.Connect.Google.CalendarTest do
 
     assert Enum.find(spec.actions, &(&1.id == "google.calendar.calendar.list")).scope_resolver ==
              Jido.Connect.Google.Calendar.ScopeResolver
+
+    delete_action = Enum.find(spec.actions, &(&1.id == "google.calendar.event.delete"))
+    assert delete_action.risk == :destructive
+    assert delete_action.confirmation == :always
   end
 
   test "invokes list calendars through injected client and lease" do
@@ -238,12 +297,164 @@ defmodule Jido.Connect.Google.CalendarTest do
              )
   end
 
+  test "invokes create event through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: event_write_scopes())
+
+    assert {:ok,
+            %{
+              event: %{
+                event_id: "created123",
+                calendar_id: "primary",
+                summary: "Planning",
+                attendees: [%{email: "guest@example.com"}],
+                recurrence: ["RRULE:FREQ=DAILY;COUNT=2"]
+              }
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.event.create",
+               %{
+                 calendar_id: "primary",
+                 summary: "Planning",
+                 start: "2026-05-06T09:00:00-05:00",
+                 end: "2026-05-06T10:00:00-05:00",
+                 attendees: [
+                   %{email: " guest@example.com ", response_status: "accepted"}
+                 ],
+                 recurrence: [" RRULE:FREQ=DAILY;COUNT=2 "]
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes update event through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: event_write_scopes())
+
+    assert {:ok, %{event: %{event_id: "event123", summary: "Updated"}}} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.event.update",
+               %{calendar_id: "primary", event_id: "event123", summary: "Updated"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes delete event through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: event_write_scopes())
+
+    assert {:ok, %{result: %{calendar_id: "primary", event_id: "event123", deleted?: true}}} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.event.delete",
+               %{calendar_id: "primary", event_id: "event123", send_updates: "all"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "event write actions require Calendar event write scope" do
+    {context, lease} = context_and_lease(scopes: event_read_scopes())
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["https://www.googleapis.com/auth/calendar.events"]
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.event.create",
+               %{
+                 calendar_id: "primary",
+                 start: "2026-05-06T09:00:00-05:00",
+                 end: "2026-05-06T10:00:00-05:00"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "create event validates time ranges" do
+    {context, lease} = context_and_lease(scopes: event_write_scopes())
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_event_time,
+              details: %{field: :end}
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.event.create",
+               %{
+                 calendar_id: "primary",
+                 start: "2026-05-06T10:00:00-05:00",
+                 end: "2026-05-06T09:00:00-05:00"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "create event validates attendees" do
+    {context, lease} = context_and_lease(scopes: event_write_scopes())
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_event_attendee,
+              details: %{field: :email}
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.event.create",
+               %{
+                 calendar_id: "primary",
+                 start: "2026-05-06T09:00:00-05:00",
+                 end: "2026-05-06T10:00:00-05:00",
+                 attendees: [%{display_name: "Missing email"}]
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "create event validates recurrence lines" do
+    {context, lease} = context_and_lease(scopes: event_write_scopes())
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_event_recurrence,
+              details: %{field: :recurrence}
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.event.create",
+               %{
+                 calendar_id: "primary",
+                 start: "2026-05-06T09:00:00-05:00",
+                 end: "2026-05-06T10:00:00-05:00",
+                 recurrence: ["FREQ=DAILY"]
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   defp event_read_scopes do
     [
       "openid",
       "email",
       "profile",
       "https://www.googleapis.com/auth/calendar.events.readonly"
+    ]
+  end
+
+  defp event_write_scopes do
+    [
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/calendar.events"
     ]
   end
 

@@ -105,9 +105,115 @@ defmodule Jido.Connect.Google.Calendar.Client.Params do
     |> Data.compact()
   end
 
+  @doc "Builds query params for `events.insert` and `events.patch`."
+  def event_mutation_params(params) do
+    %{
+      fields: Data.get(params, :fields, default_event_fields()),
+      conferenceDataVersion: Data.get(params, :conference_data_version),
+      maxAttendees: Data.get(params, :max_attendees),
+      sendUpdates: Data.get(params, :send_updates),
+      supportsAttachments: Data.get(params, :supports_attachments)
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds query params for `events.delete`."
+  def delete_event_params(params) do
+    %{
+      sendUpdates: Data.get(params, :send_updates)
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds a Google Calendar event body for create requests."
+  def event_create_body(params), do: event_body(params, include_id?: true)
+
+  @doc "Builds a Google Calendar event body for patch requests."
+  def event_update_body(params), do: event_body(params, include_id?: false)
+
   defp calendar_list_fields,
     do: "nextPageToken,nextSyncToken,items(#{default_calendar_fields()})"
 
   defp event_list_fields,
     do: "nextPageToken,nextSyncToken,items(#{default_event_fields()})"
+
+  defp event_body(params, opts) do
+    base =
+      %{
+        summary: Data.get(params, :summary),
+        description: Data.get(params, :description),
+        location: Data.get(params, :location),
+        colorId: Data.get(params, :color_id),
+        start: event_time_body(params, :start),
+        end: event_time_body(params, :end),
+        attendees: event_attendees_body(params),
+        recurrence: Data.get(params, :recurrence),
+        reminders: Data.get(params, :reminders),
+        conferenceData: Data.get(params, :conference_data),
+        attachments: Data.get(params, :attachments),
+        extendedProperties: Data.get(params, :extended_properties),
+        transparency: Data.get(params, :transparency),
+        visibility: Data.get(params, :visibility),
+        guestsCanInviteOthers: Data.get(params, :guests_can_invite_others),
+        guestsCanModify: Data.get(params, :guests_can_modify),
+        guestsCanSeeOtherGuests: Data.get(params, :guests_can_see_other_guests)
+      }
+      |> Data.compact()
+
+    if Keyword.get(opts, :include_id?) do
+      base
+      |> Map.put(:id, Data.get(params, :event_id))
+      |> Data.compact()
+    else
+      base
+    end
+  end
+
+  defp event_time_body(params, field) do
+    case Data.get(params, field) do
+      value when is_binary(value) ->
+        if Data.get(params, :all_day, false) do
+          %{date: value}
+        else
+          %{
+            dateTime: value,
+            timeZone: time_zone(params, field)
+          }
+          |> Data.compact()
+        end
+
+      _missing ->
+        nil
+    end
+  end
+
+  defp event_attendees_body(params) do
+    case Data.get(params, :attendees) do
+      attendees when is_list(attendees) ->
+        Enum.map(attendees, &event_attendee_body/1)
+
+      _missing ->
+        nil
+    end
+  end
+
+  defp event_attendee_body(attendee) do
+    %{
+      email: Data.get(attendee, :email),
+      displayName: Data.get(attendee, :display_name),
+      optional: Data.get(attendee, :optional),
+      responseStatus: Data.get(attendee, :response_status),
+      comment: Data.get(attendee, :comment),
+      additionalGuests: Data.get(attendee, :additional_guests)
+    }
+    |> Data.compact()
+  end
+
+  defp time_zone(params, :start) do
+    Data.get(params, :start_time_zone) || Data.get(params, :time_zone)
+  end
+
+  defp time_zone(params, :end) do
+    Data.get(params, :end_time_zone) || Data.get(params, :time_zone)
+  end
 end

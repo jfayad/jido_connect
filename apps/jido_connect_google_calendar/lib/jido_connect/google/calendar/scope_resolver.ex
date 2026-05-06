@@ -12,6 +12,11 @@ defmodule Jido.Connect.Google.Calendar.ScopeResolver do
   @events_readonly_scope "https://www.googleapis.com/auth/calendar.events.readonly"
   @events_scope "https://www.googleapis.com/auth/calendar.events"
   @calendar_list_actions ["google.calendar.calendar.list"]
+  @write_actions [
+    "google.calendar.event.create",
+    "google.calendar.event.update",
+    "google.calendar.event.delete"
+  ]
 
   def required_scopes(operation, _input, connection) do
     operation
@@ -32,6 +37,20 @@ defmodule Jido.Connect.Google.Calendar.ScopeResolver do
   defp required_for_operation(operation_id, _connection)
        when operation_id in @calendar_list_actions do
     [@calendar_list_scope]
+  end
+
+  defp required_for_operation(operation_id, %{scopes: scopes})
+       when operation_id in @write_actions and is_list(scopes) do
+    cond do
+      @calendar_scope in scopes -> [@calendar_scope]
+      @events_scope in scopes -> [@events_scope]
+      true -> [@events_scope]
+    end
+  end
+
+  defp required_for_operation(operation_id, _connection)
+       when operation_id in @write_actions do
+    [@events_scope]
   end
 
   defp required_for_operation(_operation_id, %{scopes: scopes}) when is_list(scopes) do
