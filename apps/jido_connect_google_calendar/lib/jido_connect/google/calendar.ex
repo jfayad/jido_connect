@@ -3,7 +3,10 @@ defmodule Jido.Connect.Google.Calendar do
   Google Calendar integration authored with the `Jido.Connect` Spark DSL.
   """
 
-  use Jido.Connect
+  use Jido.Connect,
+    fragments: [
+      Jido.Connect.Google.Calendar.Actions.Read
+    ]
 
   integration do
     id(:google_calendar)

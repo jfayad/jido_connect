@@ -24,6 +24,7 @@ defmodule Jido.Connect.Google.Scopes do
       "https://www.googleapis.com/auth/drive.readonly"
     ],
     calendar: [
+      "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
       "https://www.googleapis.com/auth/calendar.freebusy",
       "https://www.googleapis.com/auth/calendar.events.readonly",
       "https://www.googleapis.com/auth/calendar.events"
