@@ -2,6 +2,7 @@ defmodule Jido.Connect.Gmail.Handlers.Triggers.MessageReceivedPoller do
   @moduledoc false
 
   alias Jido.Connect.Error
+  alias Jido.Connect.Google.Checkpoint
   alias Jido.Connect.Gmail.Client
 
   def poll(config, %{credentials: credentials, checkpoint: checkpoint}) do
@@ -33,7 +34,17 @@ defmodule Jido.Connect.Gmail.Handlers.Triggers.MessageReceivedPoller do
       |> Map.put(:start_history_id, checkpoint)
       |> Map.put(:history_types, ["messageAdded"])
 
-    fetch_history_pages(client, params, access_token, [], nil, MapSet.new())
+    case fetch_history_pages(client, params, access_token, [], nil, MapSet.new()) do
+      {:error, %Error.ProviderError{} = error} ->
+        if Checkpoint.expired_provider_error?(error) do
+          Checkpoint.expired("Gmail history ID", checkpoint, error)
+        else
+          {:error, error}
+        end
+
+      result ->
+        result
+    end
   end
 
   defp fetch_history_pages(client, params, access_token, signals, latest_history_id, seen) do
@@ -130,20 +141,14 @@ defmodule Jido.Connect.Gmail.Handlers.Triggers.MessageReceivedPoller do
   defp fetch_client(_credentials), do: {:ok, Client}
 
   defp invalid_missing_history_id do
-    {:error,
-     Error.provider("Gmail profile response was missing historyId",
-       provider: :google,
-       reason: :invalid_response,
-       details: %{field: :history_id}
-     )}
+    Checkpoint.invalid_response("Gmail profile response was missing historyId", %{
+      field: :history_id
+    })
   end
 
   defp invalid_repeated_page_token(page_token) do
-    {:error,
-     Error.provider("Gmail history response repeated nextPageToken",
-       provider: :google,
-       reason: :invalid_response,
-       details: %{next_page_token: page_token}
-     )}
+    Checkpoint.invalid_response("Gmail history response repeated nextPageToken", %{
+      next_page_token: page_token
+    })
   end
 end

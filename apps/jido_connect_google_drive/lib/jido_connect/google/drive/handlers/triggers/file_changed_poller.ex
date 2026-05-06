@@ -2,6 +2,7 @@ defmodule Jido.Connect.Google.Drive.Handlers.Triggers.FileChangedPoller do
   @moduledoc false
 
   alias Jido.Connect.Error
+  alias Jido.Connect.Google.Checkpoint
   alias Jido.Connect.Google.Drive.Client
 
   def poll(config, %{credentials: credentials, checkpoint: checkpoint}) do
@@ -25,7 +26,17 @@ defmodule Jido.Connect.Google.Drive.Handlers.Triggers.FileChangedPoller do
   defp poll_changes(client, config, checkpoint, access_token) do
     params = Map.put(config, :page_token, checkpoint)
 
-    fetch_change_pages(client, params, access_token, [], nil, MapSet.new([checkpoint]))
+    case fetch_change_pages(client, params, access_token, [], nil, MapSet.new([checkpoint])) do
+      {:error, %Error.ProviderError{} = error} ->
+        if Checkpoint.expired_provider_error?(error) do
+          Checkpoint.expired("Google Drive change token", checkpoint, error)
+        else
+          {:error, error}
+        end
+
+      result ->
+        result
+    end
   end
 
   defp fetch_change_pages(client, params, access_token, signals, latest_start_page_token, seen) do
@@ -103,12 +114,9 @@ defmodule Jido.Connect.Google.Drive.Handlers.Triggers.FileChangedPoller do
   end
 
   defp invalid_repeated_page_token(page_token) do
-    {:error,
-     Error.provider("Google Drive change list response repeated nextPageToken",
-       provider: :google,
-       reason: :invalid_response,
-       details: %{next_page_token: page_token}
-     )}
+    Checkpoint.invalid_response("Google Drive change list response repeated nextPageToken", %{
+      next_page_token: page_token
+    })
   end
 
   defp public_map(struct) when is_struct(struct), do: struct |> Map.from_struct() |> public_map()

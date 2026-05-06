@@ -183,6 +183,35 @@ defmodule Jido.Connect.Google.CalendarTest do
     def list_events(
           %{
             calendar_id: "primary",
+            sync_token: "loop-sync",
+            page_size: 250,
+            single_events: true,
+            show_deleted: true,
+            show_hidden_invitations: false
+          },
+          "token"
+        ) do
+      {:ok, %{events: [], next_page_token: "loop-page"}}
+    end
+
+    def list_events(
+          %{
+            calendar_id: "primary",
+            page_token: "loop-page",
+            sync_token: "loop-sync",
+            page_size: 250,
+            single_events: true,
+            show_deleted: true,
+            show_hidden_invitations: false
+          },
+          "token"
+        ) do
+      {:ok, %{events: [], next_page_token: "loop-page"}}
+    end
+
+    def list_events(
+          %{
+            calendar_id: "primary",
             page_size: 250,
             single_events: true,
             show_deleted: true,
@@ -1065,6 +1094,31 @@ defmodule Jido.Connect.Google.CalendarTest do
                context: context,
                credential_lease: lease,
                checkpoint: "expired-sync"
+             )
+  end
+
+  test "event change poll surfaces repeated page tokens with reset guidance" do
+    {context, lease} = context_and_lease(scopes: event_read_scopes())
+
+    assert {:error,
+            %Connect.Error.ProviderError{
+              provider: :google,
+              reason: :invalid_response,
+              details: %{
+                next_page_token: "loop-page",
+                checkpoint_reset: %{
+                  action: :clear_checkpoint,
+                  behavior: :initialize_without_replay
+                }
+              }
+            }} =
+             Connect.poll(
+               Calendar.integration(),
+               "google.calendar.event.changed",
+               %{calendar_id: "primary"},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "loop-sync"
              )
   end
 

@@ -2,6 +2,7 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Triggers.EventChangedPoller do
   @moduledoc false
 
   alias Jido.Connect.Error
+  alias Jido.Connect.Google.Checkpoint
   alias Jido.Connect.Google.Calendar.Client
 
   def poll(config, %{credentials: credentials, checkpoint: checkpoint}) do
@@ -38,8 +39,12 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Triggers.EventChangedPoller do
     case fetch_event_pages(client, params, access_token, [], nil, MapSet.new([checkpoint]),
            emit?: true
          ) do
-      {:error, %Error.ProviderError{status: 410} = error} ->
-        expired_sync_token(checkpoint, error)
+      {:error, %Error.ProviderError{} = error} ->
+        if Checkpoint.expired_provider_error?(error) do
+          Checkpoint.expired("Google Calendar event sync token", checkpoint, error)
+        else
+          {:error, error}
+        end
 
       result ->
         result
@@ -132,34 +137,13 @@ defmodule Jido.Connect.Google.Calendar.Handlers.Triggers.EventChangedPoller do
   end
 
   defp invalid_missing_sync_token do
-    {:error,
-     Error.provider("Google Calendar event list response omitted nextSyncToken",
-       provider: :google,
-       reason: :invalid_response
-     )}
+    Checkpoint.invalid_response("Google Calendar event list response omitted nextSyncToken")
   end
 
   defp invalid_repeated_page_token(page_token) do
-    {:error,
-     Error.provider("Google Calendar event list response repeated nextPageToken",
-       provider: :google,
-       reason: :invalid_response,
-       details: %{next_page_token: page_token}
-     )}
-  end
-
-  defp expired_sync_token(checkpoint, error) do
-    {:error,
-     Error.provider("Google Calendar event sync token expired",
-       provider: :google,
-       reason: :checkpoint_expired,
-       status: 410,
-       details: %{
-         checkpoint: checkpoint,
-         provider_reason: error.reason,
-         provider_details: error.details
-       }
-     )}
+    Checkpoint.invalid_response("Google Calendar event list response repeated nextPageToken", %{
+      next_page_token: page_token
+    })
   end
 
   defp public_map(struct) when is_struct(struct), do: struct |> Map.from_struct() |> public_map()

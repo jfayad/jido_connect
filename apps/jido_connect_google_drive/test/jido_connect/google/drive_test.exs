@@ -316,6 +316,57 @@ defmodule Jido.Connect.Google.DriveTest do
          new_start_page_token: "paged-next-token"
        }}
     end
+
+    def list_changes(
+          %{
+            page_token: "expired-token",
+            page_size: 100,
+            spaces: "drive",
+            include_items_from_all_drives: false,
+            include_removed: true,
+            restrict_to_my_drive: false,
+            supports_all_drives: false
+          },
+          "token"
+        ) do
+      {:error,
+       Connect.Error.provider("Google API request failed",
+         provider: :google,
+         reason: :http_error,
+         status: 410,
+         details: %{message: "Start page token is no longer valid"}
+       )}
+    end
+
+    def list_changes(
+          %{
+            page_token: "loop-token",
+            page_size: 100,
+            spaces: "drive",
+            include_items_from_all_drives: false,
+            include_removed: true,
+            restrict_to_my_drive: false,
+            supports_all_drives: false
+          },
+          "token"
+        ) do
+      {:ok, %{changes: [], next_page_token: "loop-page"}}
+    end
+
+    def list_changes(
+          %{
+            page_token: "loop-page",
+            page_size: 100,
+            spaces: "drive",
+            include_items_from_all_drives: false,
+            include_removed: true,
+            restrict_to_my_drive: false,
+            supports_all_drives: false
+          },
+          "token"
+        ) do
+      {:ok, %{changes: [], next_page_token: "loop-page"}}
+    end
   end
 
   test "declares Google Drive provider metadata" do
@@ -827,6 +878,57 @@ defmodule Jido.Connect.Google.DriveTest do
                context: context,
                credential_lease: lease,
                checkpoint: "paged-start"
+             )
+  end
+
+  test "file change poll surfaces expired change tokens as checkpoint errors" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ProviderError{
+              provider: :google,
+              reason: :checkpoint_expired,
+              status: 410,
+              details: %{
+                checkpoint: "expired-token",
+                checkpoint_reset: %{
+                  action: :clear_checkpoint,
+                  behavior: :initialize_without_replay
+                }
+              }
+            }} =
+             Connect.poll(
+               Drive.integration(),
+               "google.drive.file.changed",
+               %{},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "expired-token"
+             )
+  end
+
+  test "file change poll surfaces repeated page tokens with reset guidance" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ProviderError{
+              provider: :google,
+              reason: :invalid_response,
+              details: %{
+                next_page_token: "loop-page",
+                checkpoint_reset: %{
+                  action: :clear_checkpoint,
+                  behavior: :initialize_without_replay
+                }
+              }
+            }} =
+             Connect.poll(
+               Drive.integration(),
+               "google.drive.file.changed",
+               %{},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "loop-token"
              )
   end
 

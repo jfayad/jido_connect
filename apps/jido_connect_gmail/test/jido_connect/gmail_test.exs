@@ -206,6 +206,50 @@ defmodule Jido.Connect.GmailTest do
       {:ok, %{history: [], history_id: "126"}}
     end
 
+    def list_history(
+          %{
+            start_history_id: "expired-history",
+            history_types: ["messageAdded"],
+            label_id: "INBOX",
+            page_size: 100
+          },
+          "token"
+        ) do
+      {:error,
+       Connect.Error.provider("Google API request failed",
+         provider: :google,
+         reason: :http_error,
+         status: 404,
+         details: %{message: "History ID is too old"}
+       )}
+    end
+
+    def list_history(
+          %{
+            start_history_id: "loop-history",
+            history_types: ["messageAdded"],
+            label_id: "INBOX",
+            page_size: 100
+          } = params,
+          "token"
+        )
+        when not is_map_key(params, :page_token) do
+      {:ok, %{history: [], next_page_token: "loop-page", history_id: "loop-history"}}
+    end
+
+    def list_history(
+          %{
+            start_history_id: "loop-history",
+            page_token: "loop-page",
+            history_types: ["messageAdded"],
+            label_id: "INBOX",
+            page_size: 100
+          },
+          "token"
+        ) do
+      {:ok, %{history: [], next_page_token: "loop-page", history_id: "loop-history"}}
+    end
+
     def send_message(%{raw: raw, to: ["to@example.com"], subject: "Hello"}, "token")
         when is_binary(raw) do
       {:ok,
@@ -744,6 +788,57 @@ defmodule Jido.Connect.GmailTest do
                context: context,
                credential_lease: lease,
                checkpoint: "126"
+             )
+  end
+
+  test "message received poll surfaces expired history ids as checkpoint errors" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ProviderError{
+              provider: :google,
+              reason: :checkpoint_expired,
+              status: 404,
+              details: %{
+                checkpoint: "expired-history",
+                checkpoint_reset: %{
+                  action: :clear_checkpoint,
+                  behavior: :initialize_without_replay
+                }
+              }
+            }} =
+             Connect.poll(
+               Gmail.integration(),
+               "google.gmail.message.received",
+               %{},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "expired-history"
+             )
+  end
+
+  test "message received poll surfaces repeated page tokens with reset guidance" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.ProviderError{
+              provider: :google,
+              reason: :invalid_response,
+              details: %{
+                next_page_token: "loop-page",
+                checkpoint_reset: %{
+                  action: :clear_checkpoint,
+                  behavior: :initialize_without_replay
+                }
+              }
+            }} =
+             Connect.poll(
+               Gmail.integration(),
+               "google.gmail.message.received",
+               %{},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "loop-history"
              )
   end
 
