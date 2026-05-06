@@ -111,6 +111,38 @@ defmodule Jido.Connect.Google.CalendarTest do
         ) do
       {:ok, %{calendar_id: "primary", event_id: "event123", deleted?: true}}
     end
+
+    def query_free_busy(
+          %{
+            calendar_ids: ["primary"],
+            time_min: "2026-05-06T08:00:00Z",
+            time_max: "2026-05-06T11:00:00Z"
+          },
+          "token"
+        ) do
+      {:ok,
+       Calendar.FreeBusy.new!(%{
+         time_min: "2026-05-06T08:00:00Z",
+         time_max: "2026-05-06T11:00:00Z",
+         calendars: %{
+           "primary" => %{
+             "busy" => [
+               %{
+                 "start" => "2026-05-06T09:00:00Z",
+                 "end" => "2026-05-06T10:00:00Z"
+               }
+             ]
+           }
+         },
+         busy: [
+           %{
+             calendar_id: "primary",
+             start: "2026-05-06T09:00:00Z",
+             end: "2026-05-06T10:00:00Z"
+           }
+         ]
+       })}
+    end
   end
 
   test "declares Google Calendar provider metadata" do
@@ -128,7 +160,9 @@ defmodule Jido.Connect.Google.CalendarTest do
              "google.calendar.event.get",
              "google.calendar.event.create",
              "google.calendar.event.update",
-             "google.calendar.event.delete"
+             "google.calendar.event.delete",
+             "google.calendar.freebusy.query",
+             "google.calendar.availability.find"
            ]
 
     assert spec.triggers == []
@@ -440,6 +474,117 @@ defmodule Jido.Connect.Google.CalendarTest do
              )
   end
 
+  test "invokes freebusy query through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: freebusy_scopes())
+
+    assert {:ok,
+            %{
+              free_busy: %{
+                time_min: "2026-05-06T08:00:00Z",
+                time_max: "2026-05-06T11:00:00Z",
+                busy: [
+                  %{
+                    calendar_id: "primary",
+                    start: "2026-05-06T09:00:00Z",
+                    end: "2026-05-06T10:00:00Z"
+                  }
+                ]
+              }
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.freebusy.query",
+               %{
+                 calendar_ids: ["primary"],
+                 time_min: "2026-05-06T08:00:00Z",
+                 time_max: "2026-05-06T11:00:00Z"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "finds normalized availability windows" do
+    {context, lease} = context_and_lease(scopes: freebusy_scopes())
+
+    assert {:ok,
+            %{
+              windows: [
+                %{
+                  start: "2026-05-06T08:00:00Z",
+                  end: "2026-05-06T08:30:00Z",
+                  duration_minutes: 30
+                },
+                %{
+                  start: "2026-05-06T08:30:00Z",
+                  end: "2026-05-06T09:00:00Z",
+                  duration_minutes: 30
+                },
+                %{
+                  start: "2026-05-06T10:00:00Z",
+                  end: "2026-05-06T10:30:00Z",
+                  duration_minutes: 30
+                }
+              ]
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.availability.find",
+               %{
+                 calendar_ids: ["primary"],
+                 time_min: "2026-05-06T08:00:00Z",
+                 time_max: "2026-05-06T11:00:00Z",
+                 duration_minutes: 30,
+                 slot_step_minutes: 30,
+                 max_windows: 3
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "freebusy actions require freebusy scope" do
+    {context, lease} = context_and_lease(scopes: event_read_scopes())
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["https://www.googleapis.com/auth/calendar.freebusy"]
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.freebusy.query",
+               %{
+                 calendar_ids: ["primary"],
+                 time_min: "2026-05-06T08:00:00Z",
+                 time_max: "2026-05-06T11:00:00Z"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "freebusy actions validate calendar ids" do
+    {context, lease} = context_and_lease(scopes: freebusy_scopes())
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_freebusy_request,
+              details: %{field: :calendar_ids}
+            }} =
+             Connect.invoke(
+               Calendar.integration(),
+               "google.calendar.freebusy.query",
+               %{
+                 calendar_ids: ["  "],
+                 time_min: "2026-05-06T08:00:00Z",
+                 time_max: "2026-05-06T11:00:00Z"
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   defp event_read_scopes do
     [
       "openid",
@@ -455,6 +600,15 @@ defmodule Jido.Connect.Google.CalendarTest do
       "email",
       "profile",
       "https://www.googleapis.com/auth/calendar.events"
+    ]
+  end
+
+  defp freebusy_scopes do
+    [
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/calendar.freebusy"
     ]
   end
 

@@ -86,6 +86,18 @@ defmodule Jido.Connect.Google.Calendar.Client.Response do
   def handle_event_delete_response(response, _params),
     do: Transport.handle_error_response(response)
 
+  def handle_free_busy_response({:ok, %{status: status, body: body}})
+      when status in 200..299 and is_map(body) do
+    normalize_one(body, &Normalizer.free_busy/1, "Google Calendar freebusy response was invalid")
+  end
+
+  def handle_free_busy_response({:ok, %{status: status, body: body}})
+      when status in 200..299 do
+    Transport.invalid_success_response("Google Calendar freebusy response was invalid", body)
+  end
+
+  def handle_free_busy_response(response), do: Transport.handle_error_response(response)
+
   defp normalize_one(body, normalizer, message) do
     case normalizer.(body) do
       {:ok, item} -> {:ok, item}

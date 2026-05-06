@@ -125,6 +125,19 @@ defmodule Jido.Connect.Google.Calendar.Client.Params do
     |> Data.compact()
   end
 
+  @doc "Builds a Google Calendar freeBusy request body."
+  def free_busy_body(params) do
+    %{
+      timeMin: Data.get(params, :time_min),
+      timeMax: Data.get(params, :time_max),
+      timeZone: Data.get(params, :time_zone),
+      groupExpansionMax: Data.get(params, :group_expansion_max),
+      calendarExpansionMax: Data.get(params, :calendar_expansion_max),
+      items: free_busy_items(Data.get(params, :calendar_ids, []))
+    }
+    |> Data.compact()
+  end
+
   @doc "Builds a Google Calendar event body for create requests."
   def event_create_body(params), do: event_body(params, include_id?: true)
 
@@ -216,4 +229,10 @@ defmodule Jido.Connect.Google.Calendar.Client.Params do
   defp time_zone(params, :end) do
     Data.get(params, :end_time_zone) || Data.get(params, :time_zone)
   end
+
+  defp free_busy_items(calendar_ids) when is_list(calendar_ids) do
+    Enum.map(calendar_ids, &%{id: &1})
+  end
+
+  defp free_busy_items(_calendar_ids), do: []
 end

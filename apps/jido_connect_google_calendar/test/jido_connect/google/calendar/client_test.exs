@@ -262,6 +262,60 @@ defmodule Jido.Connect.Google.Calendar.ClientTest do
              )
   end
 
+  test "queries freebusy" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/v3/freeBusy"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "timeMin" => "2026-05-06T08:00:00Z",
+               "timeMax" => "2026-05-06T11:00:00Z",
+               "timeZone" => "UTC",
+               "items" => [
+                 %{"id" => "primary"},
+                 %{"id" => "team@example.com"}
+               ]
+             }
+
+      Req.Test.json(conn, %{
+        "timeMin" => "2026-05-06T08:00:00Z",
+        "timeMax" => "2026-05-06T11:00:00Z",
+        "calendars" => %{
+          "primary" => %{
+            "busy" => [
+              %{
+                "start" => "2026-05-06T09:00:00Z",
+                "end" => "2026-05-06T10:00:00Z"
+              }
+            ]
+          }
+        }
+      })
+    end)
+
+    assert {:ok,
+            %Jido.Connect.Google.Calendar.FreeBusy{
+              busy: [
+                %{
+                  calendar_id: "primary",
+                  start: "2026-05-06T09:00:00Z",
+                  end: "2026-05-06T10:00:00Z"
+                }
+              ]
+            }} =
+             Client.query_free_busy(
+               %{
+                 calendar_ids: ["primary", "team@example.com"],
+                 time_min: "2026-05-06T08:00:00Z",
+                 time_max: "2026-05-06T11:00:00Z",
+                 time_zone: "UTC"
+               },
+               "token"
+             )
+  end
+
   test "returns provider errors for malformed event responses" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"
