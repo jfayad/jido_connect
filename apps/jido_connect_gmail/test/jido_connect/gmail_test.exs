@@ -549,7 +549,7 @@ defmodule Jido.Connect.GmailTest do
              Connect.invoke(
                Gmail.integration(),
                "google.gmail.label.create",
-               %{name: "Customers", message_list_visibility: "show"},
+               %{name: " Customers ", message_list_visibility: "show"},
                context: context,
                credential_lease: lease
              )
@@ -562,7 +562,7 @@ defmodule Jido.Connect.GmailTest do
              Connect.invoke(
                Gmail.integration(),
                "google.gmail.message.labels.apply",
-               %{message_id: "msg123", add_label_ids: ["Label_123"]},
+               %{message_id: "msg123", add_label_ids: [" Label_123 "]},
                context: context,
                credential_lease: lease
              )

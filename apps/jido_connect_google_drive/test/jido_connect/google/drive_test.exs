@@ -214,6 +214,85 @@ defmodule Jido.Connect.Google.DriveTest do
          new_start_page_token: "next-token"
        }}
     end
+
+    def list_changes(
+          %{
+            page_token: "paged-start",
+            page_size: 100,
+            spaces: "drive",
+            include_items_from_all_drives: false,
+            include_removed: true,
+            restrict_to_my_drive: false,
+            supports_all_drives: false
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         changes: [
+           Drive.Change.new!(%{
+             change_id: "change123",
+             file_id: "file123",
+             removed?: false,
+             time: "2026-05-05T12:00:00Z",
+             change_type: "file",
+             file:
+               Drive.File.new!(%{
+                 file_id: "file123",
+                 name: "Budget.pdf",
+                 mime_type: "application/pdf"
+               })
+           })
+         ],
+         next_page_token: "page-2"
+       }}
+    end
+
+    def list_changes(
+          %{
+            page_token: "page-2",
+            page_size: 100,
+            spaces: "drive",
+            include_items_from_all_drives: false,
+            include_removed: true,
+            restrict_to_my_drive: false,
+            supports_all_drives: false
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         changes: [
+           Drive.Change.new!(%{
+             change_id: "change123",
+             file_id: "file123",
+             removed?: false,
+             time: "2026-05-05T12:00:00Z",
+             change_type: "file",
+             file:
+               Drive.File.new!(%{
+                 file_id: "file123",
+                 name: "Budget duplicate.pdf",
+                 mime_type: "application/pdf"
+               })
+           }),
+           Drive.Change.new!(%{
+             change_id: "change456",
+             file_id: "file456",
+             removed?: false,
+             time: "2026-05-05T12:05:00Z",
+             change_type: "file",
+             file:
+               Drive.File.new!(%{
+                 file_id: "file456",
+                 name: "Forecast.pdf",
+                 mime_type: "application/pdf"
+               })
+           })
+         ],
+         new_start_page_token: "paged-next-token"
+       }}
+    end
   end
 
   test "declares Google Drive provider metadata" do
@@ -556,7 +635,7 @@ defmodule Jido.Connect.Google.DriveTest do
                  file_id: "file123",
                  type: "user",
                  role: "reader",
-                 email_address: "reader@example.com"
+                 email_address: " reader@example.com "
                },
                context: context,
                credential_lease: lease
@@ -575,6 +654,23 @@ defmodule Jido.Connect.Google.DriveTest do
                Drive.integration(),
                "google.drive.permission.create",
                %{file_id: "file123", type: "user", role: "reader"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "create permission rejects whitespace-only targets" do
+    {context, lease} = context_and_lease(scopes: write_scopes())
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_permission,
+              details: %{field: :email_address}
+            }} =
+             Connect.invoke(
+               Drive.integration(),
+               "google.drive.permission.create",
+               %{file_id: "file123", type: "user", role: "reader", email_address: "  "},
                context: context,
                credential_lease: lease
              )
@@ -617,6 +713,35 @@ defmodule Jido.Connect.Google.DriveTest do
                context: context,
                credential_lease: lease,
                checkpoint: "start-token"
+             )
+  end
+
+  test "file change poll drains pages, dedupes changes, and advances checkpoint" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              signals: [
+                %{
+                  change_id: "change123",
+                  file_id: "file123",
+                  file: %{name: "Budget.pdf"}
+                },
+                %{
+                  change_id: "change456",
+                  file_id: "file456",
+                  file: %{name: "Forecast.pdf"}
+                }
+              ],
+              checkpoint: "paged-next-token"
+            }} =
+             Connect.poll(
+               Drive.integration(),
+               "google.drive.file.changed",
+               %{},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "paged-start"
              )
   end
 

@@ -6,17 +6,20 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
 
   def handle_file_list_response({:ok, %{status: status, body: body}})
       when status in 200..299 and is_map(body) do
-    files =
-      body
-      |> Data.get("files", [])
-      |> Enum.map(&file!/1)
-
-    {:ok,
-     %{
-       files: files,
-       next_page_token: Data.get(body, "nextPageToken")
-     }
-     |> Data.compact()}
+    with {:ok, files} <-
+           normalize_items(
+             body,
+             "files",
+             &Normalizer.file/1,
+             "Google Drive file list response was invalid"
+           ) do
+      {:ok,
+       %{
+         files: files,
+         next_page_token: Data.get(body, "nextPageToken")
+       }
+       |> Data.compact()}
+    end
   end
 
   def handle_file_list_response({:ok, %{status: status, body: body}})
@@ -28,7 +31,7 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
 
   def handle_file_response({:ok, %{status: status, body: body}})
       when status in 200..299 and is_map(body) do
-    Normalizer.file(body)
+    normalize_one(body, &Normalizer.file/1, "Google Drive file response was invalid")
   end
 
   def handle_file_response({:ok, %{status: status, body: body}})
@@ -64,17 +67,20 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
 
   def handle_permission_list_response({:ok, %{status: status, body: body}})
       when status in 200..299 and is_map(body) do
-    permissions =
-      body
-      |> Data.get("permissions", [])
-      |> Enum.map(&permission!/1)
-
-    {:ok,
-     %{
-       permissions: permissions,
-       next_page_token: Data.get(body, "nextPageToken")
-     }
-     |> Data.compact()}
+    with {:ok, permissions} <-
+           normalize_items(
+             body,
+             "permissions",
+             &Normalizer.permission/1,
+             "Google Drive permission list response was invalid"
+           ) do
+      {:ok,
+       %{
+         permissions: permissions,
+         next_page_token: Data.get(body, "nextPageToken")
+       }
+       |> Data.compact()}
+    end
   end
 
   def handle_permission_list_response({:ok, %{status: status, body: body}})
@@ -86,7 +92,7 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
 
   def handle_permission_response({:ok, %{status: status, body: body}})
       when status in 200..299 and is_map(body) do
-    Normalizer.permission(body)
+    normalize_one(body, &Normalizer.permission/1, "Google Drive permission response was invalid")
   end
 
   def handle_permission_response({:ok, %{status: status, body: body}})
@@ -119,18 +125,21 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
 
   def handle_change_list_response({:ok, %{status: status, body: body}})
       when status in 200..299 and is_map(body) do
-    changes =
-      body
-      |> Data.get("changes", [])
-      |> Enum.map(&change!/1)
-
-    {:ok,
-     %{
-       changes: changes,
-       next_page_token: Data.get(body, "nextPageToken"),
-       new_start_page_token: Data.get(body, "newStartPageToken")
-     }
-     |> Data.compact()}
+    with {:ok, changes} <-
+           normalize_items(
+             body,
+             "changes",
+             &Normalizer.change/1,
+             "Google Drive change list response was invalid"
+           ) do
+      {:ok,
+       %{
+         changes: changes,
+         next_page_token: Data.get(body, "nextPageToken"),
+         new_start_page_token: Data.get(body, "newStartPageToken")
+       }
+       |> Data.compact()}
+    end
   end
 
   def handle_change_list_response({:ok, %{status: status, body: body}})
@@ -157,24 +166,30 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
 
   def file_to_folder({:error, reason}), do: {:error, reason}
 
-  defp file!(payload) do
-    case Normalizer.file(payload) do
-      {:ok, file} -> file
-      {:error, error} -> raise error
+  defp normalize_one(body, normalizer, message) do
+    case normalizer.(body) do
+      {:ok, item} -> {:ok, item}
+      {:error, _error} -> Transport.invalid_success_response(message, body)
     end
   end
 
-  defp permission!(payload) do
-    case Normalizer.permission(payload) do
-      {:ok, permission} -> permission
-      {:error, error} -> raise error
-    end
-  end
+  defp normalize_items(body, key, normalizer, message) do
+    case Data.get(body, key, []) do
+      items when is_list(items) ->
+        items
+        |> Enum.reduce_while({:ok, []}, fn payload, {:ok, acc} ->
+          case normalizer.(payload) do
+            {:ok, item} -> {:cont, {:ok, [item | acc]}}
+            {:error, _error} -> {:halt, Transport.invalid_success_response(message, body)}
+          end
+        end)
+        |> case do
+          {:ok, items} -> {:ok, Enum.reverse(items)}
+          {:error, error} -> {:error, error}
+        end
 
-  defp change!(payload) do
-    case Normalizer.change(payload) do
-      {:ok, change} -> change
-      {:error, error} -> raise error
+      _invalid ->
+        Transport.invalid_success_response(message, body)
     end
   end
 

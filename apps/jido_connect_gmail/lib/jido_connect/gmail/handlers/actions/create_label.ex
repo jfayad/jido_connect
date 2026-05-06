@@ -5,22 +5,28 @@ defmodule Jido.Connect.Gmail.Handlers.Actions.CreateLabel do
   alias Jido.Connect.Gmail.Client
 
   def run(input, %{credentials: credentials}) do
-    with :ok <- validate_name(Data.get(input, :name)),
+    with {:ok, input} <- normalize_input(input),
          {:ok, client} <- fetch_client(credentials),
          {:ok, label} <- client.create_label(input, Map.get(credentials, :access_token)) do
       {:ok, %{label: public_map(label)}}
     end
   end
 
-  defp validate_name(name) when is_binary(name) do
-    if String.trim(name) == "" do
-      validation_error("Gmail label name must not be blank", :name)
-    else
-      :ok
+  defp normalize_input(input) do
+    case Data.get(input, :name) do
+      name when is_binary(name) ->
+        trimmed_name = String.trim(name)
+
+        if trimmed_name == "" do
+          validation_error("Gmail label name must not be blank", :name)
+        else
+          {:ok, Map.put(input, :name, trimmed_name)}
+        end
+
+      _missing ->
+        validation_error("Gmail label name is required", :name)
     end
   end
-
-  defp validate_name(_name), do: validation_error("Gmail label name is required", :name)
 
   defp validation_error(message, field) do
     {:error, Error.validation(message, reason: :invalid_label, details: %{field: field})}

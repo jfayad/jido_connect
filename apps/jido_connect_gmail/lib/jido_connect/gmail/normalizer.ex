@@ -17,6 +17,8 @@ defmodule Jido.Connect.Gmail.Normalizer do
     |> Profile.new()
   end
 
+  def profile(_payload), do: {:error, :invalid_profile_payload}
+
   @doc "Normalizes a Gmail label payload."
   @spec label(map()) :: {:ok, Label.t()} | {:error, term()}
   def label(payload) when is_map(payload) do
@@ -35,6 +37,8 @@ defmodule Jido.Connect.Gmail.Normalizer do
     |> Data.compact()
     |> Label.new()
   end
+
+  def label(_payload), do: {:error, :invalid_label_payload}
 
   @doc "Normalizes a Gmail message payload without raw body leakage."
   @spec message(map()) :: {:ok, Message.t()} | {:error, term()}
@@ -56,34 +60,39 @@ defmodule Jido.Connect.Gmail.Normalizer do
     |> Message.new()
   end
 
+  def message(_payload), do: {:error, :invalid_message_payload}
+
   @doc "Normalizes a Gmail thread payload with sanitized messages."
   @spec thread(map()) :: {:ok, Thread.t()} | {:error, term()}
   def thread(payload) when is_map(payload) do
-    messages =
-      payload
-      |> Data.get("messages", [])
-      |> Enum.map(&message!/1)
-
-    %{
-      thread_id: Data.get(payload, "id"),
-      history_id: normalize_string(Data.get(payload, "historyId")),
-      snippet: thread_snippet(messages),
-      messages: messages
-    }
-    |> Data.compact()
-    |> Thread.new()
+    with {:ok, messages} <- normalize_messages(Data.get(payload, "messages", [])) do
+      %{
+        thread_id: Data.get(payload, "id"),
+        history_id: normalize_string(Data.get(payload, "historyId")),
+        snippet: thread_snippet(messages),
+        messages: messages
+      }
+      |> Data.compact()
+      |> Thread.new()
+    end
   end
+
+  def thread(_payload), do: {:error, :invalid_thread_payload}
 
   @doc "Normalizes a Gmail draft payload with a sanitized message."
   @spec draft(map()) :: {:ok, Draft.t()} | {:error, term()}
   def draft(payload) when is_map(payload) do
-    %{
-      draft_id: Data.get(payload, "id"),
-      message: normalize_draft_message(Data.get(payload, "message"))
-    }
-    |> Data.compact()
-    |> Draft.new()
+    with {:ok, message} <- normalize_draft_message(Data.get(payload, "message")) do
+      %{
+        draft_id: Data.get(payload, "id"),
+        message: message
+      }
+      |> Data.compact()
+      |> Draft.new()
+    end
   end
+
+  def draft(_payload), do: {:error, :invalid_draft_payload}
 
   @doc "Builds a body-safe summary of a Gmail MIME payload."
   def summarize_payload(payload) when is_map(payload) do
@@ -93,7 +102,7 @@ defmodule Jido.Connect.Gmail.Normalizer do
       filename: Data.get(payload, "filename"),
       body_size: payload |> Data.get("body", %{}) |> Data.get("size") |> normalize_integer(),
       headers: normalize_headers(Data.get(payload, "headers", [])),
-      parts: payload |> Data.get("parts", []) |> Enum.map(&summarize_payload/1)
+      parts: payload |> Data.get("parts", []) |> summarize_parts()
     }
     |> Data.compact()
     |> reject_raw_body_keys()
@@ -125,21 +134,26 @@ defmodule Jido.Connect.Gmail.Normalizer do
     |> Map.new()
   end
 
-  defp normalize_draft_message(%{} = payload) do
-    case message(payload) do
-      {:ok, message} -> message
-      {:error, error} -> raise error
+  defp normalize_messages(messages) when is_list(messages) do
+    Enum.reduce_while(messages, {:ok, []}, fn payload, {:ok, acc} ->
+      case message(payload) do
+        {:ok, message} -> {:cont, {:ok, [message | acc]}}
+        {:error, error} -> {:halt, {:error, error}}
+      end
+    end)
+    |> case do
+      {:ok, messages} -> {:ok, Enum.reverse(messages)}
+      {:error, error} -> {:error, error}
     end
   end
 
-  defp normalize_draft_message(_payload), do: nil
+  defp normalize_messages(_messages), do: {:error, :invalid_messages}
 
-  defp message!(payload) do
-    case message(payload) do
-      {:ok, message} -> message
-      {:error, error} -> raise error
-    end
-  end
+  defp normalize_draft_message(%{} = payload), do: message(payload)
+  defp normalize_draft_message(_payload), do: {:ok, nil}
+
+  defp summarize_parts(parts) when is_list(parts), do: Enum.map(parts, &summarize_payload/1)
+  defp summarize_parts(_parts), do: []
 
   defp thread_snippet([%Message{snippet: snippet} | _rest]), do: snippet
   defp thread_snippet(_messages), do: nil

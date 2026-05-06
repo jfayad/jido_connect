@@ -74,6 +74,29 @@ defmodule Jido.Connect.Gmail.NormalizerTest do
     refute inspect(thread) =~ "body-bytes"
   end
 
+  test "returns errors instead of raising for malformed nested thread messages" do
+    assert {:error, _error} =
+             Normalizer.thread(%{
+               "id" => "thread123",
+               "messages" => [
+                 %{"threadId" => "thread123"}
+               ]
+             })
+  end
+
+  test "ignores malformed payload parts collections" do
+    assert {:ok, %Message{} = message} =
+             Normalizer.message(%{
+               "id" => "msg123",
+               "payload" => %{
+                 "mimeType" => "text/plain",
+                 "parts" => nil
+               }
+             })
+
+    assert message.payload_summary.parts == []
+  end
+
   test "normalizes draft payloads with sanitized message" do
     assert {:ok, %Draft{} = draft} =
              Normalizer.draft(%{

@@ -52,6 +52,25 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
     assert file.name == "Budget.pdf"
   end
 
+  test "returns provider errors for malformed Drive list items" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/v3/files"
+
+      Req.Test.json(conn, %{
+        "files" => [
+          %{"id" => "file123"}
+        ]
+      })
+    end)
+
+    assert {:error,
+            %Jido.Connect.Error.ProviderError{
+              provider: :google,
+              reason: :invalid_response
+            }} = Client.list_files(%{}, "token")
+  end
+
   test "gets file metadata" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"
@@ -70,6 +89,23 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
 
     assert file.file_id == "file123"
     assert file.name == "Budget.pdf"
+  end
+
+  test "returns provider errors for malformed Drive single-object responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/v3/files/file123"
+
+      Req.Test.json(conn, %{
+        "id" => "file123"
+      })
+    end)
+
+    assert {:error,
+            %Jido.Connect.Error.ProviderError{
+              provider: :google,
+              reason: :invalid_response
+            }} = Client.get_file(%{file_id: "file123"}, "token")
   end
 
   test "creates file metadata" do

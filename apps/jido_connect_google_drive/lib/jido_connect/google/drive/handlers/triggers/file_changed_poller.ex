@@ -1,6 +1,7 @@
 defmodule Jido.Connect.Google.Drive.Handlers.Triggers.FileChangedPoller do
   @moduledoc false
 
+  alias Jido.Connect.Error
   alias Jido.Connect.Google.Drive.Client
 
   def poll(config, %{credentials: credentials, checkpoint: checkpoint}) do
@@ -24,14 +25,36 @@ defmodule Jido.Connect.Google.Drive.Handlers.Triggers.FileChangedPoller do
   defp poll_changes(client, config, checkpoint, access_token) do
     params = Map.put(config, :page_token, checkpoint)
 
+    fetch_change_pages(client, params, access_token, [], nil, MapSet.new([checkpoint]))
+  end
+
+  defp fetch_change_pages(client, params, access_token, signals, latest_start_page_token, seen) do
     with {:ok, result} <- client.list_changes(params, access_token) do
-      {:ok,
-       %{
-         signals: Enum.map(Map.get(result, :changes, []), &normalize_signal/1),
-         checkpoint:
-           Map.get(result, :next_page_token) || Map.get(result, :new_start_page_token) ||
-             checkpoint
-       }}
+      signals = signals ++ Enum.map(Map.get(result, :changes, []), &normalize_signal/1)
+      latest_start_page_token = Map.get(result, :new_start_page_token) || latest_start_page_token
+
+      case Map.get(result, :next_page_token) do
+        nil ->
+          {:ok,
+           %{
+             signals: dedupe_signals(signals),
+             checkpoint: latest_start_page_token || Map.fetch!(params, :page_token)
+           }}
+
+        page_token ->
+          if MapSet.member?(seen, page_token) do
+            invalid_repeated_page_token(page_token)
+          else
+            fetch_change_pages(
+              client,
+              Map.put(params, :page_token, page_token),
+              access_token,
+              signals,
+              latest_start_page_token,
+              MapSet.put(seen, page_token)
+            )
+          end
+      end
     end
   end
 
@@ -57,6 +80,35 @@ defmodule Jido.Connect.Google.Drive.Handlers.Triggers.FileChangedPoller do
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()
+  end
+
+  defp dedupe_signals(signals) do
+    {_seen, unique} =
+      Enum.reduce(signals, {MapSet.new(), []}, fn signal, {seen, acc} ->
+        key = {Map.get(signal, :change_id), Map.get(signal, :file_id)}
+
+        cond do
+          key == {nil, nil} ->
+            {seen, acc}
+
+          MapSet.member?(seen, key) ->
+            {seen, acc}
+
+          true ->
+            {MapSet.put(seen, key), [signal | acc]}
+        end
+      end)
+
+    Enum.reverse(unique)
+  end
+
+  defp invalid_repeated_page_token(page_token) do
+    {:error,
+     Error.provider("Google Drive change list response repeated nextPageToken",
+       provider: :google,
+       reason: :invalid_response,
+       details: %{next_page_token: page_token}
+     )}
   end
 
   defp public_map(struct) when is_struct(struct), do: struct |> Map.from_struct() |> public_map()

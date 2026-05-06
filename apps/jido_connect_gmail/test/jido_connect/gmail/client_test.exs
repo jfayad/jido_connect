@@ -88,6 +88,25 @@ defmodule Jido.Connect.Gmail.ClientTest do
     assert message.thread_id == "thread123"
   end
 
+  test "returns provider errors for malformed Gmail list items" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/gmail/v1/users/me/messages"
+
+      Req.Test.json(conn, %{
+        "messages" => [
+          %{"threadId" => "thread123"}
+        ]
+      })
+    end)
+
+    assert {:error,
+            %Jido.Connect.Error.ProviderError{
+              provider: :google,
+              reason: :invalid_response
+            }} = Client.list_messages(%{}, "token")
+  end
+
   test "gets Gmail message metadata without body data" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"
@@ -151,6 +170,26 @@ defmodule Jido.Connect.Gmail.ClientTest do
     refute inspect(thread) =~ "body-bytes"
   end
 
+  test "returns provider errors for malformed Gmail single-object responses" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/gmail/v1/users/me/threads/thread123"
+
+      Req.Test.json(conn, %{
+        "id" => "thread123",
+        "messages" => [
+          %{"threadId" => "thread123"}
+        ]
+      })
+    end)
+
+    assert {:error,
+            %Jido.Connect.Error.ProviderError{
+              provider: :google,
+              reason: :invalid_response
+            }} = Client.get_thread(%{thread_id: "thread123"}, "token")
+  end
+
   test "lists Gmail history message additions without body data" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"
@@ -190,6 +229,30 @@ defmodule Jido.Connect.Gmail.ClientTest do
 
     assert message.message_id == "msg123"
     refute inspect(message) =~ "body-bytes"
+  end
+
+  test "returns provider errors for malformed Gmail history records" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/gmail/v1/users/me/history"
+
+      Req.Test.json(conn, %{
+        "history" => [
+          %{"id" => "124", "messagesAdded" => nil}
+        ],
+        "historyId" => "125"
+      })
+    end)
+
+    assert {:error,
+            %Jido.Connect.Error.ProviderError{
+              provider: :google,
+              reason: :invalid_response
+            }} =
+             Client.list_history(
+               %{start_history_id: "123", history_types: ["messageAdded"]},
+               "token"
+             )
   end
 
   test "sends Gmail messages" do

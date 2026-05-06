@@ -81,6 +81,15 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
     refute change.removed?
   end
 
+  test "returns errors instead of raising for malformed embedded change files" do
+    assert {:error, _error} =
+             Normalizer.change(%{
+               "changeId" => 42,
+               "fileId" => "file123",
+               "file" => %{"id" => "file123"}
+             })
+  end
+
   test "detects folder payloads" do
     assert Normalizer.folder?(%{"mimeType" => "application/vnd.google-apps.folder"})
     refute Normalizer.folder?(%{"mimeType" => "application/pdf"})

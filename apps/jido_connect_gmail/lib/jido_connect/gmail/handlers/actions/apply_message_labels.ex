@@ -16,8 +16,8 @@ defmodule Jido.Connect.Gmail.Handlers.Actions.ApplyMessageLabels do
 
   defp normalize_input(input) do
     input
-    |> Map.put_new(:add_label_ids, [])
-    |> Map.put_new(:remove_label_ids, [])
+    |> Map.put(:add_label_ids, normalize_label_ids(Data.get(input, :add_label_ids, [])))
+    |> Map.put(:remove_label_ids, normalize_label_ids(Data.get(input, :remove_label_ids, [])))
   end
 
   defp validate_label_changes(input) do
@@ -46,6 +46,15 @@ defmodule Jido.Connect.Gmail.Handlers.Actions.ApplyMessageLabels do
     do: Enum.all?(label_ids, &(is_binary(&1) and String.trim(&1) != ""))
 
   defp valid_label_ids?(_label_ids), do: false
+
+  defp normalize_label_ids(label_ids) when is_list(label_ids) do
+    Enum.map(label_ids, fn
+      label_id when is_binary(label_id) -> String.trim(label_id)
+      label_id -> label_id
+    end)
+  end
+
+  defp normalize_label_ids(label_ids), do: label_ids
 
   defp validation_error(message, field) do
     {:error, Error.validation(message, reason: :invalid_label_mutation, details: %{field: field})}

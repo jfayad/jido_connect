@@ -62,16 +62,32 @@ defmodule Jido.Connect.Google.Drive.Handlers.Actions.CreatePermission do
 
   defp require_present(input, field, message) do
     case Data.get(input, field) do
-      value when is_binary(value) and value != "" -> :ok
-      _missing -> validation_error(message, field: field)
+      value when is_binary(value) ->
+        if String.trim(value) == "" do
+          validation_error(message, field: field)
+        else
+          :ok
+        end
+
+      _missing ->
+        validation_error(message, field: field)
     end
   end
 
   defp normalize_input(input) do
     input
+    |> trim_string(:email_address)
+    |> trim_string(:domain)
     |> Map.put_new(:transfer_ownership, false)
     |> Map.put_new(:supports_all_drives, false)
     |> Map.put_new(:use_domain_admin_access, false)
+  end
+
+  defp trim_string(input, field) do
+    case Data.get(input, field) do
+      value when is_binary(value) -> Map.put(input, field, String.trim(value))
+      _other -> input
+    end
   end
 
   defp validation_error(message, details) do

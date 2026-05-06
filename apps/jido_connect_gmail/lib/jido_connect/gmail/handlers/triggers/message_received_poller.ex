@@ -1,6 +1,7 @@
 defmodule Jido.Connect.Gmail.Handlers.Triggers.MessageReceivedPoller do
   @moduledoc false
 
+  alias Jido.Connect.Error
   alias Jido.Connect.Gmail.Client
 
   def poll(config, %{credentials: credentials, checkpoint: checkpoint}) do
@@ -16,7 +17,13 @@ defmodule Jido.Connect.Gmail.Handlers.Triggers.MessageReceivedPoller do
 
   defp poll_messages(client, _config, checkpoint, access_token) when checkpoint in [nil, ""] do
     with {:ok, profile} <- client.get_profile(%{}, access_token) do
-      {:ok, %{signals: [], checkpoint: Map.get(profile, :history_id)}}
+      case Map.get(profile, :history_id) do
+        history_id when is_binary(history_id) and history_id != "" ->
+          {:ok, %{signals: [], checkpoint: history_id}}
+
+        _missing ->
+          invalid_missing_history_id()
+      end
     end
   end
 
@@ -26,10 +33,10 @@ defmodule Jido.Connect.Gmail.Handlers.Triggers.MessageReceivedPoller do
       |> Map.put(:start_history_id, checkpoint)
       |> Map.put(:history_types, ["messageAdded"])
 
-    fetch_history_pages(client, params, access_token, [], nil)
+    fetch_history_pages(client, params, access_token, [], nil, MapSet.new())
   end
 
-  defp fetch_history_pages(client, params, access_token, signals, latest_history_id) do
+  defp fetch_history_pages(client, params, access_token, signals, latest_history_id, seen) do
     with {:ok, result} <- client.list_history(params, access_token) do
       latest_history_id = Map.get(result, :history_id) || latest_history_id
       signals = signals ++ history_signals(Map.get(result, :history, []))
@@ -43,13 +50,18 @@ defmodule Jido.Connect.Gmail.Handlers.Triggers.MessageReceivedPoller do
            }}
 
         page_token ->
-          fetch_history_pages(
-            client,
-            Map.put(params, :page_token, page_token),
-            access_token,
-            signals,
-            latest_history_id
-          )
+          if MapSet.member?(seen, page_token) do
+            invalid_repeated_page_token(page_token)
+          else
+            fetch_history_pages(
+              client,
+              Map.put(params, :page_token, page_token),
+              access_token,
+              signals,
+              latest_history_id,
+              MapSet.put(seen, page_token)
+            )
+          end
       end
     end
   end
@@ -116,4 +128,22 @@ defmodule Jido.Connect.Gmail.Handlers.Triggers.MessageReceivedPoller do
 
   defp fetch_client(%{gmail_client: client}) when is_atom(client), do: {:ok, client}
   defp fetch_client(_credentials), do: {:ok, Client}
+
+  defp invalid_missing_history_id do
+    {:error,
+     Error.provider("Gmail profile response was missing historyId",
+       provider: :google,
+       reason: :invalid_response,
+       details: %{field: :history_id}
+     )}
+  end
+
+  defp invalid_repeated_page_token(page_token) do
+    {:error,
+     Error.provider("Gmail history response repeated nextPageToken",
+       provider: :google,
+       reason: :invalid_response,
+       details: %{next_page_token: page_token}
+     )}
+  end
 end

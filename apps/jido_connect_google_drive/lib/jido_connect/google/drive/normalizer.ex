@@ -33,6 +33,8 @@ defmodule Jido.Connect.Google.Drive.Normalizer do
     |> File.new()
   end
 
+  def file(_payload), do: {:error, :invalid_file_payload}
+
   @doc "Normalizes a Google Drive folder payload."
   @spec folder(map()) :: {:ok, Folder.t()} | {:error, term()}
   def folder(payload) when is_map(payload) do
@@ -50,6 +52,8 @@ defmodule Jido.Connect.Google.Drive.Normalizer do
     |> Data.compact()
     |> Folder.new()
   end
+
+  def folder(_payload), do: {:error, :invalid_folder_payload}
 
   @doc "Normalizes a Google Drive permission payload."
   @spec permission(map()) :: {:ok, Permission.t()} | {:error, term()}
@@ -69,23 +73,27 @@ defmodule Jido.Connect.Google.Drive.Normalizer do
     |> Permission.new()
   end
 
+  def permission(_payload), do: {:error, :invalid_permission_payload}
+
   @doc "Normalizes a Google Drive change payload."
   @spec change(map()) :: {:ok, Change.t()} | {:error, term()}
   def change(payload) when is_map(payload) do
-    file = normalize_change_file(Data.get(payload, "file"))
-
-    %{
-      change_id: normalize_string(Data.get(payload, "changeId")),
-      file_id: Data.get(payload, "fileId"),
-      file: file,
-      removed?: Data.get(payload, "removed", false),
-      time: Data.get(payload, "time"),
-      drive_id: Data.get(payload, "driveId"),
-      change_type: Data.get(payload, "changeType")
-    }
-    |> Data.compact()
-    |> Change.new()
+    with {:ok, file} <- normalize_change_file(Data.get(payload, "file")) do
+      %{
+        change_id: normalize_string(Data.get(payload, "changeId")),
+        file_id: Data.get(payload, "fileId"),
+        file: file,
+        removed?: Data.get(payload, "removed", false),
+        time: Data.get(payload, "time"),
+        drive_id: Data.get(payload, "driveId"),
+        change_type: Data.get(payload, "changeType")
+      }
+      |> Data.compact()
+      |> Change.new()
+    end
   end
+
+  def change(_payload), do: {:error, :invalid_change_payload}
 
   @doc "Returns true when a Drive payload is a folder."
   @spec folder?(map()) :: boolean()
@@ -94,14 +102,9 @@ defmodule Jido.Connect.Google.Drive.Normalizer do
 
   def folder?(_payload), do: false
 
-  defp normalize_change_file(%{} = payload) do
-    case file(payload) do
-      {:ok, file} -> file
-      {:error, error} -> raise error
-    end
-  end
+  defp normalize_change_file(%{} = payload), do: file(payload)
 
-  defp normalize_change_file(_payload), do: nil
+  defp normalize_change_file(_payload), do: {:ok, nil}
 
   defp normalize_integer(value) when is_integer(value), do: value
 
