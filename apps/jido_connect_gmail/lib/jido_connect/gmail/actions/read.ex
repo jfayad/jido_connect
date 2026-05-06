@@ -52,5 +52,115 @@ defmodule Jido.Connect.Gmail.Actions.Read do
         field(:labels, {:array, :map})
       end
     end
+
+    action :list_messages do
+      id("google.gmail.messages.list")
+      resource(:message)
+      verb(:list)
+      data_classification(:message_content)
+      label("List Gmail messages")
+      description("List Gmail message metadata summaries without fetching full message bodies.")
+      handler(Jido.Connect.Gmail.Handlers.Actions.ListMessages)
+      effect(:read)
+
+      access do
+        auth(:user)
+        scopes([@metadata_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:query, :string)
+        field(:label_ids, {:array, :string}, default: [])
+        field(:page_size, :integer, default: 25)
+        field(:page_token, :string)
+        field(:include_spam_trash, :boolean, default: false)
+      end
+
+      output do
+        field(:messages, {:array, :map})
+        field(:next_page_token, :string)
+        field(:result_size_estimate, :integer)
+      end
+    end
+
+    action :get_message do
+      id("google.gmail.message.get")
+      resource(:message)
+      verb(:get)
+      data_classification(:message_content)
+      label("Get Gmail message metadata")
+      description("Fetch Gmail message metadata with optional header allowlist and no body data.")
+      handler(Jido.Connect.Gmail.Handlers.Actions.GetMessage)
+      effect(:read)
+
+      access do
+        auth(:user)
+        scopes([@metadata_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:message_id, :string, required?: true, example: "18c...")
+        field(:metadata_headers, {:array, :string}, default: [])
+      end
+
+      output do
+        field(:message, :map)
+      end
+    end
+
+    action :list_threads do
+      id("google.gmail.threads.list")
+      resource(:thread)
+      verb(:list)
+      data_classification(:message_content)
+      label("List Gmail threads")
+      description("List Gmail thread metadata summaries without fetching full message bodies.")
+      handler(Jido.Connect.Gmail.Handlers.Actions.ListThreads)
+      effect(:read)
+
+      access do
+        auth(:user)
+        scopes([@metadata_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:query, :string)
+        field(:label_ids, {:array, :string}, default: [])
+        field(:page_size, :integer, default: 25)
+        field(:page_token, :string)
+        field(:include_spam_trash, :boolean, default: false)
+      end
+
+      output do
+        field(:threads, {:array, :map})
+        field(:next_page_token, :string)
+        field(:result_size_estimate, :integer)
+      end
+    end
+
+    action :get_thread do
+      id("google.gmail.thread.get")
+      resource(:thread)
+      verb(:get)
+      data_classification(:message_content)
+      label("Get Gmail thread metadata")
+      description("Fetch Gmail thread metadata with optional header allowlist and no body data.")
+      handler(Jido.Connect.Gmail.Handlers.Actions.GetThread)
+      effect(:read)
+
+      access do
+        auth(:user)
+        scopes([@metadata_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:thread_id, :string, required?: true, example: "18c...")
+        field(:metadata_headers, {:array, :string}, default: [])
+      end
+
+      output do
+        field(:thread, :map)
+      end
+    end
   end
 end

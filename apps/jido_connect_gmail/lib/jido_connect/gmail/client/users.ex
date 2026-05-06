@@ -1,7 +1,7 @@
 defmodule Jido.Connect.Gmail.Client.Users do
   @moduledoc "Gmail users API boundary."
 
-  alias Jido.Connect.Gmail.Client.{Response, Transport}
+  alias Jido.Connect.Gmail.Client.{Params, Response, Transport}
 
   def get_profile(params, access_token) when is_map(params) and is_binary(access_token) do
     access_token
@@ -16,4 +16,42 @@ defmodule Jido.Connect.Gmail.Client.Users do
     |> Req.get(url: "/gmail/v1/users/me/labels")
     |> Response.handle_label_list_response()
   end
+
+  def list_messages(params, access_token) when is_map(params) and is_binary(access_token) do
+    access_token
+    |> Transport.request()
+    |> Req.get(url: "/gmail/v1/users/me/messages", params: Params.message_list_params(params))
+    |> Response.handle_message_list_response()
+  end
+
+  def get_message(%{message_id: message_id} = params, access_token)
+      when is_binary(message_id) and is_binary(access_token) do
+    access_token
+    |> Transport.request()
+    |> Req.get(
+      url: "/gmail/v1/users/me/messages/#{encode_path_segment(message_id)}",
+      params: Params.metadata_get_params(params)
+    )
+    |> Response.handle_message_response()
+  end
+
+  def list_threads(params, access_token) when is_map(params) and is_binary(access_token) do
+    access_token
+    |> Transport.request()
+    |> Req.get(url: "/gmail/v1/users/me/threads", params: Params.thread_list_params(params))
+    |> Response.handle_thread_list_response()
+  end
+
+  def get_thread(%{thread_id: thread_id} = params, access_token)
+      when is_binary(thread_id) and is_binary(access_token) do
+    access_token
+    |> Transport.request()
+    |> Req.get(
+      url: "/gmail/v1/users/me/threads/#{encode_path_segment(thread_id)}",
+      params: Params.metadata_get_params(params)
+    )
+    |> Response.handle_thread_response()
+  end
+
+  defp encode_path_segment(value), do: URI.encode(value, &URI.char_unreserved?/1)
 end

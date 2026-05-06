@@ -27,6 +27,83 @@ defmodule Jido.Connect.GmailTest do
          ]
        }}
     end
+
+    def list_messages(
+          %{
+            query: "from:sender@example.com",
+            label_ids: ["INBOX"],
+            page_size: 25,
+            include_spam_trash: false
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         messages: [
+           Gmail.Message.new!(%{
+             message_id: "msg123",
+             thread_id: "thread123",
+             label_ids: ["INBOX"],
+             snippet: "Budget update"
+           })
+         ],
+         next_page_token: "next",
+         result_size_estimate: 1
+       }}
+    end
+
+    def get_message(%{message_id: "msg123", metadata_headers: ["From", "Subject"]}, "token") do
+      {:ok,
+       Gmail.Message.new!(%{
+         message_id: "msg123",
+         thread_id: "thread123",
+         label_ids: ["INBOX"],
+         snippet: "Budget update",
+         headers: [
+           %{name: "From", value: "sender@example.com"},
+           %{name: "Subject", value: "Budget"}
+         ]
+       })}
+    end
+
+    def list_threads(
+          %{
+            query: "label:inbox",
+            label_ids: ["INBOX"],
+            page_size: 25,
+            include_spam_trash: false
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         threads: [
+           Gmail.Thread.new!(%{
+             thread_id: "thread123",
+             history_id: "456",
+             snippet: "Budget update"
+           })
+         ],
+         next_page_token: "next-thread",
+         result_size_estimate: 1
+       }}
+    end
+
+    def get_thread(%{thread_id: "thread123", metadata_headers: ["From", "Subject"]}, "token") do
+      {:ok,
+       Gmail.Thread.new!(%{
+         thread_id: "thread123",
+         history_id: "456",
+         snippet: "Budget update",
+         messages: [
+           Gmail.Message.new!(%{
+             message_id: "msg123",
+             thread_id: "thread123",
+             snippet: "Budget update"
+           })
+         ]
+       })}
+    end
   end
 
   test "declares Gmail provider metadata" do
@@ -50,7 +127,11 @@ defmodule Jido.Connect.GmailTest do
 
     assert Enum.map(spec.actions, & &1.id) == [
              "google.gmail.profile.get",
-             "google.gmail.labels.list"
+             "google.gmail.labels.list",
+             "google.gmail.messages.list",
+             "google.gmail.message.get",
+             "google.gmail.threads.list",
+             "google.gmail.thread.get"
            ]
 
     assert spec.triggers == []
@@ -132,6 +213,98 @@ defmodule Jido.Connect.GmailTest do
                Gmail.integration(),
                "google.gmail.profile.get",
                %{},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes list messages through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              messages: [
+                %{
+                  message_id: "msg123",
+                  thread_id: "thread123",
+                  snippet: "Budget update"
+                }
+              ],
+              next_page_token: "next",
+              result_size_estimate: 1
+            }} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.messages.list",
+               %{query: "from:sender@example.com", label_ids: ["INBOX"]},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes get message metadata through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              message: %{
+                message_id: "msg123",
+                thread_id: "thread123",
+                snippet: "Budget update",
+                headers: [
+                  %{name: "From", value: "sender@example.com"},
+                  %{name: "Subject", value: "Budget"}
+                ]
+              }
+            }} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.message.get",
+               %{message_id: "msg123", metadata_headers: ["From", "Subject"]},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes list threads through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              threads: [
+                %{
+                  thread_id: "thread123",
+                  history_id: "456",
+                  snippet: "Budget update"
+                }
+              ],
+              next_page_token: "next-thread",
+              result_size_estimate: 1
+            }} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.threads.list",
+               %{query: "label:inbox", label_ids: ["INBOX"]},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes get thread metadata through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              thread: %{
+                thread_id: "thread123",
+                history_id: "456",
+                messages: [%{message_id: "msg123"}]
+              }
+            }} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.thread.get",
+               %{thread_id: "thread123", metadata_headers: ["From", "Subject"]},
                context: context,
                credential_lease: lease
              )
