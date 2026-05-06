@@ -86,5 +86,27 @@ defmodule Jido.Connect.Gmail.Client.Users do
     |> Response.handle_message_response()
   end
 
+  def create_label(%{name: name} = params, access_token)
+      when is_binary(name) and is_binary(access_token) do
+    access_token
+    |> Transport.request()
+    |> Req.post(
+      url: "/gmail/v1/users/me/labels",
+      json: Params.label_body(params)
+    )
+    |> Response.handle_label_response()
+  end
+
+  def apply_message_labels(%{message_id: message_id} = params, access_token)
+      when is_binary(message_id) and is_binary(access_token) do
+    access_token
+    |> Transport.request()
+    |> Req.post(
+      url: "/gmail/v1/users/me/messages/#{encode_path_segment(message_id)}/modify",
+      json: Params.modify_labels_body(params)
+    )
+    |> Response.handle_message_response()
+  end
+
   defp encode_path_segment(value), do: URI.encode(value, &URI.char_unreserved?/1)
 end

@@ -34,6 +34,24 @@ defmodule Jido.Connect.Gmail.Client.Params do
     %{id: Map.fetch!(params, :draft_id)}
   end
 
+  def label_body(params) when is_map(params) do
+    %{
+      name: Map.get(params, :name),
+      messageListVisibility: Map.get(params, :message_list_visibility),
+      labelListVisibility: Map.get(params, :label_list_visibility),
+      color: Map.get(params, :color)
+    }
+    |> compact()
+  end
+
+  def modify_labels_body(params) when is_map(params) do
+    %{
+      addLabelIds: Map.get(params, :add_label_ids, []),
+      removeLabelIds: Map.get(params, :remove_label_ids, [])
+    }
+    |> compact()
+  end
+
   defp put_repeated(params, _key, nil), do: params
   defp put_repeated(params, _key, []), do: params
 

@@ -16,6 +16,10 @@ defmodule Jido.Connect.Gmail.ScopeResolver do
     "google.gmail.draft.create",
     "google.gmail.draft.send"
   ]
+  @modify_actions [
+    "google.gmail.label.create",
+    "google.gmail.message.labels.apply"
+  ]
 
   def required_scopes(operation, _input, connection) do
     operation
@@ -47,6 +51,9 @@ defmodule Jido.Connect.Gmail.ScopeResolver do
 
   defp required_for_operation(operation_id, _connection) when operation_id in @compose_actions,
     do: [@compose_scope]
+
+  defp required_for_operation(operation_id, _connection) when operation_id in @modify_actions,
+    do: [@modify_scope]
 
   defp required_for_operation(_operation_id, %{scopes: scopes}) when is_list(scopes) do
     cond do

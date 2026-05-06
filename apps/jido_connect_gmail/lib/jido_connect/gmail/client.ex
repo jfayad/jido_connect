@@ -12,4 +12,6 @@ defmodule Jido.Connect.Gmail.Client do
   defdelegate send_message(params, access_token), to: Users
   defdelegate create_draft(params, access_token), to: Users
   defdelegate send_draft(params, access_token), to: Users
+  defdelegate create_label(params, access_token), to: Users
+  defdelegate apply_message_labels(params, access_token), to: Users
 end

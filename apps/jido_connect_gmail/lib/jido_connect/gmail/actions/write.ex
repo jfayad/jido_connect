@@ -5,6 +5,7 @@ defmodule Jido.Connect.Gmail.Actions.Write do
 
   @send_scope "https://www.googleapis.com/auth/gmail.send"
   @compose_scope "https://www.googleapis.com/auth/gmail.compose"
+  @modify_scope "https://www.googleapis.com/auth/gmail.modify"
   @scope_resolver Jido.Connect.Gmail.ScopeResolver
 
   actions do
@@ -89,6 +90,63 @@ defmodule Jido.Connect.Gmail.Actions.Write do
 
       input do
         field(:draft_id, :string, required?: true, example: "r123...")
+      end
+
+      output do
+        field(:message, :map)
+      end
+    end
+
+    action :create_label do
+      id("google.gmail.label.create")
+      resource(:label)
+      verb(:create)
+      data_classification(:personal_data)
+      label("Create Gmail label")
+      description("Create a Gmail user label.")
+      handler(Jido.Connect.Gmail.Handlers.Actions.CreateLabel)
+      effect(:write, confirmation: :required_for_ai)
+
+      access do
+        auth(:user)
+        scopes([@modify_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:name, :string, required?: true, example: "Customers")
+        field(:message_list_visibility, :string, enum: ["show", "hide"])
+
+        field(:label_list_visibility, :string,
+          enum: ["labelShow", "labelShowIfUnread", "labelHide"]
+        )
+
+        field(:color, :map)
+      end
+
+      output do
+        field(:label, :map)
+      end
+    end
+
+    action :apply_message_labels do
+      id("google.gmail.message.labels.apply")
+      resource(:message)
+      verb(:update)
+      data_classification(:message_content)
+      label("Apply Gmail message labels")
+      description("Add or remove labels on a Gmail message.")
+      handler(Jido.Connect.Gmail.Handlers.Actions.ApplyMessageLabels)
+      effect(:write, confirmation: :required_for_ai)
+
+      access do
+        auth(:user)
+        scopes([@modify_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:message_id, :string, required?: true, example: "18c...")
+        field(:add_label_ids, {:array, :string}, default: [])
+        field(:remove_label_ids, {:array, :string}, default: [])
       end
 
       output do

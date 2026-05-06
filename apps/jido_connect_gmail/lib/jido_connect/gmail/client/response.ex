@@ -33,6 +33,18 @@ defmodule Jido.Connect.Gmail.Client.Response do
 
   def handle_label_list_response(response), do: Transport.handle_error_response(response)
 
+  def handle_label_response({:ok, %{status: status, body: body}})
+      when status in 200..299 and is_map(body) do
+    Normalizer.label(body)
+  end
+
+  def handle_label_response({:ok, %{status: status, body: body}})
+      when status in 200..299 do
+    Transport.invalid_success_response("Gmail label response was invalid", body)
+  end
+
+  def handle_label_response(response), do: Transport.handle_error_response(response)
+
   def handle_message_list_response({:ok, %{status: status, body: body}})
       when status in 200..299 and is_map(body) do
     messages =

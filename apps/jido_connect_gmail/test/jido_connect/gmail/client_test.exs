@@ -220,6 +220,69 @@ defmodule Jido.Connect.Gmail.ClientTest do
     assert message.message_id == "sent-draft123"
   end
 
+  test "creates Gmail labels" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/gmail/v1/users/me/labels"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "name" => "Customers",
+               "messageListVisibility" => "show",
+               "labelListVisibility" => "labelShow"
+             }
+
+      Req.Test.json(conn, %{
+        "id" => "Label_123",
+        "name" => "Customers",
+        "type" => "user",
+        "messageListVisibility" => "show"
+      })
+    end)
+
+    assert {:ok, %Label{} = label} =
+             Client.create_label(
+               %{
+                 name: "Customers",
+                 message_list_visibility: "show",
+                 label_list_visibility: "labelShow"
+               },
+               "token"
+             )
+
+    assert label.label_id == "Label_123"
+    assert label.name == "Customers"
+  end
+
+  test "applies Gmail message labels" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/gmail/v1/users/me/messages/msg123/modify"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "addLabelIds" => ["Label_123"],
+               "removeLabelIds" => []
+             }
+
+      Req.Test.json(conn, %{
+        "id" => "msg123",
+        "threadId" => "thread123",
+        "labelIds" => ["INBOX", "Label_123"]
+      })
+    end)
+
+    assert {:ok, %Message{} = message} =
+             Client.apply_message_labels(
+               %{message_id: "msg123", add_label_ids: ["Label_123"], remove_label_ids: []},
+               "token"
+             )
+
+    assert message.label_ids == ["INBOX", "Label_123"]
+  end
+
   defp message_payload do
     %{
       "id" => "msg123",

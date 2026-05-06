@@ -136,6 +136,28 @@ defmodule Jido.Connect.GmailTest do
          label_ids: ["SENT"]
        })}
     end
+
+    def create_label(%{name: "Customers", message_list_visibility: "show"}, "token") do
+      {:ok,
+       Gmail.Label.new!(%{
+         label_id: "Label_123",
+         name: "Customers",
+         type: "user",
+         message_list_visibility: "show"
+       })}
+    end
+
+    def apply_message_labels(
+          %{message_id: "msg123", add_label_ids: ["Label_123"], remove_label_ids: []},
+          "token"
+        ) do
+      {:ok,
+       Gmail.Message.new!(%{
+         message_id: "msg123",
+         thread_id: "thread123",
+         label_ids: ["INBOX", "Label_123"]
+       })}
+    end
   end
 
   test "declares Gmail provider metadata" do
@@ -166,7 +188,9 @@ defmodule Jido.Connect.GmailTest do
              "google.gmail.thread.get",
              "google.gmail.message.send",
              "google.gmail.draft.create",
-             "google.gmail.draft.send"
+             "google.gmail.draft.send",
+             "google.gmail.label.create",
+             "google.gmail.message.labels.apply"
            ]
 
     send_action = Enum.find(spec.actions, &(&1.id == "google.gmail.message.send"))
@@ -422,6 +446,74 @@ defmodule Jido.Connect.GmailTest do
              )
   end
 
+  test "invokes create label through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: modify_scopes())
+
+    assert {:ok,
+            %{
+              label: %{
+                label_id: "Label_123",
+                name: "Customers",
+                type: "user",
+                message_list_visibility: "show"
+              }
+            }} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.label.create",
+               %{name: "Customers", message_list_visibility: "show"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes apply message labels through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: modify_scopes())
+
+    assert {:ok, %{message: %{message_id: "msg123", label_ids: ["INBOX", "Label_123"]}}} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.message.labels.apply",
+               %{message_id: "msg123", add_label_ids: ["Label_123"]},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "label apply validates non-empty label changes" do
+    {context, lease} = context_and_lease(scopes: modify_scopes())
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_label_mutation,
+              details: %{field: :labels}
+            }} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.message.labels.apply",
+               %{message_id: "msg123"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "label mutations require modify scope" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["https://www.googleapis.com/auth/gmail.modify"]
+            }} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.label.create",
+               %{name: "Customers"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   defp context_and_lease(opts \\ []) do
     scopes =
       Keyword.get(opts, :scopes, [
@@ -478,6 +570,15 @@ defmodule Jido.Connect.GmailTest do
       "email",
       "profile",
       "https://www.googleapis.com/auth/gmail.compose"
+    ]
+  end
+
+  defp modify_scopes do
+    [
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/gmail.modify"
     ]
   end
 end
