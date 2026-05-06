@@ -8,10 +8,9 @@ handlers, schemas, normalized structs, and tests in this package.
 
 ## Status
 
-This scaffold declares the Contacts provider, OAuth profile, Contacts scope
-resolver, normalized person/contact group structs, and package wiring. Contact
-mutation actions, catalog packs, and expanded docs land in follow-up tasks in
-the Google Contacts epic.
+This package declares the Contacts provider, OAuth profile, Contacts scope
+resolver, normalized person/contact group structs, read and mutation actions,
+and curated catalog packs.
 
 ## Actions
 
@@ -24,6 +23,21 @@ the Google Contacts epic.
 - `google.contacts.group.list`
 - `google.contacts.group.create`
 - `google.contacts.group.update`
+
+## Catalog Packs
+
+- `:google_contacts_readonly` includes person reads, person search, and contact
+  group reads without mutation tools.
+- `:google_contacts_manager` includes the full Contacts surface: read tools,
+  contact create/update/delete, and contact group create/update.
+
+```elixir
+Jido.Connect.Catalog.search_tools("contacts",
+  modules: [Jido.Connect.Google.Contacts],
+  packs: Jido.Connect.Google.Contacts.catalog_packs(),
+  pack: :google_contacts_manager
+)
+```
 
 ## Scopes
 

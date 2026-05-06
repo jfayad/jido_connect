@@ -179,7 +179,10 @@ defmodule Jido.Connect.Google.ContactsTest do
       plugin_name: "google_contacts"
     )
 
-    ConnectorContracts.assert_catalog_pack_delegates(Contacts, [])
+    ConnectorContracts.assert_catalog_pack_delegates(Contacts,
+      readonly_pack: :google_contacts_readonly,
+      manager_pack: :google_contacts_manager
+    )
   end
 
   test "loads Contacts Spark DSL fragments" do

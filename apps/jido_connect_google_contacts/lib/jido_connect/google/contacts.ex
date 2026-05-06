@@ -55,4 +55,6 @@ defmodule Jido.Connect.Google.Contacts do
   end
 
   defdelegate catalog_packs, to: Jido.Connect.Google.Contacts.CatalogPacks, as: :all
+  defdelegate readonly_pack, to: Jido.Connect.Google.Contacts.CatalogPacks, as: :readonly
+  defdelegate manager_pack, to: Jido.Connect.Google.Contacts.CatalogPacks, as: :manager
 end
