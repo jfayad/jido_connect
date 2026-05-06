@@ -6,7 +6,8 @@ defmodule Jido.Connect.Gmail do
   use Jido.Connect,
     fragments: [
       Jido.Connect.Gmail.Actions.Read,
-      Jido.Connect.Gmail.Actions.Write
+      Jido.Connect.Gmail.Actions.Write,
+      Jido.Connect.Gmail.Triggers.Messages
     ]
 
   integration do

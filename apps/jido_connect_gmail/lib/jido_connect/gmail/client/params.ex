@@ -18,6 +18,15 @@ defmodule Jido.Connect.Gmail.Client.Params do
     |> put_repeated(:metadataHeaders, Map.get(params, :metadata_headers, []))
   end
 
+  def history_list_params(params) when is_map(params) do
+    []
+    |> maybe_put(:startHistoryId, Map.fetch!(params, :start_history_id))
+    |> maybe_put(:labelId, Map.get(params, :label_id))
+    |> maybe_put(:maxResults, Map.get(params, :page_size, 100))
+    |> maybe_put(:pageToken, Map.get(params, :page_token))
+    |> put_repeated(:historyTypes, Map.get(params, :history_types, []))
+  end
+
   def send_message_body(params) when is_map(params) do
     %{
       raw: Map.fetch!(params, :raw),

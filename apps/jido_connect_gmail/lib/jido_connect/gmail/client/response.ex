@@ -115,6 +115,29 @@ defmodule Jido.Connect.Gmail.Client.Response do
 
   def handle_thread_response(response), do: Transport.handle_error_response(response)
 
+  def handle_history_list_response({:ok, %{status: status, body: body}})
+      when status in 200..299 and is_map(body) do
+    history =
+      body
+      |> Data.get("history", [])
+      |> Enum.map(&history_record/1)
+
+    {:ok,
+     %{
+       history: history,
+       next_page_token: Data.get(body, "nextPageToken"),
+       history_id: normalize_string(Data.get(body, "historyId"))
+     }
+     |> Data.compact()}
+  end
+
+  def handle_history_list_response({:ok, %{status: status, body: body}})
+      when status in 200..299 do
+    Transport.invalid_success_response("Gmail history list response was invalid", body)
+  end
+
+  def handle_history_list_response(response), do: Transport.handle_error_response(response)
+
   def handle_draft_response({:ok, %{status: status, body: body}})
       when status in 200..299 and is_map(body) do
     Normalizer.draft(body)
@@ -147,4 +170,25 @@ defmodule Jido.Connect.Gmail.Client.Response do
       {:error, error} -> raise error
     end
   end
+
+  defp history_record(payload) when is_map(payload) do
+    %{
+      history_id: normalize_string(Data.get(payload, "id")),
+      messages_added:
+        payload
+        |> Data.get("messagesAdded", [])
+        |> Enum.map(&message_added!/1)
+    }
+    |> Data.compact()
+  end
+
+  defp message_added!(payload) when is_map(payload) do
+    payload
+    |> Data.get("message", %{})
+    |> message!()
+  end
+
+  defp normalize_string(nil), do: nil
+  defp normalize_string(value) when is_binary(value), do: value
+  defp normalize_string(value), do: to_string(value)
 end

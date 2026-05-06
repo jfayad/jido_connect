@@ -9,6 +9,7 @@ defmodule Jido.Connect.Gmail.Client do
   defdelegate get_message(params, access_token), to: Users
   defdelegate list_threads(params, access_token), to: Users
   defdelegate get_thread(params, access_token), to: Users
+  defdelegate list_history(params, access_token), to: Users
   defdelegate send_message(params, access_token), to: Users
   defdelegate create_draft(params, access_token), to: Users
   defdelegate send_draft(params, access_token), to: Users

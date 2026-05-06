@@ -151,6 +151,47 @@ defmodule Jido.Connect.Gmail.ClientTest do
     refute inspect(thread) =~ "body-bytes"
   end
 
+  test "lists Gmail history message additions without body data" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/gmail/v1/users/me/history"
+      assert conn.query_params["startHistoryId"] == "123"
+      assert conn.query_params["labelId"] == "INBOX"
+      assert conn.query_params["maxResults"] == "50"
+      assert conn.query_params["pageToken"] == "page-2"
+      assert conn.query_params["historyTypes"] == "messageAdded"
+
+      Req.Test.json(conn, %{
+        "history" => [
+          %{
+            "id" => "124",
+            "messagesAdded" => [
+              %{
+                "message" => message_payload()
+              }
+            ]
+          }
+        ],
+        "historyId" => "125"
+      })
+    end)
+
+    assert {:ok, %{history: [%{history_id: "124", messages_added: [%Message{} = message]}]}} =
+             Client.list_history(
+               %{
+                 start_history_id: "123",
+                 label_id: "INBOX",
+                 page_size: 50,
+                 page_token: "page-2",
+                 history_types: ["messageAdded"]
+               },
+               "token"
+             )
+
+    assert message.message_id == "msg123"
+    refute inspect(message) =~ "body-bytes"
+  end
+
   test "sends Gmail messages" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "POST"

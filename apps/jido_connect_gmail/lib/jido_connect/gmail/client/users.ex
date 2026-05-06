@@ -53,6 +53,14 @@ defmodule Jido.Connect.Gmail.Client.Users do
     |> Response.handle_thread_response()
   end
 
+  def list_history(%{start_history_id: start_history_id} = params, access_token)
+      when is_binary(start_history_id) and is_binary(access_token) do
+    access_token
+    |> Transport.request()
+    |> Req.get(url: "/gmail/v1/users/me/history", params: Params.history_list_params(params))
+    |> Response.handle_history_list_response()
+  end
+
   def send_message(%{raw: raw} = params, access_token)
       when is_binary(raw) and is_binary(access_token) do
     access_token

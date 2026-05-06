@@ -105,6 +105,86 @@ defmodule Jido.Connect.GmailTest do
        })}
     end
 
+    def list_history(
+          %{
+            start_history_id: "123",
+            history_types: ["messageAdded"],
+            label_id: "INBOX",
+            page_size: 100
+          } = params,
+          "token"
+        )
+        when not is_map_key(params, :page_token) do
+      {:ok,
+       %{
+         history: [
+           %{
+             history_id: "124",
+             messages_added: [
+               Gmail.Message.new!(%{
+                 message_id: "msg123",
+                 thread_id: "thread123",
+                 label_ids: ["INBOX", "UNREAD"],
+                 snippet: "Budget update",
+                 history_id: "124"
+               }),
+               Gmail.Message.new!(%{
+                 message_id: "msg123",
+                 thread_id: "thread123",
+                 label_ids: ["INBOX", "UNREAD"],
+                 snippet: "Budget update duplicate",
+                 history_id: "124"
+               })
+             ]
+           }
+         ],
+         next_page_token: "page-2",
+         history_id: "125"
+       }}
+    end
+
+    def list_history(
+          %{
+            start_history_id: "123",
+            page_token: "page-2",
+            history_types: ["messageAdded"],
+            label_id: "INBOX",
+            page_size: 100
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         history: [
+           %{
+             history_id: "125",
+             messages_added: [
+               Gmail.Message.new!(%{
+                 message_id: "msg456",
+                 thread_id: "thread456",
+                 label_ids: ["INBOX"],
+                 snippet: "Next update",
+                 history_id: "125"
+               })
+             ]
+           }
+         ],
+         history_id: "126"
+       }}
+    end
+
+    def list_history(
+          %{
+            start_history_id: "126",
+            history_types: ["messageAdded"],
+            label_id: "INBOX",
+            page_size: 100
+          },
+          "token"
+        ) do
+      {:ok, %{history: [], history_id: "126"}}
+    end
+
     def send_message(%{raw: raw, to: ["to@example.com"], subject: "Hello"}, "token")
         when is_binary(raw) do
       {:ok,
@@ -197,7 +277,15 @@ defmodule Jido.Connect.GmailTest do
     assert send_action.risk == :external_write
     assert send_action.confirmation == :required_for_ai
 
-    assert spec.triggers == []
+    assert {:ok,
+            %{
+              id: "google.gmail.message.received",
+              kind: :poll,
+              checkpoint: :history_id,
+              dedupe: %{key: [:message_id]},
+              scope_resolver: Jido.Connect.Gmail.ScopeResolver
+            }} =
+             Connect.trigger(spec, "google.gmail.message.received")
   end
 
   test "invokes get profile through injected client and lease" do
@@ -511,6 +599,67 @@ defmodule Jido.Connect.GmailTest do
                %{name: "Customers"},
                context: context,
                credential_lease: lease
+             )
+  end
+
+  test "message received poll initializes checkpoint without replaying history" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{signals: [], checkpoint: "123"}} =
+             Connect.poll(
+               Gmail.integration(),
+               "google.gmail.message.received",
+               %{},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "message received poll drains history pages, dedupes messages, and advances checkpoint" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              signals: [
+                %{
+                  message_id: "msg123",
+                  thread_id: "thread123",
+                  history_id: "124",
+                  label_ids: ["INBOX", "UNREAD"],
+                  snippet: "Budget update",
+                  message: %{message_id: "msg123", snippet: "Budget update"}
+                },
+                %{
+                  message_id: "msg456",
+                  thread_id: "thread456",
+                  history_id: "125",
+                  label_ids: ["INBOX"],
+                  snippet: "Next update"
+                }
+              ],
+              checkpoint: "126"
+            }} =
+             Connect.poll(
+               Gmail.integration(),
+               "google.gmail.message.received",
+               %{},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "123"
+             )
+  end
+
+  test "message received poll emits no duplicates after checkpoint advances" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{signals: [], checkpoint: "126"}} =
+             Connect.poll(
+               Gmail.integration(),
+               "google.gmail.message.received",
+               %{},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "126"
              )
   end
 
