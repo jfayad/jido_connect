@@ -9,8 +9,9 @@ handlers, schemas, normalized structs, and tests in this package.
 ## Status
 
 This scaffold declares the Contacts provider, OAuth profile, Contacts scope
-resolver, and package wiring. Person, contact mutation, contact group, catalog
-pack, and docs work lands in follow-up tasks in the Google Contacts epic.
+resolver, normalized person/contact group structs, and package wiring. Endpoint
+actions, catalog packs, and expanded docs land in follow-up tasks in the Google
+Contacts epic.
 
 ## Scopes
 
