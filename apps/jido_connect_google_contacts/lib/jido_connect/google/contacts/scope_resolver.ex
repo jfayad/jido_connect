@@ -9,6 +9,7 @@ defmodule Jido.Connect.Google.Contacts.ScopeResolver do
 
   @contacts_scope "https://www.googleapis.com/auth/contacts"
   @contacts_readonly_scope "https://www.googleapis.com/auth/contacts.readonly"
+  @profile_scope "profile"
 
   @write_actions [
     "google.contacts.person.create",
@@ -20,18 +21,37 @@ defmodule Jido.Connect.Google.Contacts.ScopeResolver do
     "google.contacts.group.member.modify"
   ]
 
-  def required_scopes(operation, _input, connection) do
+  def required_scopes(operation, input, connection) do
     operation
     |> operation_id()
-    |> required_for_operation(connection)
+    |> required_for_operation(input, connection)
   end
 
-  defp required_for_operation(operation_id, _connection)
+  defp required_for_operation(operation_id, _input, _connection)
        when operation_id in @write_actions do
     [@contacts_scope]
   end
 
-  defp required_for_operation(_operation_id, %{scopes: scopes}) when is_list(scopes) do
+  defp required_for_operation("google.contacts.person.get", input, %{scopes: scopes})
+       when is_list(scopes) do
+    if self_profile_request?(input) do
+      self_profile_scopes(scopes)
+    else
+      read_scopes(scopes)
+    end
+  end
+
+  defp required_for_operation("google.contacts.person.get", input, _connection) do
+    if self_profile_request?(input), do: [@profile_scope], else: [@contacts_readonly_scope]
+  end
+
+  defp required_for_operation(_operation_id, _input, %{scopes: scopes}) when is_list(scopes) do
+    read_scopes(scopes)
+  end
+
+  defp required_for_operation(_operation_id, _input, _connection), do: [@contacts_readonly_scope]
+
+  defp read_scopes(scopes) do
     cond do
       @contacts_scope in scopes -> [@contacts_scope]
       @contacts_readonly_scope in scopes -> [@contacts_readonly_scope]
@@ -39,7 +59,21 @@ defmodule Jido.Connect.Google.Contacts.ScopeResolver do
     end
   end
 
-  defp required_for_operation(_operation_id, _connection), do: [@contacts_readonly_scope]
+  defp self_profile_scopes(scopes) do
+    cond do
+      @contacts_scope in scopes -> [@contacts_scope]
+      @contacts_readonly_scope in scopes -> [@contacts_readonly_scope]
+      @profile_scope in scopes -> [@profile_scope]
+      true -> [@profile_scope]
+    end
+  end
+
+  defp self_profile_request?(input) when is_map(input) do
+    Map.get(input, :resource_name) == "people/me" or
+      Map.get(input, "resource_name") == "people/me"
+  end
+
+  defp self_profile_request?(_input), do: false
 
   defp operation_id(%{id: id}), do: id
   defp operation_id(%{action_id: action_id}), do: action_id

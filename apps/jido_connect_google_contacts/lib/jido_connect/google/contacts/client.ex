@@ -1,0 +1,9 @@
+defmodule Jido.Connect.Google.Contacts.Client do
+  @moduledoc "Google People API client facade for Contacts."
+
+  alias Jido.Connect.Google.Contacts.Client.People
+
+  defdelegate list_people(params, access_token), to: People
+  defdelegate get_person(params, access_token), to: People
+  defdelegate search_people(params, access_token), to: People
+end

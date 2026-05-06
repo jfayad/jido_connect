@@ -6,6 +6,7 @@ defmodule Jido.Connect.Google.Contacts.ScopeResolverTest do
 
   @contacts_scope "https://www.googleapis.com/auth/contacts"
   @contacts_readonly_scope "https://www.googleapis.com/auth/contacts.readonly"
+  @profile_scope "profile"
 
   test "declares Contacts read and mutation scope matrix" do
     assert {:module, ScopeResolver} = Code.ensure_loaded(ScopeResolver)
@@ -18,12 +19,6 @@ defmodule Jido.Connect.Google.Contacts.ScopeResolverTest do
         operation: "google.contacts.person.list",
         granted: [],
         expected: @contacts_readonly_scope
-      },
-      %{
-        label: "broad Contacts grant can satisfy person reads",
-        operation: "google.contacts.person.get",
-        granted: [@contacts_scope],
-        expected: @contacts_scope
       },
       %{
         label: "contact search uses readonly Contacts scope",
@@ -44,5 +39,23 @@ defmodule Jido.Connect.Google.Contacts.ScopeResolverTest do
         expected: @contacts_scope
       }
     ])
+
+    assert ScopeResolver.required_scopes(
+             %{id: "google.contacts.person.get"},
+             %{resource_name: "people/me"},
+             %{scopes: [@profile_scope]}
+           ) == [@profile_scope]
+
+    assert ScopeResolver.required_scopes(
+             %{id: "google.contacts.person.get"},
+             %{resource_name: "people/c123"},
+             %{scopes: []}
+           ) == [@contacts_readonly_scope]
+
+    assert ScopeResolver.required_scopes(
+             %{id: "google.contacts.person.get"},
+             %{resource_name: "people/me"},
+             %{scopes: [@contacts_scope]}
+           ) == [@contacts_scope]
   end
 end

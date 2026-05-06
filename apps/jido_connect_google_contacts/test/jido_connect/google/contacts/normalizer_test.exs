@@ -1,0 +1,91 @@
+defmodule Jido.Connect.Google.Contacts.NormalizerTest do
+  use ExUnit.Case, async: true
+
+  alias Jido.Connect.Google.Contacts.{Email, Normalizer, Organization, Person, Phone}
+
+  test "normalizes People API person payloads" do
+    assert {:ok, %Person{} = person} =
+             Normalizer.person(%{
+               "resourceName" => "people/c123",
+               "etag" => "etag123",
+               "names" => [
+                 %{
+                   "displayName" => "Ada Lovelace",
+                   "givenName" => "Ada",
+                   "familyName" => "Lovelace",
+                   "metadata" => %{"primary" => true}
+                 }
+               ],
+               "emailAddresses" => [
+                 %{
+                   "value" => "ada@example.com",
+                   "type" => "work",
+                   "metadata" => %{"primary" => true}
+                 }
+               ],
+               "phoneNumbers" => [
+                 %{"value" => "+1 555 0100", "canonicalForm" => "+15550100", "type" => "mobile"}
+               ],
+               "organizations" => [
+                 %{
+                   "name" => "Analytical Engines",
+                   "title" => "Programmer",
+                   "department" => "Research",
+                   "current" => true
+                 }
+               ],
+               "memberships" => [%{"contactGroupMembership" => %{"contactGroupId" => "friends"}}],
+               "photos" => [%{"url" => "https://example.com/photo"}],
+               "metadata" => %{"sources" => [%{"type" => "CONTACT"}]}
+             })
+
+    assert person.resource_name == "people/c123"
+    assert person.person_id == "c123"
+    assert person.display_name == "Ada Lovelace"
+    assert person.given_name == "Ada"
+    assert [%Email{value: "ada@example.com", primary?: true}] = person.email_addresses
+    assert [%Phone{canonical_form: "+15550100"}] = person.phone_numbers
+    assert [%Organization{name: "Analytical Engines", current?: true}] = person.organizations
+    assert [%{"contactGroupMembership" => %{"contactGroupId" => "friends"}}] = person.memberships
+  end
+
+  test "returns errors for malformed nested contact details" do
+    assert {:error, _error} =
+             Normalizer.person(%{
+               "resourceName" => "people/c123",
+               "emailAddresses" => [%{"type" => "work"}]
+             })
+  end
+
+  test "normalizes nil contact detail lists as empty lists" do
+    assert {:ok, %Person{} = person} =
+             Normalizer.person(%{
+               "resourceName" => "people/c123",
+               "emailAddresses" => nil,
+               "phoneNumbers" => nil,
+               "organizations" => nil
+             })
+
+    assert person.email_addresses == []
+    assert person.phone_numbers == []
+    assert person.organizations == []
+  end
+
+  test "normalizes standalone contact detail payloads" do
+    assert {:ok, %Email{value: "ada@example.com"}} =
+             Normalizer.email(%{"value" => "ada@example.com"})
+
+    assert {:ok, %Phone{value: "+1 555 0100"}} =
+             Normalizer.phone(%{"value" => "+1 555 0100"})
+
+    assert {:ok, %Organization{name: "Analytical Engines"}} =
+             Normalizer.organization(%{"name" => "Analytical Engines"})
+  end
+
+  test "rejects non-map contact detail payloads" do
+    assert {:error, :invalid_person} = Normalizer.person([])
+    assert {:error, :invalid_email} = Normalizer.email([])
+    assert {:error, :invalid_phone} = Normalizer.phone([])
+    assert {:error, :invalid_organization} = Normalizer.organization([])
+  end
+end
