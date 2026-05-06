@@ -9,4 +9,7 @@ defmodule Jido.Connect.Google.Drive.Client do
   defdelegate create_folder(params, access_token), to: Files
   defdelegate copy_file(params, access_token), to: Files
   defdelegate update_file(params, access_token), to: Files
+  defdelegate export_file(params, access_token), to: Files
+  defdelegate download_file(params, access_token), to: Files
+  defdelegate delete_file(params, access_token), to: Files
 end

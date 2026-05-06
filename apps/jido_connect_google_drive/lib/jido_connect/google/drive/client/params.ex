@@ -75,6 +75,31 @@ defmodule Jido.Connect.Google.Drive.Client.Params do
     )
   end
 
+  @doc "Builds query params for Google Workspace file exports."
+  def file_export_params(params) do
+    %{
+      mimeType: Data.get(params, :mime_type)
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds query params for raw file downloads."
+  def file_download_params(params) do
+    %{
+      alt: "media",
+      supportsAllDrives: Data.get(params, :supports_all_drives)
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds query params for file deletes."
+  def file_delete_params(params) do
+    %{
+      supportsAllDrives: Data.get(params, :supports_all_drives)
+    }
+    |> Data.compact()
+  end
+
   @doc "Builds a metadata JSON body for file create/copy/update requests."
   def file_metadata_body(params) do
     %{

@@ -194,4 +194,62 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
     assert file.name == "Renamed.pdf"
     assert file.parents == ["folder456"]
   end
+
+  test "exports Google Workspace files" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/v3/files/file123/export"
+      assert conn.query_params["mimeType"] == "text/csv"
+      assert Plug.Conn.get_req_header(conn, "accept") == ["text/csv"]
+
+      conn
+      |> Plug.Conn.put_resp_content_type("text/csv")
+      |> Plug.Conn.resp(200, "name,total\nBudget,10\n")
+    end)
+
+    assert {:ok, content} =
+             Client.export_file(%{file_id: "file123", mime_type: "text/csv"}, "token")
+
+    assert content.file_id == "file123"
+    assert content.mime_type == "text/csv"
+    assert content.content == "name,total\nBudget,10\n"
+    assert content.encoding == "utf-8"
+    assert content.binary == false
+  end
+
+  test "downloads binary files" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/v3/files/file123"
+      assert conn.query_params["alt"] == "media"
+      assert conn.query_params["supportsAllDrives"] == "true"
+      assert Plug.Conn.get_req_header(conn, "accept") == ["*/*"]
+
+      conn
+      |> Plug.Conn.put_resp_content_type("application/pdf")
+      |> Plug.Conn.resp(200, <<0, 1, 2>>)
+    end)
+
+    assert {:ok, content} =
+             Client.download_file(%{file_id: "file123", supports_all_drives: true}, "token")
+
+    assert content.file_id == "file123"
+    assert content.mime_type == "application/pdf"
+    assert content.content_base64 == "AAEC"
+    assert content.encoding == "base64"
+    assert content.binary == true
+  end
+
+  test "deletes files" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "DELETE"
+      assert conn.request_path == "/v3/files/file123"
+      assert conn.query_params["supportsAllDrives"] == "true"
+
+      Plug.Conn.resp(conn, 204, "")
+    end)
+
+    assert {:ok, %{file_id: "file123", deleted?: true}} =
+             Client.delete_file(%{file_id: "file123", supports_all_drives: true}, "token")
+  end
 end

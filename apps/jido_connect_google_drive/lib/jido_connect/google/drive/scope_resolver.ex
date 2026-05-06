@@ -13,7 +13,12 @@ defmodule Jido.Connect.Google.Drive.ScopeResolver do
     "google.drive.file.create",
     "google.drive.folder.create",
     "google.drive.file.copy",
-    "google.drive.file.update"
+    "google.drive.file.update",
+    "google.drive.file.delete"
+  ]
+  @content_actions [
+    "google.drive.file.export",
+    "google.drive.file.download"
   ]
 
   def required_scopes(operation, _input, connection) do
@@ -24,6 +29,15 @@ defmodule Jido.Connect.Google.Drive.ScopeResolver do
 
   defp required_for_operation(operation_id, _connection) when operation_id in @write_actions,
     do: [@file_scope]
+
+  defp required_for_operation(operation_id, %{scopes: scopes})
+       when operation_id in @content_actions do
+    cond do
+      is_list(scopes) and @readonly_scope in scopes -> [@readonly_scope]
+      is_list(scopes) and @file_scope in scopes -> [@file_scope]
+      true -> [@readonly_scope]
+    end
+  end
 
   defp required_for_operation(_operation_id, %{scopes: scopes}) when is_list(scopes) do
     cond do
