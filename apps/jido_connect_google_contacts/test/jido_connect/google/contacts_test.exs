@@ -9,9 +9,12 @@ defmodule Jido.Connect.Google.ContactsTest do
     Jido.Connect.Google.Contacts.Actions.ListPeople,
     Jido.Connect.Google.Contacts.Actions.GetPerson,
     Jido.Connect.Google.Contacts.Actions.SearchPeople,
+    Jido.Connect.Google.Contacts.Actions.ListContactGroups,
     Jido.Connect.Google.Contacts.Actions.CreateContact,
     Jido.Connect.Google.Contacts.Actions.UpdateContact,
-    Jido.Connect.Google.Contacts.Actions.DeleteContact
+    Jido.Connect.Google.Contacts.Actions.DeleteContact,
+    Jido.Connect.Google.Contacts.Actions.CreateContactGroup,
+    Jido.Connect.Google.Contacts.Actions.UpdateContactGroup
   ]
 
   @contacts_dsl_fragments [
@@ -94,6 +97,39 @@ defmodule Jido.Connect.Google.ContactsTest do
     def delete_contact(%{resource_name: "people/c123"}, "token") do
       {:ok, %{resource_name: "people/c123", deleted?: true}}
     end
+
+    def list_contact_groups(%{page_size: 30}, "token") do
+      {:ok,
+       %{
+         groups: [
+           Contacts.Group.new!(%{
+             resource_name: "contactGroups/friends",
+             name: "Friends",
+             member_count: 2
+           })
+         ],
+         next_sync_token: "groups-sync"
+       }}
+    end
+
+    def create_contact_group(%{name: "Leads"}, "token") do
+      {:ok,
+       Contacts.Group.new!(%{
+         resource_name: "contactGroups/leads",
+         name: "Leads"
+       })}
+    end
+
+    def update_contact_group(
+          %{resource_name: "contactGroups/leads", name: "Prospects"},
+          "token"
+        ) do
+      {:ok,
+       Contacts.Group.new!(%{
+         resource_name: "contactGroups/leads",
+         name: "Prospects"
+       })}
+    end
   end
 
   test "declares Google Contacts provider metadata" do
@@ -115,9 +151,12 @@ defmodule Jido.Connect.Google.ContactsTest do
              "google.contacts.person.list",
              "google.contacts.person.get",
              "google.contacts.person.search",
+             "google.contacts.group.list",
              "google.contacts.person.create",
              "google.contacts.person.update",
-             "google.contacts.person.delete"
+             "google.contacts.person.delete",
+             "google.contacts.group.create",
+             "google.contacts.group.update"
            ]
 
     assert [] = spec.triggers
@@ -201,6 +240,31 @@ defmodule Jido.Connect.Google.ContactsTest do
                Contacts,
                "google.contacts.person.delete",
                %{resource_name: "people/c123"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes Contacts contact group actions through the runtime" do
+    {context, lease} = context_and_lease(scopes: ["https://www.googleapis.com/auth/contacts"])
+
+    assert {:ok, %{groups: [%{name: "Friends"}], next_sync_token: "groups-sync"}} =
+             Connect.invoke(Contacts, "google.contacts.group.list", %{},
+               context: context,
+               credential_lease: lease
+             )
+
+    assert {:ok, %{group: %{resource_name: "contactGroups/leads", name: "Leads"}}} =
+             Connect.invoke(Contacts, "google.contacts.group.create", %{name: "Leads"},
+               context: context,
+               credential_lease: lease
+             )
+
+    assert {:ok, %{group: %{resource_name: "contactGroups/leads", name: "Prospects"}}} =
+             Connect.invoke(
+               Contacts,
+               "google.contacts.group.update",
+               %{resource_name: "contactGroups/leads", name: "Prospects"},
                context: context,
                credential_lease: lease
              )

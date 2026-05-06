@@ -97,5 +97,58 @@ defmodule Jido.Connect.Google.Contacts.Actions.Write do
         field(:result, :map)
       end
     end
+
+    action :create_contact_group do
+      id("google.contacts.group.create")
+      resource(:group)
+      verb(:create)
+      data_classification(:personal_data)
+      label("Create contact group")
+      description("Create a Google Contacts contact group.")
+      handler(Jido.Connect.Google.Contacts.Handlers.Actions.CreateContactGroup)
+      effect(:write, confirmation: :required_for_ai)
+
+      access do
+        auth(:user)
+        scopes([@contacts_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:name, :string, required?: true)
+        field(:fields, :string)
+      end
+
+      output do
+        field(:group, :map)
+      end
+    end
+
+    action :update_contact_group do
+      id("google.contacts.group.update")
+      resource(:group)
+      verb(:update)
+      data_classification(:personal_data)
+      label("Update contact group")
+      description("Update a Google Contacts contact group name.")
+      handler(Jido.Connect.Google.Contacts.Handlers.Actions.UpdateContactGroup)
+      effect(:write, confirmation: :required_for_ai)
+
+      access do
+        auth(:user)
+        scopes([@contacts_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:resource_name, :string, required?: true, example: "contactGroups/friends")
+        field(:name, :string, required?: true)
+        field(:etag, :string)
+        field(:update_group_fields, :string)
+        field(:fields, :string)
+      end
+
+      output do
+        field(:group, :map)
+      end
+    end
   end
 end

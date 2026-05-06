@@ -74,6 +74,47 @@ defmodule Jido.Connect.Google.Contacts.Client.Response do
   def handle_contact_delete_response(response, _params),
     do: Transport.handle_error_response(response)
 
+  def handle_contact_group_list_response({:ok, %{status: status, body: body}})
+      when status in 200..299 and is_map(body) do
+    with {:ok, groups} <-
+           normalize_items(
+             body,
+             "contactGroups",
+             &Normalizer.group/1,
+             "Google Contacts contact group list response was invalid"
+           ) do
+      {:ok,
+       %{
+         groups: groups,
+         next_page_token: Data.get(body, "nextPageToken"),
+         next_sync_token: Data.get(body, "nextSyncToken")
+       }
+       |> Data.compact()}
+    end
+  end
+
+  def handle_contact_group_list_response({:ok, %{status: status, body: body}})
+      when status in 200..299 do
+    Transport.invalid_success_response(
+      "Google Contacts contact group list response was invalid",
+      body
+    )
+  end
+
+  def handle_contact_group_list_response(response), do: Transport.handle_error_response(response)
+
+  def handle_contact_group_response({:ok, %{status: status, body: body}})
+      when status in 200..299 and is_map(body) do
+    normalize_one(body, &Normalizer.group/1, "Google Contacts contact group response was invalid")
+  end
+
+  def handle_contact_group_response({:ok, %{status: status, body: body}})
+      when status in 200..299 do
+    Transport.invalid_success_response("Google Contacts contact group response was invalid", body)
+  end
+
+  def handle_contact_group_response(response), do: Transport.handle_error_response(response)
+
   defp normalize_one(body, normalizer, message) do
     case normalizer.(body) do
       {:ok, item} -> {:ok, item}

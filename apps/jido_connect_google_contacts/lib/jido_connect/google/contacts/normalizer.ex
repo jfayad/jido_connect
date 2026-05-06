@@ -2,7 +2,7 @@ defmodule Jido.Connect.Google.Contacts.Normalizer do
   @moduledoc "Normalizes Google People API payloads into Contacts structs."
 
   alias Jido.Connect.Data
-  alias Jido.Connect.Google.Contacts.{Email, Organization, Person, Phone}
+  alias Jido.Connect.Google.Contacts.{Email, Group, Organization, Person, Phone}
 
   def person(payload) when is_map(payload) do
     with {:ok, email_addresses} <- normalize_list(payload, "emailAddresses", &email/1),
@@ -84,6 +84,23 @@ defmodule Jido.Connect.Google.Contacts.Normalizer do
 
   def organization(_payload), do: {:error, :invalid_organization}
 
+  def group(payload) when is_map(payload) do
+    %{
+      resource_name: Data.get(payload, "resourceName"),
+      group_id: group_id(Data.get(payload, "resourceName")),
+      name: Data.get(payload, "name"),
+      formatted_name: Data.get(payload, "formattedName"),
+      group_type: Data.get(payload, "groupType"),
+      member_count: Data.get(payload, "memberCount"),
+      etag: Data.get(payload, "etag"),
+      metadata: Data.get(payload, "metadata", %{})
+    }
+    |> Data.compact()
+    |> Group.new()
+  end
+
+  def group(_payload), do: {:error, :invalid_group}
+
   defp normalize_list(payload, key, normalizer) do
     case Data.get(payload, key, []) do
       nil ->
@@ -130,4 +147,7 @@ defmodule Jido.Connect.Google.Contacts.Normalizer do
 
   defp person_id("people/" <> id), do: id
   defp person_id(_resource_name), do: nil
+
+  defp group_id("contactGroups/" <> id), do: id
+  defp group_id(_resource_name), do: nil
 end

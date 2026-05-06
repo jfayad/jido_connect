@@ -23,11 +23,21 @@ defmodule Jido.Connect.Google.Contacts.Client.Params do
     "organizations"
   ]
 
+  @default_group_fields [
+    "metadata",
+    "groupType",
+    "memberCount",
+    "name"
+  ]
+
   @doc "Default People API person fields used by Contacts read actions."
   def default_person_fields, do: Enum.join(@default_person_fields, ",")
 
   @doc "Default People API update mask for Contacts mutation actions."
   def default_update_person_fields, do: Enum.join(@default_update_person_fields, ",")
+
+  @doc "Default People API contact group fields used by Contacts group actions."
+  def default_group_fields, do: Enum.join(@default_group_fields, ",")
 
   @doc "Builds query params for `people.connections.list`."
   def list_people_params(params) do
@@ -98,6 +108,48 @@ defmodule Jido.Connect.Google.Contacts.Client.Params do
     |> Data.compact()
   end
 
+  @doc "Builds query params for `contactGroups.list`."
+  def list_contact_groups_params(params) do
+    %{
+      pageSize: Data.get(params, :page_size, 30),
+      pageToken: Data.get(params, :page_token),
+      syncToken: Data.get(params, :sync_token),
+      groupFields: Data.get(params, :group_fields, default_group_fields()),
+      fields: Data.get(params, :fields, contact_group_list_fields())
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds query params for `contactGroups.create`."
+  def create_contact_group_params(params) do
+    %{
+      fields: Data.get(params, :fields, contact_group_response_fields())
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds query params for `contactGroups.update`."
+  def update_contact_group_params(params) do
+    %{
+      updateGroupFields: Data.get(params, :update_group_fields, "name"),
+      fields: Data.get(params, :fields, contact_group_response_fields())
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds a Google People API contact group mutation body."
+  def contact_group_body(params) do
+    %{
+      contactGroup:
+        %{
+          resourceName: Data.get(params, :resource_name),
+          etag: Data.get(params, :etag),
+          name: Data.get(params, :name)
+        }
+        |> Data.compact()
+    }
+  end
+
   defp people_list_fields do
     "nextPageToken,nextSyncToken,totalItems,connections(#{person_response_fields()})"
   end
@@ -108,6 +160,14 @@ defmodule Jido.Connect.Google.Contacts.Client.Params do
 
   defp person_response_fields do
     "resourceName,etag,#{default_person_fields()}"
+  end
+
+  defp contact_group_list_fields do
+    "nextPageToken,nextSyncToken,contactGroups(#{contact_group_response_fields()})"
+  end
+
+  defp contact_group_response_fields do
+    "resourceName,etag,metadata,groupType,memberCount,name,formattedName"
   end
 
   defp names_body(params) do

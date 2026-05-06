@@ -21,6 +21,9 @@ the Google Contacts epic.
 - `google.contacts.person.create`
 - `google.contacts.person.update`
 - `google.contacts.person.delete`
+- `google.contacts.group.list`
+- `google.contacts.group.create`
+- `google.contacts.group.update`
 
 ## Scopes
 

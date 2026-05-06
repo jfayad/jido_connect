@@ -1,7 +1,7 @@
 defmodule Jido.Connect.Google.Contacts.NormalizerTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Connect.Google.Contacts.{Email, Normalizer, Organization, Person, Phone}
+  alias Jido.Connect.Google.Contacts.{Email, Group, Normalizer, Organization, Person, Phone}
 
   test "normalizes People API person payloads" do
     assert {:ok, %Person{} = person} =
@@ -82,10 +82,27 @@ defmodule Jido.Connect.Google.Contacts.NormalizerTest do
              Normalizer.organization(%{"name" => "Analytical Engines"})
   end
 
+  test "normalizes contact group payloads" do
+    assert {:ok, %Group{} = group} =
+             Normalizer.group(%{
+               "resourceName" => "contactGroups/friends",
+               "etag" => "etag123",
+               "name" => "Friends",
+               "formattedName" => "Friends",
+               "groupType" => "USER_CONTACT_GROUP",
+               "memberCount" => 2,
+               "metadata" => %{"deleted" => false}
+             })
+
+    assert group.group_id == "friends"
+    assert group.member_count == 2
+  end
+
   test "rejects non-map contact detail payloads" do
     assert {:error, :invalid_person} = Normalizer.person([])
     assert {:error, :invalid_email} = Normalizer.email([])
     assert {:error, :invalid_phone} = Normalizer.phone([])
     assert {:error, :invalid_organization} = Normalizer.organization([])
+    assert {:error, :invalid_group} = Normalizer.group([])
   end
 end

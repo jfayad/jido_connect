@@ -106,5 +106,35 @@ defmodule Jido.Connect.Google.Contacts.Actions.Read do
         field(:people, {:array, :map})
       end
     end
+
+    action :list_contact_groups do
+      id("google.contacts.group.list")
+      resource(:group)
+      verb(:list)
+      data_classification(:personal_data)
+      label("List contact groups")
+      description("List Google Contacts contact groups.")
+      handler(Jido.Connect.Google.Contacts.Handlers.Actions.ListContactGroups)
+      effect(:read)
+
+      access do
+        auth(:user)
+        scopes([@contacts_readonly_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:page_size, :integer, default: 30)
+        field(:page_token, :string)
+        field(:sync_token, :string)
+        field(:group_fields, :string)
+        field(:fields, :string)
+      end
+
+      output do
+        field(:groups, {:array, :map})
+        field(:next_page_token, :string)
+        field(:next_sync_token, :string)
+      end
+    end
   end
 end

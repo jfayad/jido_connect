@@ -11,7 +11,10 @@ defmodule Jido.Connect.Google.Contacts.PrivacyAuditTest do
       action("google.contacts.person.search", :personal_data, :read, :none),
       action("google.contacts.person.create", :personal_data, :write, :required_for_ai),
       action("google.contacts.person.update", :personal_data, :write, :required_for_ai),
-      action("google.contacts.person.delete", :personal_data, :destructive, :always)
+      action("google.contacts.person.delete", :personal_data, :destructive, :always),
+      action("google.contacts.group.list", :personal_data, :read, :none),
+      action("google.contacts.group.create", :personal_data, :write, :required_for_ai),
+      action("google.contacts.group.update", :personal_data, :write, :required_for_ai)
     ])
   end
 

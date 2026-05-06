@@ -1,6 +1,7 @@
 defmodule Jido.Connect.Google.Contacts.ClientTest do
   use ExUnit.Case, async: false
 
+  alias Jido.Connect.Google.Contacts
   alias Jido.Connect.Google.Contacts.{Client, Person}
 
   setup {Req.Test, :verify_on_exit!}
@@ -194,6 +195,78 @@ defmodule Jido.Connect.Google.Contacts.ClientTest do
              Client.delete_contact(%{resource_name: "people/c123"}, "token")
   end
 
+  test "lists contact groups" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/v1/contactGroups"
+      assert conn.query_params["pageSize"] == "20"
+      assert conn.query_params["groupFields"] =~ "memberCount"
+      assert conn.query_params["fields"] =~ "contactGroups"
+
+      Req.Test.json(conn, %{
+        "contactGroups" => [group_payload()],
+        "nextPageToken" => "groups-next",
+        "nextSyncToken" => "groups-sync"
+      })
+    end)
+
+    assert {:ok,
+            %{
+              groups: [%Contacts.Group{} = group],
+              next_page_token: "groups-next",
+              next_sync_token: "groups-sync"
+            }} = Client.list_contact_groups(%{page_size: 20}, "token")
+
+    assert group.resource_name == "contactGroups/friends"
+    assert group.name == "Friends"
+  end
+
+  test "creates contact groups" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/v1/contactGroups"
+      assert conn.query_params["fields"] =~ "formattedName"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert Jason.decode!(body) == %{"contactGroup" => %{"name" => "Friends"}}
+
+      Req.Test.json(conn, group_payload())
+    end)
+
+    assert {:ok, %Contacts.Group{} = group} =
+             Client.create_contact_group(%{name: "Friends"}, "token")
+
+    assert group.group_id == "friends"
+  end
+
+  test "updates contact groups" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "PUT"
+      assert conn.request_path == "/v1/contactGroups/friends"
+      assert conn.query_params["updateGroupFields"] == "name"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "contactGroup" => %{
+                 "resourceName" => "contactGroups/friends",
+                 "etag" => "etag123",
+                 "name" => "Close Friends"
+               }
+             }
+
+      Req.Test.json(conn, Map.put(group_payload(), "name", "Close Friends"))
+    end)
+
+    assert {:ok, %Contacts.Group{} = group} =
+             Client.update_contact_group(
+               %{resource_name: "contactGroups/friends", etag: "etag123", name: "Close Friends"},
+               "token"
+             )
+
+    assert group.name == "Close Friends"
+  end
+
   test "returns provider errors for malformed people list items" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"
@@ -265,6 +338,18 @@ defmodule Jido.Connect.Google.Contacts.ClientTest do
         %{"name" => "Analytical Engines", "title" => "Programmer", "current" => true}
       ],
       "metadata" => %{"sources" => [%{"type" => "CONTACT"}]}
+    }
+  end
+
+  defp group_payload do
+    %{
+      "resourceName" => "contactGroups/friends",
+      "etag" => "etag123",
+      "name" => "Friends",
+      "formattedName" => "Friends",
+      "groupType" => "USER_CONTACT_GROUP",
+      "memberCount" => 2,
+      "metadata" => %{"deleted" => false}
     }
   end
 end
