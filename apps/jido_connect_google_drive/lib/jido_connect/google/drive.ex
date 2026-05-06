@@ -3,7 +3,10 @@ defmodule Jido.Connect.Google.Drive do
   Google Drive integration authored with the `Jido.Connect` Spark DSL.
   """
 
-  use Jido.Connect
+  use Jido.Connect,
+    fragments: [
+      Jido.Connect.Google.Drive.Actions.Read
+    ]
 
   integration do
     id(:google_drive)

@@ -1,0 +1,32 @@
+defmodule Jido.Connect.Google.Drive.ScopeResolver do
+  @moduledoc """
+  Resolves Google Drive scopes.
+
+  Drive metadata reads should prefer `drive.metadata.readonly`, while accepting
+  broader read or app-file grants that hosts may already have.
+  """
+
+  @metadata_scope "https://www.googleapis.com/auth/drive.metadata.readonly"
+  @file_scope "https://www.googleapis.com/auth/drive.file"
+  @readonly_scope "https://www.googleapis.com/auth/drive.readonly"
+
+  def required_scopes(operation, _input, connection) do
+    operation
+    |> operation_id()
+    |> required_for_operation(connection)
+  end
+
+  defp required_for_operation(_operation_id, %{scopes: scopes}) when is_list(scopes) do
+    cond do
+      @readonly_scope in scopes -> [@readonly_scope]
+      @file_scope in scopes -> [@file_scope]
+      true -> [@metadata_scope]
+    end
+  end
+
+  defp required_for_operation(_operation_id, _connection), do: [@metadata_scope]
+
+  defp operation_id(%{id: id}), do: id
+  defp operation_id(%{action_id: action_id}), do: action_id
+  defp operation_id(operation), do: Map.get(operation, :id)
+end
