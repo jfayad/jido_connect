@@ -151,6 +151,75 @@ defmodule Jido.Connect.Gmail.ClientTest do
     refute inspect(thread) =~ "body-bytes"
   end
 
+  test "sends Gmail messages" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/gmail/v1/users/me/messages/send"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "raw" => "encoded-message",
+               "threadId" => "thread123"
+             }
+
+      Req.Test.json(conn, %{
+        "id" => "sent123",
+        "threadId" => "thread123",
+        "labelIds" => ["SENT"]
+      })
+    end)
+
+    assert {:ok, %Message{} = message} =
+             Client.send_message(%{raw: "encoded-message", thread_id: "thread123"}, "token")
+
+    assert message.message_id == "sent123"
+    assert message.label_ids == ["SENT"]
+  end
+
+  test "creates Gmail drafts" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/gmail/v1/users/me/drafts"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "message" => %{"raw" => "encoded-message", "threadId" => "thread123"}
+             }
+
+      Req.Test.json(conn, %{
+        "id" => "draft123",
+        "message" => %{"id" => "draft-message123", "threadId" => "thread123"}
+      })
+    end)
+
+    assert {:ok, draft} =
+             Client.create_draft(%{raw: "encoded-message", thread_id: "thread123"}, "token")
+
+    assert draft.draft_id == "draft123"
+    assert draft.message.message_id == "draft-message123"
+  end
+
+  test "sends Gmail drafts" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/gmail/v1/users/me/drafts/send"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert Jason.decode!(body) == %{"id" => "draft123"}
+
+      Req.Test.json(conn, %{
+        "id" => "sent-draft123",
+        "threadId" => "thread123",
+        "labelIds" => ["SENT"]
+      })
+    end)
+
+    assert {:ok, %Message{} = message} = Client.send_draft(%{draft_id: "draft123"}, "token")
+    assert message.message_id == "sent-draft123"
+  end
+
   defp message_payload do
     %{
       "id" => "msg123",

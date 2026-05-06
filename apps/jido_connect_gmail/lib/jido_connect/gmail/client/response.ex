@@ -103,6 +103,18 @@ defmodule Jido.Connect.Gmail.Client.Response do
 
   def handle_thread_response(response), do: Transport.handle_error_response(response)
 
+  def handle_draft_response({:ok, %{status: status, body: body}})
+      when status in 200..299 and is_map(body) do
+    Normalizer.draft(body)
+  end
+
+  def handle_draft_response({:ok, %{status: status, body: body}})
+      when status in 200..299 do
+    Transport.invalid_success_response("Gmail draft response was invalid", body)
+  end
+
+  def handle_draft_response(response), do: Transport.handle_error_response(response)
+
   defp label!(payload) do
     case Normalizer.label(payload) do
       {:ok, label} -> label

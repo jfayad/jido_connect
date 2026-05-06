@@ -104,6 +104,38 @@ defmodule Jido.Connect.GmailTest do
          ]
        })}
     end
+
+    def send_message(%{raw: raw, to: ["to@example.com"], subject: "Hello"}, "token")
+        when is_binary(raw) do
+      {:ok,
+       Gmail.Message.new!(%{
+         message_id: "sent123",
+         thread_id: "thread123",
+         label_ids: ["SENT"]
+       })}
+    end
+
+    def create_draft(%{raw: raw, to: ["to@example.com"], subject: "Hello"}, "token")
+        when is_binary(raw) do
+      {:ok,
+       Gmail.Draft.new!(%{
+         draft_id: "draft123",
+         message:
+           Gmail.Message.new!(%{
+             message_id: "draft-message123",
+             thread_id: "thread123"
+           })
+       })}
+    end
+
+    def send_draft(%{draft_id: "draft123"}, "token") do
+      {:ok,
+       Gmail.Message.new!(%{
+         message_id: "sent-draft123",
+         thread_id: "thread123",
+         label_ids: ["SENT"]
+       })}
+    end
   end
 
   test "declares Gmail provider metadata" do
@@ -131,8 +163,15 @@ defmodule Jido.Connect.GmailTest do
              "google.gmail.messages.list",
              "google.gmail.message.get",
              "google.gmail.threads.list",
-             "google.gmail.thread.get"
+             "google.gmail.thread.get",
+             "google.gmail.message.send",
+             "google.gmail.draft.create",
+             "google.gmail.draft.send"
            ]
+
+    send_action = Enum.find(spec.actions, &(&1.id == "google.gmail.message.send"))
+    assert send_action.risk == :external_write
+    assert send_action.confirmation == :required_for_ai
 
     assert spec.triggers == []
   end
@@ -310,6 +349,79 @@ defmodule Jido.Connect.GmailTest do
              )
   end
 
+  test "invokes send message through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: send_scopes())
+
+    assert {:ok, %{message: %{message_id: "sent123", label_ids: ["SENT"]}}} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.message.send",
+               %{to: ["to@example.com"], subject: "Hello", body_text: "Body"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes create draft through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: compose_scopes())
+
+    assert {:ok, %{draft: %{draft_id: "draft123", message: %{message_id: "draft-message123"}}}} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.draft.create",
+               %{to: ["to@example.com"], subject: "Hello", body_text: "Body"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes send draft through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: compose_scopes())
+
+    assert {:ok, %{message: %{message_id: "sent-draft123", label_ids: ["SENT"]}}} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.draft.send",
+               %{draft_id: "draft123"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "send and draft actions validate recipients and body inputs" do
+    {context, lease} = context_and_lease(scopes: send_scopes())
+
+    assert {:error,
+            %Connect.Error.ValidationError{
+              reason: :invalid_recipient,
+              details: %{field: :to}
+            }} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.message.send",
+               %{to: ["not-an-email"], subject: "Hello", body_text: "Body"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "send action requires dynamic send-capable scope" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["https://www.googleapis.com/auth/gmail.send"]
+            }} =
+             Connect.invoke(
+               Gmail.integration(),
+               "google.gmail.message.send",
+               %{to: ["to@example.com"], subject: "Hello", body_text: "Body"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
   defp context_and_lease(opts \\ []) do
     scopes =
       Keyword.get(opts, :scopes, [
@@ -349,5 +461,23 @@ defmodule Jido.Connect.GmailTest do
       })
 
     {context, lease}
+  end
+
+  defp send_scopes do
+    [
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/gmail.send"
+    ]
+  end
+
+  defp compose_scopes do
+    [
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/gmail.compose"
+    ]
   end
 end

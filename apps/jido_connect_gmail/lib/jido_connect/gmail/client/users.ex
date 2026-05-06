@@ -53,5 +53,38 @@ defmodule Jido.Connect.Gmail.Client.Users do
     |> Response.handle_thread_response()
   end
 
+  def send_message(%{raw: raw} = params, access_token)
+      when is_binary(raw) and is_binary(access_token) do
+    access_token
+    |> Transport.request()
+    |> Req.post(
+      url: "/gmail/v1/users/me/messages/send",
+      json: Params.send_message_body(params)
+    )
+    |> Response.handle_message_response()
+  end
+
+  def create_draft(%{raw: raw} = params, access_token)
+      when is_binary(raw) and is_binary(access_token) do
+    access_token
+    |> Transport.request()
+    |> Req.post(
+      url: "/gmail/v1/users/me/drafts",
+      json: Params.create_draft_body(params)
+    )
+    |> Response.handle_draft_response()
+  end
+
+  def send_draft(%{draft_id: draft_id} = params, access_token)
+      when is_binary(draft_id) and is_binary(access_token) do
+    access_token
+    |> Transport.request()
+    |> Req.post(
+      url: "/gmail/v1/users/me/drafts/send",
+      json: Params.send_draft_body(params)
+    )
+    |> Response.handle_message_response()
+  end
+
   defp encode_path_segment(value), do: URI.encode(value, &URI.char_unreserved?/1)
 end

@@ -8,13 +8,45 @@ defmodule Jido.Connect.Gmail.ScopeResolver do
 
   @metadata_scope "https://www.googleapis.com/auth/gmail.metadata"
   @readonly_scope "https://www.googleapis.com/auth/gmail.readonly"
+  @send_scope "https://www.googleapis.com/auth/gmail.send"
+  @compose_scope "https://www.googleapis.com/auth/gmail.compose"
   @modify_scope "https://www.googleapis.com/auth/gmail.modify"
+  @send_actions ["google.gmail.message.send"]
+  @compose_actions [
+    "google.gmail.draft.create",
+    "google.gmail.draft.send"
+  ]
 
   def required_scopes(operation, _input, connection) do
     operation
     |> operation_id()
     |> required_for_operation(connection)
   end
+
+  defp required_for_operation(operation_id, %{scopes: scopes})
+       when operation_id in @send_actions and is_list(scopes) do
+    cond do
+      @send_scope in scopes -> [@send_scope]
+      @compose_scope in scopes -> [@compose_scope]
+      @modify_scope in scopes -> [@modify_scope]
+      true -> [@send_scope]
+    end
+  end
+
+  defp required_for_operation(operation_id, %{scopes: scopes})
+       when operation_id in @compose_actions and is_list(scopes) do
+    cond do
+      @compose_scope in scopes -> [@compose_scope]
+      @modify_scope in scopes -> [@modify_scope]
+      true -> [@compose_scope]
+    end
+  end
+
+  defp required_for_operation(operation_id, _connection) when operation_id in @send_actions,
+    do: [@send_scope]
+
+  defp required_for_operation(operation_id, _connection) when operation_id in @compose_actions,
+    do: [@compose_scope]
 
   defp required_for_operation(_operation_id, %{scopes: scopes}) when is_list(scopes) do
     cond do

@@ -18,6 +18,22 @@ defmodule Jido.Connect.Gmail.Client.Params do
     |> put_repeated(:metadataHeaders, Map.get(params, :metadata_headers, []))
   end
 
+  def send_message_body(params) when is_map(params) do
+    %{
+      raw: Map.fetch!(params, :raw),
+      threadId: Map.get(params, :thread_id)
+    }
+    |> compact()
+  end
+
+  def create_draft_body(params) when is_map(params) do
+    %{message: send_message_body(params)}
+  end
+
+  def send_draft_body(params) when is_map(params) do
+    %{id: Map.fetch!(params, :draft_id)}
+  end
+
   defp put_repeated(params, _key, nil), do: params
   defp put_repeated(params, _key, []), do: params
 
@@ -29,4 +45,10 @@ defmodule Jido.Connect.Gmail.Client.Params do
   defp maybe_put(params, _key, nil), do: params
   defp maybe_put(params, _key, ""), do: params
   defp maybe_put(params, key, value), do: Keyword.put(params, key, value)
+
+  defp compact(map) do
+    map
+    |> Enum.reject(fn {_key, value} -> is_nil(value) or value == "" end)
+    |> Map.new()
+  end
 end
