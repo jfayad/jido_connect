@@ -41,6 +41,67 @@ defmodule Jido.Connect.Google.DriveTest do
          parents: ["folder123"]
        })}
     end
+
+    def create_file(
+          %{
+            name: "Notes",
+            mime_type: "text/plain",
+            parents: ["folder123"],
+            supports_all_drives: false
+          },
+          "token"
+        ) do
+      {:ok,
+       Drive.File.new!(%{
+         file_id: "created123",
+         name: "Notes",
+         mime_type: "text/plain",
+         parents: ["folder123"]
+       })}
+    end
+
+    def create_folder(
+          %{name: "Reports", parents: ["root"], supports_all_drives: false},
+          "token"
+        ) do
+      {:ok,
+       Drive.Folder.new!(%{
+         folder_id: "folder456",
+         name: "Reports",
+         parents: ["root"]
+       })}
+    end
+
+    def copy_file(
+          %{
+            file_id: "file123",
+            name: "Budget Copy.pdf",
+            parents: ["folder123"],
+            supports_all_drives: false
+          },
+          "token"
+        ) do
+      {:ok,
+       Drive.File.new!(%{
+         file_id: "copy123",
+         name: "Budget Copy.pdf",
+         mime_type: "application/pdf",
+         parents: ["folder123"]
+       })}
+    end
+
+    def update_file(
+          %{file_id: "file123", name: "Renamed.pdf", supports_all_drives: false},
+          "token"
+        ) do
+      {:ok,
+       Drive.File.new!(%{
+         file_id: "file123",
+         name: "Renamed.pdf",
+         mime_type: "application/pdf",
+         parents: ["folder123"]
+       })}
+    end
   end
 
   test "declares Google Drive provider metadata" do
@@ -61,7 +122,11 @@ defmodule Jido.Connect.Google.DriveTest do
 
     assert Enum.map(spec.actions, & &1.id) == [
              "google.drive.files.list",
-             "google.drive.file.get"
+             "google.drive.file.get",
+             "google.drive.file.create",
+             "google.drive.folder.create",
+             "google.drive.file.copy",
+             "google.drive.file.update"
            ]
   end
 
@@ -145,6 +210,84 @@ defmodule Jido.Connect.Google.DriveTest do
                context: context,
                credential_lease: lease
              )
+  end
+
+  test "invokes create file through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: write_scopes())
+
+    assert {:ok, %{file: %{file_id: "created123", name: "Notes", parents: ["folder123"]}}} =
+             Connect.invoke(
+               Drive.integration(),
+               "google.drive.file.create",
+               %{name: "Notes", mime_type: "text/plain", parents: ["folder123"]},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes create folder through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: write_scopes())
+
+    assert {:ok, %{folder: %{folder_id: "folder456", name: "Reports", parents: ["root"]}}} =
+             Connect.invoke(
+               Drive.integration(),
+               "google.drive.folder.create",
+               %{name: "Reports", parents: ["root"]},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes copy file through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: write_scopes())
+
+    assert {:ok, %{file: %{file_id: "copy123", name: "Budget Copy.pdf"}}} =
+             Connect.invoke(
+               Drive.integration(),
+               "google.drive.file.copy",
+               %{file_id: "file123", name: "Budget Copy.pdf", parents: ["folder123"]},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes update file through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: write_scopes())
+
+    assert {:ok, %{file: %{file_id: "file123", name: "Renamed.pdf"}}} =
+             Connect.invoke(
+               Drive.integration(),
+               "google.drive.file.update",
+               %{file_id: "file123", name: "Renamed.pdf"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "write actions require drive.file scope" do
+    {context, lease} = context_and_lease()
+
+    assert {:error,
+            %Connect.Error.AuthError{
+              reason: :missing_scopes,
+              missing_scopes: ["https://www.googleapis.com/auth/drive.file"]
+            }} =
+             Connect.invoke(
+               Drive.integration(),
+               "google.drive.file.update",
+               %{file_id: "file123", name: "Renamed.pdf"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  defp write_scopes do
+    [
+      "openid",
+      "email",
+      "profile",
+      "https://www.googleapis.com/auth/drive.file"
+    ]
   end
 
   defp context_and_lease(opts \\ []) do

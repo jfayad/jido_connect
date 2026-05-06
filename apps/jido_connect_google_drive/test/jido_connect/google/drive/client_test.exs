@@ -1,7 +1,7 @@
 defmodule Jido.Connect.Google.Drive.ClientTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Connect.Google.Drive.{Client, File}
+  alias Jido.Connect.Google.Drive.{Client, File, Folder}
 
   setup {Req.Test, :verify_on_exit!}
 
@@ -70,5 +70,128 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
 
     assert file.file_id == "file123"
     assert file.name == "Budget.pdf"
+  end
+
+  test "creates file metadata" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/v3/files"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "name" => "Notes",
+               "mimeType" => "text/plain",
+               "parents" => ["folder123"]
+             }
+
+      Req.Test.json(conn, %{
+        "id" => "created123",
+        "name" => "Notes",
+        "mimeType" => "text/plain",
+        "parents" => ["folder123"]
+      })
+    end)
+
+    assert {:ok, %File{} = file} =
+             Client.create_file(
+               %{name: "Notes", mime_type: "text/plain", parents: ["folder123"]},
+               "token"
+             )
+
+    assert file.file_id == "created123"
+    assert file.parents == ["folder123"]
+  end
+
+  test "creates folders" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/v3/files"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "name" => "Reports",
+               "mimeType" => "application/vnd.google-apps.folder",
+               "parents" => ["root"]
+             }
+
+      Req.Test.json(conn, %{
+        "id" => "folder456",
+        "name" => "Reports",
+        "mimeType" => "application/vnd.google-apps.folder",
+        "parents" => ["root"]
+      })
+    end)
+
+    assert {:ok, %Folder{} = folder} =
+             Client.create_folder(%{name: "Reports", parents: ["root"]}, "token")
+
+    assert folder.folder_id == "folder456"
+    assert folder.parents == ["root"]
+  end
+
+  test "copies files" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/v3/files/file123/copy"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "name" => "Budget Copy.pdf",
+               "parents" => ["folder123"]
+             }
+
+      Req.Test.json(conn, %{
+        "id" => "copy123",
+        "name" => "Budget Copy.pdf",
+        "mimeType" => "application/pdf",
+        "parents" => ["folder123"]
+      })
+    end)
+
+    assert {:ok, %File{} = file} =
+             Client.copy_file(
+               %{file_id: "file123", name: "Budget Copy.pdf", parents: ["folder123"]},
+               "token"
+             )
+
+    assert file.file_id == "copy123"
+    assert file.name == "Budget Copy.pdf"
+  end
+
+  test "updates files" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "PATCH"
+      assert conn.request_path == "/v3/files/file123"
+      assert conn.query_params["addParents"] == "folder456"
+      assert conn.query_params["removeParents"] == "folder123"
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{"name" => "Renamed.pdf"}
+
+      Req.Test.json(conn, %{
+        "id" => "file123",
+        "name" => "Renamed.pdf",
+        "mimeType" => "application/pdf",
+        "parents" => ["folder456"]
+      })
+    end)
+
+    assert {:ok, %File{} = file} =
+             Client.update_file(
+               %{
+                 file_id: "file123",
+                 name: "Renamed.pdf",
+                 add_parents: "folder456",
+                 remove_parents: "folder123"
+               },
+               "token"
+             )
+
+    assert file.name == "Renamed.pdf"
+    assert file.parents == ["folder456"]
   end
 end

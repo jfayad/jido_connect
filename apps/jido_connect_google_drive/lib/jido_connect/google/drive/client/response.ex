@@ -38,6 +38,23 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
 
   def handle_file_response(response), do: Transport.handle_error_response(response)
 
+  def file_to_folder({:ok, file}) do
+    %{
+      "id" => file.file_id,
+      "name" => file.name,
+      "webViewLink" => file.web_view_link,
+      "createdTime" => file.created_time,
+      "modifiedTime" => file.modified_time,
+      "parents" => file.parents,
+      "trashed" => file.trashed?,
+      "shared" => file.shared?,
+      "driveId" => file.drive_id
+    }
+    |> Normalizer.folder()
+  end
+
+  def file_to_folder({:error, reason}), do: {:error, reason}
+
   defp file!(payload) do
     case Normalizer.file(payload) do
       {:ok, file} -> file

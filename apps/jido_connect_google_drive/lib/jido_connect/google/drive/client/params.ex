@@ -53,5 +53,39 @@ defmodule Jido.Connect.Google.Drive.Client.Params do
     |> Data.compact()
   end
 
+  @doc "Builds query params for file create/copy/update responses."
+  def file_mutation_params(params) do
+    %{
+      fields: Data.get(params, :fields, default_file_fields()),
+      supportsAllDrives: Data.get(params, :supports_all_drives)
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds query params for metadata updates."
+  def file_update_params(params) do
+    params
+    |> file_mutation_params()
+    |> Map.merge(
+      %{
+        addParents: Data.get(params, :add_parents),
+        removeParents: Data.get(params, :remove_parents)
+      }
+      |> Data.compact()
+    )
+  end
+
+  @doc "Builds a metadata JSON body for file create/copy/update requests."
+  def file_metadata_body(params) do
+    %{
+      name: Data.get(params, :name),
+      mimeType: Data.get(params, :mime_type),
+      description: Data.get(params, :description),
+      parents: Data.get(params, :parents),
+      starred: Data.get(params, :starred)
+    }
+    |> Data.compact()
+  end
+
   defp list_fields, do: "nextPageToken,files(#{default_file_fields()})"
 end

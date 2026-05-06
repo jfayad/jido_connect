@@ -9,12 +9,21 @@ defmodule Jido.Connect.Google.Drive.ScopeResolver do
   @metadata_scope "https://www.googleapis.com/auth/drive.metadata.readonly"
   @file_scope "https://www.googleapis.com/auth/drive.file"
   @readonly_scope "https://www.googleapis.com/auth/drive.readonly"
+  @write_actions [
+    "google.drive.file.create",
+    "google.drive.folder.create",
+    "google.drive.file.copy",
+    "google.drive.file.update"
+  ]
 
   def required_scopes(operation, _input, connection) do
     operation
     |> operation_id()
     |> required_for_operation(connection)
   end
+
+  defp required_for_operation(operation_id, _connection) when operation_id in @write_actions,
+    do: [@file_scope]
 
   defp required_for_operation(_operation_id, %{scopes: scopes}) when is_list(scopes) do
     cond do
