@@ -3,6 +3,7 @@ defmodule Jido.Connect.GmailTest do
 
   alias Jido.Connect
   alias Jido.Connect.Gmail
+  alias Jido.Connect.Google.TestSupport.ConnectorContracts
 
   @gmail_action_modules [
     Jido.Connect.Gmail.Actions.GetProfile,
@@ -309,80 +310,38 @@ defmodule Jido.Connect.GmailTest do
   end
 
   test "compiles generated Jido modules for actions, sensors, and plugin" do
-    assert Application.get_env(:jido_connect_gmail, :jido_connect_providers) == [
-             Gmail
-           ]
+    ConnectorContracts.assert_generated_surface(Gmail,
+      otp_app: :jido_connect_gmail,
+      action_modules: @gmail_action_modules,
+      sensor_specs: [
+        %{
+          module: Jido.Connect.Gmail.Sensors.MessageReceived,
+          name: "google_gmail_message_received",
+          trigger_id: "google.gmail.message.received",
+          signal_type: "google.gmail.message.received"
+        }
+      ],
+      plugin_module: Jido.Connect.Gmail.Plugin,
+      plugin_name: "gmail"
+    )
 
-    assert Gmail.jido_action_modules() == @gmail_action_modules
-    assert Gmail.jido_sensor_modules() == [Jido.Connect.Gmail.Sensors.MessageReceived]
-    assert Gmail.jido_plugin_module() == Jido.Connect.Gmail.Plugin
-
-    assert %Connect.Catalog.Manifest{
-             id: :gmail,
-             package: :jido_connect_gmail,
-             generated_modules: %{
-               actions: @gmail_action_modules,
-               sensors: [Jido.Connect.Gmail.Sensors.MessageReceived],
-               plugin: Jido.Connect.Gmail.Plugin
-             }
-           } = Gmail.jido_connect_manifest()
-
-    action_ids = Gmail.integration().actions |> Enum.map(& &1.id) |> MapSet.new()
-
-    for module <- @gmail_action_modules do
-      assert {:module, ^module} = Code.ensure_loaded(module)
-      assert function_exported?(module, :run, 2)
-
-      projection = module.jido_connect_projection()
-      tool = module.to_tool()
-
-      assert projection.module == module
-      assert projection.action_id in action_ids
-      assert module.operation_id() == projection.action_id
-      assert module.name() == projection.name
-      assert tool.name == projection.name
-    end
-
-    sensor = Jido.Connect.Gmail.Sensors.MessageReceived
-
-    assert {:module, ^sensor} = Code.ensure_loaded(sensor)
-    assert function_exported?(sensor, :handle_event, 2)
-    assert sensor.name() == "google_gmail_message_received"
-    assert sensor.trigger_id() == "google.gmail.message.received"
-    assert sensor.signal_type() == "google.gmail.message.received"
-
-    assert %Jido.Plugin.Spec{
-             name: "gmail",
-             module: Jido.Connect.Gmail.Plugin,
-             actions: @gmail_action_modules
-           } = Jido.Connect.Gmail.Plugin.plugin_spec()
-
-    assert Gmail.metadata_pack().id == :google_gmail_metadata
-    assert Gmail.triage_pack().id == :google_gmail_triage
-    assert Gmail.send_pack().id == :google_gmail_send
-
-    assert Enum.map(Gmail.catalog_packs(), & &1.id) == [
-             :google_gmail_metadata,
-             :google_gmail_triage,
-             :google_gmail_send
-           ]
+    ConnectorContracts.assert_catalog_pack_delegates(Gmail,
+      metadata_pack: :google_gmail_metadata,
+      triage_pack: :google_gmail_triage,
+      send_pack: :google_gmail_send
+    )
   end
 
   test "loads Gmail Spark DSL fragments" do
-    for fragment <- @gmail_dsl_fragments do
-      assert {:module, ^fragment} = Code.ensure_loaded(fragment)
-      assert fragment.extensions() == [Jido.Connect.Dsl.Extension]
-      assert fragment.opts() == [of: Jido.Connect]
-      assert %{extensions: [Jido.Connect.Dsl.Extension]} = fragment.persisted()
-      assert is_map(fragment.spark_dsl_config())
-
-      assert [{_section, Jido.Connect.Dsl.Extension, Jido.Connect.Dsl.Extension}] =
-               fragment.validate_sections()
-    end
+    ConnectorContracts.assert_spark_fragments(@gmail_dsl_fragments)
   end
 
   test "resolves Gmail scopes for broad grants and operation shapes" do
     resolver = Jido.Connect.Gmail.ScopeResolver
+
+    ConnectorContracts.assert_scope_resolver_shape(resolver, [
+      "https://www.googleapis.com/auth/gmail.metadata"
+    ])
 
     assert resolver.required_scopes(
              %{id: "google.gmail.message.send"},

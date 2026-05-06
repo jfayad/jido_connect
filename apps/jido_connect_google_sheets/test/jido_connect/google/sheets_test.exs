@@ -2,6 +2,7 @@ defmodule Jido.Connect.Google.SheetsTest do
   use ExUnit.Case, async: true
 
   alias Jido.Connect
+  alias Jido.Connect.Google.TestSupport.ConnectorContracts
   alias Jido.Connect.Google.Sheets
 
   @sheets_action_modules [
@@ -162,70 +163,29 @@ defmodule Jido.Connect.Google.SheetsTest do
   end
 
   test "compiles generated Jido modules for actions and plugin" do
-    assert Application.get_env(:jido_connect_google_sheets, :jido_connect_providers) == [
-             Sheets
-           ]
+    ConnectorContracts.assert_generated_surface(Sheets,
+      otp_app: :jido_connect_google_sheets,
+      action_modules: @sheets_action_modules,
+      plugin_module: Jido.Connect.Google.Sheets.Plugin,
+      plugin_name: "google_sheets"
+    )
 
-    assert Sheets.jido_action_modules() == @sheets_action_modules
-    assert Sheets.jido_sensor_modules() == []
-    assert Sheets.jido_plugin_module() == Jido.Connect.Google.Sheets.Plugin
-
-    assert %Connect.Catalog.Manifest{
-             id: :google_sheets,
-             package: :jido_connect_google_sheets,
-             generated_modules: %{
-               actions: @sheets_action_modules,
-               sensors: [],
-               plugin: Jido.Connect.Google.Sheets.Plugin
-             }
-           } = Sheets.jido_connect_manifest()
-
-    action_ids = Sheets.integration().actions |> Enum.map(& &1.id) |> MapSet.new()
-
-    for module <- @sheets_action_modules do
-      assert {:module, ^module} = Code.ensure_loaded(module)
-      assert function_exported?(module, :run, 2)
-
-      projection = module.jido_connect_projection()
-      tool = module.to_tool()
-
-      assert projection.module == module
-      assert projection.action_id in action_ids
-      assert module.operation_id() == projection.action_id
-      assert module.name() == projection.name
-      assert tool.name == projection.name
-    end
-
-    assert %Jido.Plugin.Spec{
-             name: "google_sheets",
-             module: Jido.Connect.Google.Sheets.Plugin,
-             actions: @sheets_action_modules
-           } = Jido.Connect.Google.Sheets.Plugin.plugin_spec()
-
-    assert Sheets.readonly_pack().id == :google_sheets_readonly
-    assert Sheets.writer_pack().id == :google_sheets_writer
-
-    assert Enum.map(Sheets.catalog_packs(), & &1.id) == [
-             :google_sheets_readonly,
-             :google_sheets_writer
-           ]
+    ConnectorContracts.assert_catalog_pack_delegates(Sheets,
+      readonly_pack: :google_sheets_readonly,
+      writer_pack: :google_sheets_writer
+    )
   end
 
   test "loads Sheets Spark DSL fragments" do
-    for fragment <- @sheets_dsl_fragments do
-      assert {:module, ^fragment} = Code.ensure_loaded(fragment)
-      assert fragment.extensions() == [Jido.Connect.Dsl.Extension]
-      assert fragment.opts() == [of: Jido.Connect]
-      assert %{extensions: [Jido.Connect.Dsl.Extension]} = fragment.persisted()
-      assert is_map(fragment.spark_dsl_config())
-
-      assert [{_section, Jido.Connect.Dsl.Extension, Jido.Connect.Dsl.Extension}] =
-               fragment.validate_sections()
-    end
+    ConnectorContracts.assert_spark_fragments(@sheets_dsl_fragments)
   end
 
   test "resolves Sheets scopes for read/write operation shapes" do
     resolver = Jido.Connect.Google.Sheets.ScopeResolver
+
+    ConnectorContracts.assert_scope_resolver_shape(resolver, [
+      "https://www.googleapis.com/auth/spreadsheets.readonly"
+    ])
 
     assert resolver.required_scopes(
              %{id: "google.sheets.values.update"},

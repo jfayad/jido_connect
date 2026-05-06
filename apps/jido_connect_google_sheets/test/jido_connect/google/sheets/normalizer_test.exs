@@ -10,6 +10,8 @@ defmodule Jido.Connect.Google.Sheets.NormalizerTest do
     ValueRange
   }
 
+  alias Jido.Connect.Google.TestSupport.ConnectorContracts
+
   test "normalizes spreadsheet payloads" do
     payload = %{
       "spreadsheetId" => "sheet123",
@@ -95,35 +97,36 @@ defmodule Jido.Connect.Google.Sheets.NormalizerTest do
   end
 
   test "struct constructors expose schema defaults" do
-    assert %Sheet{hidden?: false, metadata: %{}} =
-             Sheet.new!(%{sheet_id: 0, title: "Sheet1"})
+    ConnectorContracts.assert_struct_defaults(Sheet, %{sheet_id: 0, title: "Sheet1"},
+      hidden?: false,
+      metadata: %{}
+    )
 
     assert {:error, _error} = Sheet.new(%{title: "Missing id"})
 
-    assert %Spreadsheet{sheets: [], metadata: %{}} =
-             Spreadsheet.new!(%{spreadsheet_id: "sheet123"})
+    ConnectorContracts.assert_struct_defaults(Spreadsheet, %{spreadsheet_id: "sheet123"},
+      sheets: [],
+      metadata: %{}
+    )
 
     assert {:error, _error} = Spreadsheet.new(%{})
 
-    assert %ValueRange{major_dimension: "ROWS", values: [], metadata: %{}} =
-             ValueRange.new!(%{range: "Sheet1!A1:B2"})
+    ConnectorContracts.assert_struct_defaults(ValueRange, %{range: "Sheet1!A1:B2"},
+      major_dimension: "ROWS",
+      values: [],
+      metadata: %{}
+    )
 
     assert {:error, _error} = ValueRange.new(%{})
 
-    assert %UpdateResult{
-             updated_rows: 0,
-             updated_columns: 0,
-             updated_cells: 0,
-             metadata: %{}
-           } = UpdateResult.new!(%{})
+    ConnectorContracts.assert_struct_defaults(UpdateResult, %{},
+      updated_rows: 0,
+      updated_columns: 0,
+      updated_cells: 0,
+      metadata: %{}
+    )
 
-    assert %Range{metadata: %{}} = Range.new!(%{a1: "Sheet1!A1:B2"})
+    ConnectorContracts.assert_struct_defaults(Range, %{a1: "Sheet1!A1:B2"}, metadata: %{})
     assert {:error, _error} = Range.new(%{})
-
-    assert Sheet.schema()
-    assert Spreadsheet.schema()
-    assert ValueRange.schema()
-    assert UpdateResult.schema()
-    assert Range.schema()
   end
 end

@@ -2,6 +2,7 @@ defmodule Jido.Connect.Gmail.NormalizerTest do
   use ExUnit.Case, async: true
 
   alias Jido.Connect.Gmail.{Draft, Label, Message, Normalizer, Privacy, Profile, Thread}
+  alias Jido.Connect.Google.TestSupport.ConnectorContracts
 
   test "normalizes profile payloads" do
     assert {:ok, %Profile{} = profile} =
@@ -142,34 +143,37 @@ defmodule Jido.Connect.Gmail.NormalizerTest do
   end
 
   test "struct constructors expose schema defaults" do
-    assert %Profile{metadata: %{}} = Profile.new!(%{email_address: "user@example.com"})
+    ConnectorContracts.assert_struct_defaults(Profile, %{email_address: "user@example.com"},
+      metadata: %{}
+    )
+
     assert {:error, _error} = Profile.new(%{})
 
-    assert %Label{color: %{}, metadata: %{}} =
-             Label.new!(%{label_id: "INBOX", name: "INBOX"})
+    ConnectorContracts.assert_struct_defaults(Label, %{label_id: "INBOX", name: "INBOX"},
+      color: %{},
+      metadata: %{}
+    )
 
     assert {:error, _error} = Label.new(%{label_id: "INBOX"})
 
-    assert %Message{
-             label_ids: [],
-             headers: [],
-             payload_summary: %{},
-             metadata: %{}
-           } = Message.new!(%{message_id: "msg123"})
+    ConnectorContracts.assert_struct_defaults(Message, %{message_id: "msg123"},
+      label_ids: [],
+      headers: [],
+      payload_summary: %{},
+      metadata: %{}
+    )
 
     assert {:error, _error} = Message.new(%{})
 
-    assert %Thread{messages: [], metadata: %{}} = Thread.new!(%{thread_id: "thread123"})
+    ConnectorContracts.assert_struct_defaults(Thread, %{thread_id: "thread123"},
+      messages: [],
+      metadata: %{}
+    )
+
     assert {:error, _error} = Thread.new(%{})
 
-    assert %Draft{metadata: %{}} = Draft.new!(%{draft_id: "draft123"})
+    ConnectorContracts.assert_struct_defaults(Draft, %{draft_id: "draft123"}, metadata: %{})
     assert {:error, _error} = Draft.new(%{})
-
-    assert Profile.schema()
-    assert Label.schema()
-    assert Message.schema()
-    assert Thread.schema()
-    assert Draft.schema()
   end
 
   defp message_payload do

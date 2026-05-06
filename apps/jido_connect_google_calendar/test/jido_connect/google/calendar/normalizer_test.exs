@@ -2,6 +2,7 @@ defmodule Jido.Connect.Google.Calendar.NormalizerTest do
   use ExUnit.Case, async: true
 
   alias Jido.Connect.Google.Calendar.{Attendee, Calendar, Event, FreeBusy, Normalizer}
+  alias Jido.Connect.Google.TestSupport.ConnectorContracts
 
   test "normalizes calendar-list entries" do
     assert {:ok, %Calendar{} = calendar} =
@@ -182,52 +183,54 @@ defmodule Jido.Connect.Google.Calendar.NormalizerTest do
   end
 
   test "struct constructors expose schema defaults" do
-    assert %Calendar{
-             selected?: false,
-             hidden?: false,
-             primary?: false,
-             deleted?: false,
-             default_reminders: [],
-             notification_settings: %{},
-             metadata: %{}
-           } = Calendar.new!(%{calendar_id: "primary"})
+    ConnectorContracts.assert_struct_defaults(Calendar, %{calendar_id: "primary"},
+      selected?: false,
+      hidden?: false,
+      primary?: false,
+      deleted?: false,
+      default_reminders: [],
+      notification_settings: %{},
+      metadata: %{}
+    )
 
     assert {:error, _error} = Calendar.new(%{})
 
-    assert %Attendee{
-             additional_guests: 0,
-             optional?: false,
-             organizer?: false,
-             resource?: false,
-             self?: false,
-             metadata: %{}
-           } = Attendee.new!(%{email: "guest@example.com"})
+    ConnectorContracts.assert_struct_defaults(Attendee, %{email: "guest@example.com"},
+      additional_guests: 0,
+      optional?: false,
+      organizer?: false,
+      resource?: false,
+      self?: false,
+      metadata: %{}
+    )
 
     assert {:error, _error} = Attendee.new(%{})
 
-    assert %Event{
-             recurrence: [],
-             attendees: [],
-             all_day?: false,
-             reminders: %{},
-             attachments: [],
-             extended_properties: %{},
-             metadata: %{}
-           } = Event.new!(%{event_id: "event123"})
+    ConnectorContracts.assert_struct_defaults(Event, %{event_id: "event123"},
+      recurrence: [],
+      attendees: [],
+      all_day?: false,
+      reminders: %{},
+      attachments: [],
+      extended_properties: %{},
+      metadata: %{}
+    )
 
     assert {:error, _error} = Event.new(%{})
 
-    assert %FreeBusy{calendars: %{}, groups: %{}, busy: [], errors: [], metadata: %{}} =
-             FreeBusy.new!(%{
-               time_min: "2026-05-06T00:00:00Z",
-               time_max: "2026-05-07T00:00:00Z"
-             })
+    ConnectorContracts.assert_struct_defaults(
+      FreeBusy,
+      %{
+        time_min: "2026-05-06T00:00:00Z",
+        time_max: "2026-05-07T00:00:00Z"
+      },
+      calendars: %{},
+      groups: %{},
+      busy: [],
+      errors: [],
+      metadata: %{}
+    )
 
     assert {:error, _error} = FreeBusy.new(%{time_min: "2026-05-06T00:00:00Z"})
-
-    assert Calendar.schema()
-    assert Attendee.schema()
-    assert Event.schema()
-    assert FreeBusy.schema()
   end
 end

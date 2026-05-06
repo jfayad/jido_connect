@@ -2,6 +2,7 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
   use ExUnit.Case, async: true
 
   alias Jido.Connect.Google.Drive.{Change, File, Folder, Normalizer, Permission}
+  alias Jido.Connect.Google.TestSupport.ConnectorContracts
 
   test "normalizes file payloads" do
     assert {:ok, %File{} = file} =
@@ -96,32 +97,35 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
   end
 
   test "struct constructors expose schema defaults" do
-    assert %File{
-             parents: [],
-             owners: [],
-             shared?: false,
-             trashed?: false,
-             starred?: false,
-             metadata: %{}
-           } = File.new!(%{file_id: "file123", name: "Budget.pdf"})
+    ConnectorContracts.assert_struct_defaults(File, %{file_id: "file123", name: "Budget.pdf"},
+      parents: [],
+      owners: [],
+      shared?: false,
+      trashed?: false,
+      starred?: false,
+      metadata: %{}
+    )
 
     assert {:error, _error} = File.new(%{name: "Missing id"})
 
-    assert %Folder{parents: [], shared?: false, trashed?: false, metadata: %{}} =
-             Folder.new!(%{folder_id: "folder123", name: "Reports"})
+    ConnectorContracts.assert_struct_defaults(Folder, %{folder_id: "folder123", name: "Reports"},
+      parents: [],
+      shared?: false,
+      trashed?: false,
+      metadata: %{}
+    )
 
     assert {:error, _error} = Folder.new(%{name: "Missing id"})
 
-    assert %Permission{deleted?: false, metadata: %{}} =
-             Permission.new!(%{permission_id: "perm123", type: "user", role: "reader"})
+    ConnectorContracts.assert_struct_defaults(
+      Permission,
+      %{permission_id: "perm123", type: "user", role: "reader"},
+      deleted?: false,
+      metadata: %{}
+    )
 
     assert {:error, _error} = Permission.new(%{permission_id: "perm123"})
 
-    assert %Change{removed?: false, metadata: %{}} = Change.new!(%{})
-
-    assert File.schema()
-    assert Folder.schema()
-    assert Permission.schema()
-    assert Change.schema()
+    ConnectorContracts.assert_struct_defaults(Change, %{}, removed?: false, metadata: %{})
   end
 end

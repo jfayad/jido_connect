@@ -2,6 +2,7 @@ defmodule Jido.Connect.Google.CalendarTest do
   use ExUnit.Case, async: true
 
   alias Jido.Connect
+  alias Jido.Connect.Google.TestSupport.ConnectorContracts
   alias Jido.Connect.Google.Calendar
 
   @calendar_action_modules [
@@ -407,78 +408,37 @@ defmodule Jido.Connect.Google.CalendarTest do
   end
 
   test "compiles generated Jido modules for actions, sensors, and plugin" do
-    assert Application.get_env(:jido_connect_google_calendar, :jido_connect_providers) == [
-             Calendar
-           ]
+    ConnectorContracts.assert_generated_surface(Calendar,
+      otp_app: :jido_connect_google_calendar,
+      action_modules: @calendar_action_modules,
+      sensor_specs: [
+        %{
+          module: Jido.Connect.Google.Calendar.Sensors.EventChanged,
+          name: "google_calendar_event_changed",
+          trigger_id: "google.calendar.event.changed",
+          signal_type: "google.calendar.event.changed"
+        }
+      ],
+      plugin_module: Jido.Connect.Google.Calendar.Plugin,
+      plugin_name: "google_calendar"
+    )
 
-    assert Calendar.jido_action_modules() == @calendar_action_modules
-    assert Calendar.jido_sensor_modules() == [Jido.Connect.Google.Calendar.Sensors.EventChanged]
-    assert Calendar.jido_plugin_module() == Jido.Connect.Google.Calendar.Plugin
-
-    assert %Connect.Catalog.Manifest{
-             id: :google_calendar,
-             package: :jido_connect_google_calendar,
-             generated_modules: %{
-               actions: @calendar_action_modules,
-               sensors: [Jido.Connect.Google.Calendar.Sensors.EventChanged],
-               plugin: Jido.Connect.Google.Calendar.Plugin
-             }
-           } = Calendar.jido_connect_manifest()
-
-    action_ids = Calendar.integration().actions |> Enum.map(& &1.id) |> MapSet.new()
-
-    for module <- @calendar_action_modules do
-      assert {:module, ^module} = Code.ensure_loaded(module)
-      assert function_exported?(module, :run, 2)
-
-      projection = module.jido_connect_projection()
-      tool = module.to_tool()
-
-      assert projection.module == module
-      assert projection.action_id in action_ids
-      assert module.operation_id() == projection.action_id
-      assert module.name() == projection.name
-      assert tool.name == projection.name
-    end
-
-    sensor = Jido.Connect.Google.Calendar.Sensors.EventChanged
-
-    assert {:module, ^sensor} = Code.ensure_loaded(sensor)
-    assert function_exported?(sensor, :handle_event, 2)
-    assert sensor.name() == "google_calendar_event_changed"
-    assert sensor.trigger_id() == "google.calendar.event.changed"
-    assert sensor.signal_type() == "google.calendar.event.changed"
-
-    assert %Jido.Plugin.Spec{
-             name: "google_calendar",
-             module: Jido.Connect.Google.Calendar.Plugin,
-             actions: @calendar_action_modules
-           } = Jido.Connect.Google.Calendar.Plugin.plugin_spec()
-
-    assert Calendar.reader_pack().id == :google_calendar_reader
-    assert Calendar.scheduler_pack().id == :google_calendar_scheduler
-
-    assert Enum.map(Calendar.catalog_packs(), & &1.id) == [
-             :google_calendar_reader,
-             :google_calendar_scheduler
-           ]
+    ConnectorContracts.assert_catalog_pack_delegates(Calendar,
+      reader_pack: :google_calendar_reader,
+      scheduler_pack: :google_calendar_scheduler
+    )
   end
 
   test "loads Calendar Spark DSL fragments" do
-    for fragment <- @calendar_dsl_fragments do
-      assert {:module, ^fragment} = Code.ensure_loaded(fragment)
-      assert fragment.extensions() == [Jido.Connect.Dsl.Extension]
-      assert fragment.opts() == [of: Jido.Connect]
-      assert %{extensions: [Jido.Connect.Dsl.Extension]} = fragment.persisted()
-      assert is_map(fragment.spark_dsl_config())
-
-      assert [{_section, Jido.Connect.Dsl.Extension, Jido.Connect.Dsl.Extension}] =
-               fragment.validate_sections()
-    end
+    ConnectorContracts.assert_spark_fragments(@calendar_dsl_fragments)
   end
 
   test "resolves Calendar scopes for broad grants and operation shapes" do
     resolver = Jido.Connect.Google.Calendar.ScopeResolver
+
+    ConnectorContracts.assert_scope_resolver_shape(resolver, [
+      "https://www.googleapis.com/auth/calendar.events.readonly"
+    ])
 
     assert resolver.required_scopes(
              %{id: "google.calendar.calendar.list"},
