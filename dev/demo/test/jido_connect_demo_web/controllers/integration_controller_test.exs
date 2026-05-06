@@ -1,7 +1,8 @@
 defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
   use Jido.Connect.DemoWeb.ConnCase
 
-  alias Jido.Connect.Demo.{GitHubRuntime, SlackRuntime, Store}
+  alias Jido.Connect.Demo.{GitHubRuntime, GoogleRuntime, SlackRuntime, Store}
+  alias Jido.Connect.Google.Sheets
 
   defmodule FakeGitHubClient do
     def list_issues("org/repo", "open", "token") do
@@ -59,13 +60,27 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
     end
   end
 
+  defmodule FakeGoogleSheetsClient do
+    def get_values(%{spreadsheet_id: "sheet123", range: "Sheet1!A1:B2"}, "token") do
+      {:ok,
+       Sheets.ValueRange.new!(%{
+         range: "Sheet1!A1:B2",
+         values: [["Name", "Count"], ["A", 1]]
+       })}
+    end
+  end
+
   setup do
     Store.reset!()
     previous_slack_client = Application.get_env(:jido_connect_demo, :slack_client)
+    previous_google_sheets_client = Application.get_env(:jido_connect_demo, :google_sheets_client)
     previous_slack_bot_token = System.get_env("SLACK_BOT_TOKEN")
+    previous_google_access_token = System.get_env("GOOGLE_ACCESS_TOKEN")
 
     Application.put_env(:jido_connect_demo, :slack_client, FakeSlackClient)
+    Application.put_env(:jido_connect_demo, :google_sheets_client, FakeGoogleSheetsClient)
     System.delete_env("SLACK_BOT_TOKEN")
+    System.delete_env("GOOGLE_ACCESS_TOKEN")
 
     on_exit(fn ->
       if previous_slack_client do
@@ -74,7 +89,18 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
         Application.delete_env(:jido_connect_demo, :slack_client)
       end
 
+      if previous_google_sheets_client do
+        Application.put_env(
+          :jido_connect_demo,
+          :google_sheets_client,
+          previous_google_sheets_client
+        )
+      else
+        Application.delete_env(:jido_connect_demo, :google_sheets_client)
+      end
+
       restore_env("SLACK_BOT_TOKEN", previous_slack_bot_token)
+      restore_env("GOOGLE_ACCESS_TOKEN", previous_google_access_token)
     end)
   end
 
@@ -89,7 +115,7 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
     assert %{"integrations" => integrations} = json_response(conn, 200)
     assert Enum.any?(integrations, &match?(%{"id" => "github", "status" => "available"}, &1))
     assert Enum.any?(integrations, &match?(%{"id" => "slack", "status" => "available"}, &1))
-    assert Enum.any?(integrations, &match?(%{"id" => "google", "status" => "planned"}, &1))
+    assert Enum.any?(integrations, &match?(%{"id" => "google", "status" => "available"}, &1))
   end
 
   test "GET /integrations/catalog searches discovered providers", %{conn: conn} do
@@ -103,6 +129,7 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
     assert %{"catalog" => catalog} = json_response(conn, 200)
     assert Enum.any?(catalog, &match?(%{"id" => "github"}, &1))
     assert Enum.any?(catalog, &match?(%{"id" => "slack"}, &1))
+    assert Enum.any?(catalog, &match?(%{"id" => "google_sheets"}, &1))
   end
 
   test "setup complete stores manifest code", %{conn: conn} do
@@ -125,6 +152,49 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
 
     assert html_response(conn, 200) =~ "Slack Integration"
     assert html_response(conn, 200) =~ "List Channels"
+  end
+
+  test "GET /integrations/google renders Google console", %{conn: conn} do
+    conn = get(conn, ~p"/integrations/google")
+
+    assert html_response(conn, 200) =~ "Google Integration"
+    assert html_response(conn, 200) =~ "Get Sheet Values"
+  end
+
+  test "Google manual token connection can run generated get values action", %{conn: conn} do
+    conn =
+      post(conn, ~p"/integrations/google/connections/manual", %{
+        "token" => "token",
+        "owner_id" => "local-google-user"
+      })
+
+    assert redirected_to(conn) == ~p"/integrations/google"
+    assert [%{id: "google-manual-local-google-user"}] = Store.list_connections(:google)
+
+    conn =
+      post(conn, ~p"/integrations/google/actions/get_values", %{
+        "connection_id" => "google-manual-local-google-user",
+        "spreadsheet_id" => "sheet123",
+        "range" => "Sheet1!A1:B2"
+      })
+
+    assert redirected_to(conn) == ~p"/integrations/google"
+
+    assert [
+             %{
+               type: :google_sheets_values_get,
+               status: :ok,
+               value:
+                 {:ok,
+                  %{
+                    value_range: %{
+                      range: "Sheet1!A1:B2",
+                      values: [["Name", "Count"], ["A", 1]]
+                    }
+                  }}
+             }
+             | _
+           ] = Store.recent_results()
   end
 
   test "setup complete stores GitHub App installation connection", %{conn: conn} do
@@ -278,6 +348,16 @@ defmodule Jido.Connect.DemoWeb.IntegrationControllerTest do
                access_token: "token",
                github_client: FakeGitHubClient
              )
+  end
+
+  test "Google runtime can mint lease and run generated action" do
+    connection = GoogleRuntime.create_manual_connection(%{"token" => "token"})
+
+    assert {:ok, %{value_range: %{range: "Sheet1!A1:B2"}}} =
+             GoogleRuntime.run_get_values(connection.id, %{
+               spreadsheet_id: "sheet123",
+               range: "Sheet1!A1:B2"
+             })
   end
 
   defp hmac(secret, body) do

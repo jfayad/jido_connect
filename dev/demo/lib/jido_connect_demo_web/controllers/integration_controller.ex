@@ -2,7 +2,8 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
   use Jido.Connect.DemoWeb, :controller
 
   alias Jido.Connect.{Data, Error}
-  alias Jido.Connect.Demo.{GitHubRuntime, Ngrok, SlackRuntime, Store}
+  alias Jido.Connect.Demo.{GitHubRuntime, GoogleRuntime, Ngrok, SlackRuntime, Store}
+  alias Jido.Connect.Google.OAuth, as: GoogleOAuth
   alias Jido.Connect.GitHub.{OAuth, Webhook}
   alias Jido.Connect.Slack.Webhook, as: SlackWebhook
 
@@ -48,6 +49,18 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
       connections: Store.list_connections(:slack),
       deliveries: Store.recent_deliveries(),
       results: Store.recent_results()
+    )
+  end
+
+  def google_show(conn, _params) do
+    render(conn, :google,
+      public_url: Ngrok.public_base_url(),
+      google_urls: Ngrok.google_urls(),
+      env: GoogleRuntime.env(),
+      scopes: GoogleRuntime.scopes(),
+      connections: Store.list_connections(:google),
+      results: Store.recent_results(),
+      default_spreadsheet_id: GoogleRuntime.env_value("GOOGLE_SHEETS_SPREADSHEET_ID") || ""
     )
   end
 
@@ -148,10 +161,77 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     end
   end
 
+  def google_oauth_start(conn, params) do
+    client_id = Map.get(params, "client_id") || GoogleRuntime.env_value("GOOGLE_CLIENT_ID")
+
+    if blank?(client_id) do
+      conn
+      |> put_status(:bad_request)
+      |> json(%{ok: false, error: "missing GOOGLE_CLIENT_ID"})
+    else
+      state = random_token()
+      write_secret!("google-oauth-state.txt", state)
+
+      redirect(conn,
+        external:
+          GoogleOAuth.authorize_url(
+            client_id: client_id,
+            redirect_uri: google_callback_url(conn),
+            scope: google_oauth_scope(params),
+            state: state,
+            prompt: Map.get(params, "prompt", "consent")
+          )
+      )
+    end
+  end
+
+  def google_oauth_callback(conn, params) do
+    stored_state = read_secret("google-oauth-state.txt")
+
+    result =
+      cond do
+        blank?(Map.get(params, "code")) ->
+          %{ok: false, error: "missing code", params: params}
+
+        not blank?(stored_state) and Map.get(params, "state") != stored_state ->
+          %{ok: false, error: "invalid state", params: params}
+
+        true ->
+          %{ok: true, params: Map.drop(params, ["code"])}
+      end
+
+    write_secret!("google-oauth-callback.json", Jason.encode!(result, pretty: true))
+
+    cond do
+      not result.ok ->
+        conn
+        |> put_status(:bad_request)
+        |> json(result)
+
+      blank?(GoogleRuntime.env_value("GOOGLE_CLIENT_SECRET")) ->
+        Store.put_result(:google_oauth, :captured, result)
+        redirect(conn, to: ~p"/integrations/google")
+
+      true ->
+        exchange_google_oauth_callback(conn, params)
+    end
+  end
+
   def github_manual_connection(conn, params) do
     connection = GitHubRuntime.create_manual_connection(params)
     Store.put_result(:connection, :ok, %{connection_id: connection.id, mode: :manual_token})
     redirect(conn, to: ~p"/integrations/github")
+  end
+
+  def google_manual_connection(conn, params) do
+    connection = GoogleRuntime.create_manual_connection(params)
+
+    Store.put_result(:google_connection, :ok, %{
+      connection_id: connection.id,
+      mode: connection.metadata.mode
+    })
+
+    redirect(conn, to: ~p"/integrations/google")
   end
 
   def slack_bot_connection(conn, params) do
@@ -177,6 +257,21 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     result = GitHubRuntime.run_list_issues(connection_id, action_params)
     Store.put_result(:github_issue_list, result_status(result), result)
     redirect(conn, to: ~p"/integrations/github")
+  end
+
+  def google_get_values(conn, params) do
+    connection_id = Map.fetch!(params, "connection_id")
+
+    action_params =
+      %{
+        spreadsheet_id: Map.fetch!(params, "spreadsheet_id"),
+        range: Map.get(params, "range", "Sheet1!A1:B2")
+      }
+      |> Data.compact()
+
+    result = GoogleRuntime.run_get_values(connection_id, action_params)
+    Store.put_result(:google_sheets_values_get, result_status(result), result)
+    redirect(conn, to: ~p"/integrations/google")
   end
 
   def slack_list_channels(conn, params) do
@@ -273,6 +368,34 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
           |> put_status(:bad_request)
           |> json(%{ok: false, error: inspect(reason)})
         end
+    end
+  end
+
+  defp exchange_google_oauth_callback(conn, params) do
+    with {:ok, token} <-
+           GoogleOAuth.exchange_code(Map.fetch!(params, "code"),
+             client_id: GoogleRuntime.env_value("GOOGLE_CLIENT_ID"),
+             client_secret: GoogleRuntime.env_value("GOOGLE_CLIENT_SECRET"),
+             redirect_uri: google_callback_url(conn)
+           ),
+         connection <- GoogleRuntime.create_oauth_connection(token) do
+      token_path =
+        write_secret!("google-oauth-token.json", Jason.encode!(json_safe(token), pretty: true))
+
+      Store.put_result(:google_oauth, :ok, %{
+        connection_id: connection.id,
+        scopes: token.scope,
+        token_path: token_path
+      })
+
+      redirect(conn, to: ~p"/integrations/google")
+    else
+      {:error, reason} ->
+        Store.put_result(:google_oauth, :error, reason)
+
+        conn
+        |> put_status(:bad_request)
+        |> json(%{ok: false, error: inspect(reason)})
     end
   end
 
@@ -393,6 +516,38 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     base_url <> ~p"/integrations/github/oauth/callback"
   end
 
+  defp google_callback_url(_conn) do
+    case GoogleRuntime.env_value("GOOGLE_REDIRECT_URI") do
+      nil ->
+        google_default_callback_url()
+
+      "" ->
+        google_default_callback_url()
+
+      redirect_uri ->
+        redirect_uri
+    end
+  end
+
+  defp google_default_callback_url do
+    base_url =
+      case Ngrok.public_base_url() do
+        nil -> Jido.Connect.DemoWeb.Endpoint.url()
+        "" -> Jido.Connect.DemoWeb.Endpoint.url()
+        url -> url
+      end
+
+    base_url <> ~p"/integrations/google/oauth/callback"
+  end
+
+  defp google_oauth_scope(params) do
+    case Map.get(params, "scope") do
+      nil -> GoogleRuntime.scopes()
+      "" -> GoogleRuntime.scopes()
+      scope -> scope
+    end
+  end
+
   defp github_install_url do
     case System.get_env("GITHUB_APP_SLUG") do
       nil -> nil
@@ -449,6 +604,24 @@ defmodule Jido.Connect.DemoWeb.IntegrationController do
     File.write!(path, contents)
     path
   end
+
+  defp json_safe(%DateTime{} = value), do: DateTime.to_iso8601(value)
+
+  defp json_safe(%NaiveDateTime{} = value), do: NaiveDateTime.to_iso8601(value)
+
+  defp json_safe(%Date{} = value), do: Date.to_iso8601(value)
+
+  defp json_safe(%Time{} = value), do: Time.to_iso8601(value)
+
+  defp json_safe(%_struct{} = value), do: value |> Map.from_struct() |> json_safe()
+
+  defp json_safe(value) when is_map(value) do
+    Map.new(value, fn {key, item} -> {key, json_safe(item)} end)
+  end
+
+  defp json_safe(value) when is_list(value), do: Enum.map(value, &json_safe/1)
+
+  defp json_safe(value), do: value
 
   defp read_secret(name) do
     secret_dir()

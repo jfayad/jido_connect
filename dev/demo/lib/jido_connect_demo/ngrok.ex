@@ -36,6 +36,17 @@ defmodule Jido.Connect.Demo.Ngrok do
     end
   end
 
+  def google_urls(base_url \\ public_base_url()) do
+    if base_url do
+      %{
+        base_url: base_url,
+        oauth_callback: base_url <> "/integrations/google/oauth/callback"
+      }
+    else
+      %{}
+    end
+  end
+
   defp detect_ngrok_url do
     case Jido.Connect.Dev.Ngrok.public_url() do
       {:ok, url} -> url

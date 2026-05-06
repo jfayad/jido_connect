@@ -67,14 +67,24 @@ defmodule Jido.Connect.Demo.Integrations do
     },
     %{
       id: "google",
-      name: "Google Workspace",
-      package: "jido_connect_google",
-      status: :planned,
-      auth_modes: ["OAuth 2.0"],
+      module: Jido.Connect.Google.Sheets,
+      status: :available,
       description:
-        "Placeholder for future OAuth consent, token refresh, and webhook renewal flows.",
-      paths: %{},
-      checks: []
+        "Google OAuth user flow and Google Sheets catalog tools for local smoke testing.",
+      paths: %{
+        console: "/integrations/google",
+        oauth_start: "/integrations/google/oauth/start",
+        oauth_callback: "/integrations/google/oauth/callback"
+      },
+      checks: [
+        %{label: "Local Google console", method: "GET", path: "/integrations/google"},
+        %{
+          label: "OAuth authorization start",
+          method: "GET",
+          path: "/integrations/google/oauth/start"
+        },
+        %{label: "OAuth callback", method: "GET", path: "/integrations/google/oauth/callback"}
+      ]
     }
   ]
 

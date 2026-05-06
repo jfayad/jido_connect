@@ -23,6 +23,9 @@ defmodule Jido.Connect.DemoWeb.Router do
     get("/integrations/github/oauth/start", IntegrationController, :github_oauth_start)
     get("/integrations/github/oauth/callback", IntegrationController, :github_oauth_callback)
     get("/integrations/github", IntegrationController, :github_show)
+    get("/integrations/google", IntegrationController, :google_show)
+    get("/integrations/google/oauth/start", IntegrationController, :google_oauth_start)
+    get("/integrations/google/oauth/callback", IntegrationController, :google_oauth_callback)
     get("/integrations/slack", IntegrationController, :slack_show)
     get("/integrations/slack/oauth/callback", IntegrationController, :slack_oauth_callback)
 
@@ -34,8 +37,15 @@ defmodule Jido.Connect.DemoWeb.Router do
 
     post("/integrations/slack/connections/bot", IntegrationController, :slack_bot_connection)
 
+    post(
+      "/integrations/google/connections/manual",
+      IntegrationController,
+      :google_manual_connection
+    )
+
     post("/integrations/github/actions/list_issues", IntegrationController, :github_list_issues)
     post("/integrations/github/actions/create_issue", IntegrationController, :github_create_issue)
+    post("/integrations/google/actions/get_values", IntegrationController, :google_get_values)
     post("/integrations/slack/actions/list_channels", IntegrationController, :slack_list_channels)
     post("/integrations/slack/actions/post_message", IntegrationController, :slack_post_message)
 
