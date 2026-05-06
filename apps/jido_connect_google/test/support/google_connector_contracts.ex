@@ -3,6 +3,8 @@ defmodule Jido.Connect.Google.TestSupport.ConnectorContracts do
 
   import ExUnit.Assertions
 
+  alias Jido.Connect.Taxonomy
+
   @doc "Asserts the generated Jido action, sensor, manifest, and plugin surface."
   def assert_generated_surface(provider, opts) do
     otp_app = Keyword.fetch!(opts, :otp_app)
@@ -73,6 +75,95 @@ defmodule Jido.Connect.Google.TestSupport.ConnectorContracts do
     assert Enum.map(provider.catalog_packs(), & &1.id) == expected_ids
   end
 
+  @doc "Asserts naming, generated module, catalog, classification, and risk conventions."
+  def assert_google_naming_and_catalog_conventions(provider, opts) do
+    id_prefix = Keyword.fetch!(opts, :id_prefix)
+    pack_id_prefix = Keyword.fetch!(opts, :pack_id_prefix)
+    module_namespace = Keyword.fetch!(opts, :module_namespace)
+
+    spec = provider.integration()
+    action_ids = Enum.map(spec.actions, & &1.id)
+    trigger_ids = Enum.map(spec.triggers, & &1.id)
+    tool_ids = MapSet.new(action_ids ++ trigger_ids)
+
+    assert :google in spec.tags
+    assert :workspace in spec.tags
+
+    for action <- spec.actions do
+      assert_google_tool_id(action.id, id_prefix)
+      assert_present(action.label)
+      assert_known_data_classification(action.data_classification)
+      assert_known_risk(action.risk)
+      assert_known_confirmation(action.confirmation)
+      assert action.scope_resolver
+
+      if action.mutation? do
+        assert action.risk in [:write, :external_write, :destructive]
+      else
+        assert action.risk in [:metadata, :read]
+      end
+
+      if action.risk == :external_write do
+        refute action.confirmation == :none
+      end
+
+      if action.risk == :destructive do
+        assert action.confirmation == :always
+      end
+    end
+
+    for trigger <- spec.triggers do
+      assert_google_tool_id(trigger.id, id_prefix)
+      assert_present(trigger.label)
+      assert_known_data_classification(trigger.data_classification)
+      assert trigger.scope_resolver
+
+      if trigger.kind == :poll do
+        assert trigger.checkpoint
+        assert trigger.dedupe
+      end
+    end
+
+    namespace = inspect(module_namespace)
+
+    for module <- provider.jido_action_modules() do
+      assert String.starts_with?(inspect(module), namespace <> ".Actions.")
+    end
+
+    for module <- provider.jido_sensor_modules() do
+      assert String.starts_with?(inspect(module), namespace <> ".Sensors.")
+
+      assert module.trigger_id() in trigger_ids
+      assert module.signal_type() == module.trigger_id()
+      assert module.name() == String.replace(module.trigger_id(), ".", "_")
+    end
+
+    assert inspect(provider.jido_plugin_module()) == namespace <> ".Plugin"
+
+    for pack <- provider.catalog_packs() do
+      pack_id = Atom.to_string(pack.id)
+
+      assert String.starts_with?(pack_id, pack_id_prefix)
+      assert_present(pack.label)
+      assert_present(pack.description)
+      assert pack.filters == %{provider: spec.id}
+      assert pack.metadata.package == spec.package
+      assert Map.has_key?(pack.metadata, :risk) or Map.has_key?(pack.metadata, :excludes)
+
+      if risk = Map.get(pack.metadata, :risk) do
+        assert_known_risk(risk)
+      end
+
+      for excluded_tool <- Map.get(pack.metadata, :excludes, []) do
+        assert MapSet.member?(tool_ids, excluded_tool)
+      end
+
+      for allowed_tool <- pack.allowed_tools do
+        assert MapSet.member?(tool_ids, allowed_tool)
+      end
+    end
+  end
+
   @doc "Asserts a product DSL fragment compiles as a Jido.Connect Spark fragment."
   def assert_spark_fragments(fragments) do
     for fragment <- fragments do
@@ -112,5 +203,25 @@ defmodule Jido.Connect.Google.TestSupport.ConnectorContracts do
 
     assert module.schema()
     struct
+  end
+
+  defp assert_google_tool_id(id, expected_prefix) do
+    assert String.starts_with?(id, expected_prefix)
+    assert Regex.match?(~r/\Agoogle\.[a-z0-9_]+(\.[a-z0-9_]+)+\z/, id)
+  end
+
+  defp assert_present(value) when is_binary(value), do: assert(String.trim(value) != "")
+  defp assert_present(value), do: flunk("expected non-empty string, got: #{inspect(value)}")
+
+  defp assert_known_data_classification(classification) do
+    assert Taxonomy.known_data_classification?(classification)
+  end
+
+  defp assert_known_risk(risk) do
+    assert Taxonomy.known_risk?(risk)
+  end
+
+  defp assert_known_confirmation(confirmation) do
+    assert Taxonomy.known_confirmation?(confirmation)
   end
 end

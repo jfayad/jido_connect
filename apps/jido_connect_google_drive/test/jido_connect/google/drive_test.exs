@@ -326,6 +326,12 @@ defmodule Jido.Connect.Google.DriveTest do
     assert spec.name == "Google Drive"
     assert spec.tags == [:google, :workspace, :files, :productivity]
 
+    ConnectorContracts.assert_google_naming_and_catalog_conventions(Drive,
+      id_prefix: "google.drive.",
+      pack_id_prefix: "google_drive_",
+      module_namespace: Jido.Connect.Google.Drive
+    )
+
     assert [%{id: :user, kind: :oauth2, refresh?: true, pkce?: true} = profile] =
              spec.auth_profiles
 

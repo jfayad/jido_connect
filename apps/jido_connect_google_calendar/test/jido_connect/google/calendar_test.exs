@@ -366,6 +366,12 @@ defmodule Jido.Connect.Google.CalendarTest do
     assert spec.category == :calendar
     assert spec.tags == [:google, :workspace, :calendar, :productivity]
 
+    ConnectorContracts.assert_google_naming_and_catalog_conventions(Calendar,
+      id_prefix: "google.calendar.",
+      pack_id_prefix: "google_calendar_",
+      module_namespace: Jido.Connect.Google.Calendar
+    )
+
     assert Enum.map(spec.actions, & &1.id) == [
              "google.calendar.calendar.list",
              "google.calendar.event.list",

@@ -270,6 +270,12 @@ defmodule Jido.Connect.GmailTest do
     assert spec.category == :email
     assert spec.tags == [:google, :workspace, :email, :productivity]
 
+    ConnectorContracts.assert_google_naming_and_catalog_conventions(Gmail,
+      id_prefix: "google.gmail.",
+      pack_id_prefix: "google_gmail_",
+      module_namespace: Jido.Connect.Gmail
+    )
+
     assert [%{id: :user, kind: :oauth2, refresh?: true, pkce?: true} = profile] =
              spec.auth_profiles
 

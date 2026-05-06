@@ -143,6 +143,12 @@ defmodule Jido.Connect.Google.SheetsTest do
     assert spec.name == "Google Sheets"
     assert spec.tags == [:google, :workspace, :spreadsheets, :productivity]
 
+    ConnectorContracts.assert_google_naming_and_catalog_conventions(Sheets,
+      id_prefix: "google.sheets.",
+      pack_id_prefix: "google_sheets_",
+      module_namespace: Jido.Connect.Google.Sheets
+    )
+
     assert [%{id: :user, kind: :oauth2, refresh?: true, pkce?: true} = profile] =
              spec.auth_profiles
 

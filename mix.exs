@@ -56,6 +56,7 @@ defmodule JidoConnect.MixProject do
         "docs/architecture.md",
         "docs/authoring_integrations.md",
         "docs/generated_jido_modules.md",
+        "docs/google_connector_conventions.md",
         "docs/host_owned_storage.md",
         "docs/github_auth.md",
         "docs/github_webhooks.md",
