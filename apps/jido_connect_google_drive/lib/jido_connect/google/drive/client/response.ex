@@ -96,6 +96,50 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
 
   def handle_permission_response(response), do: Transport.handle_error_response(response)
 
+  def handle_start_page_token_response({:ok, %{status: status, body: body}})
+      when status in 200..299 and is_map(body) do
+    case Data.get(body, "startPageToken") do
+      token when is_binary(token) ->
+        {:ok, %{start_page_token: token}}
+
+      _missing ->
+        Transport.invalid_success_response(
+          "Google Drive start page token response was invalid",
+          body
+        )
+    end
+  end
+
+  def handle_start_page_token_response({:ok, %{status: status, body: body}})
+      when status in 200..299 do
+    Transport.invalid_success_response("Google Drive start page token response was invalid", body)
+  end
+
+  def handle_start_page_token_response(response), do: Transport.handle_error_response(response)
+
+  def handle_change_list_response({:ok, %{status: status, body: body}})
+      when status in 200..299 and is_map(body) do
+    changes =
+      body
+      |> Data.get("changes", [])
+      |> Enum.map(&change!/1)
+
+    {:ok,
+     %{
+       changes: changes,
+       next_page_token: Data.get(body, "nextPageToken"),
+       new_start_page_token: Data.get(body, "newStartPageToken")
+     }
+     |> Data.compact()}
+  end
+
+  def handle_change_list_response({:ok, %{status: status, body: body}})
+      when status in 200..299 do
+    Transport.invalid_success_response("Google Drive change list response was invalid", body)
+  end
+
+  def handle_change_list_response(response), do: Transport.handle_error_response(response)
+
   def file_to_folder({:ok, file}) do
     %{
       "id" => file.file_id,
@@ -123,6 +167,13 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
   defp permission!(payload) do
     case Normalizer.permission(payload) do
       {:ok, permission} -> permission
+      {:error, error} -> raise error
+    end
+  end
+
+  defp change!(payload) do
+    case Normalizer.change(payload) do
+      {:ok, change} -> change
       {:error, error} -> raise error
     end
   end

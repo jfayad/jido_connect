@@ -34,12 +34,24 @@ defmodule Jido.Connect.Google.Drive.Client.Params do
     "deleted",
     "expirationTime"
   ]
+  @default_change_fields [
+    "changeId",
+    "fileId",
+    "removed",
+    "time",
+    "driveId",
+    "changeType",
+    "file(#{Enum.join(@default_file_fields, ",")})"
+  ]
 
   @doc "Default file metadata fields used by read actions."
   def default_file_fields, do: Enum.join(@default_file_fields, ",")
 
   @doc "Default permission metadata fields used by permission actions."
   def default_permission_fields, do: Enum.join(@default_permission_fields, ",")
+
+  @doc "Default change metadata fields used by Drive change pollers."
+  def default_change_fields, do: Enum.join(@default_change_fields, ",")
 
   @doc "Builds query params for `files.list`."
   def list_files_params(params) do
@@ -164,8 +176,36 @@ defmodule Jido.Connect.Google.Drive.Client.Params do
     |> Data.compact()
   end
 
+  @doc "Builds query params for `changes.getStartPageToken`."
+  def start_page_token_params(params) do
+    %{
+      driveId: Data.get(params, :drive_id),
+      supportsAllDrives: Data.get(params, :supports_all_drives)
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds query params for `changes.list`."
+  def list_changes_params(params) do
+    %{
+      pageToken: Data.get(params, :page_token),
+      pageSize: Data.get(params, :page_size, 100),
+      fields: Data.get(params, :fields, change_list_fields()),
+      spaces: Data.get(params, :spaces, "drive"),
+      driveId: Data.get(params, :drive_id),
+      includeItemsFromAllDrives: Data.get(params, :include_items_from_all_drives),
+      includeRemoved: Data.get(params, :include_removed),
+      restrictToMyDrive: Data.get(params, :restrict_to_my_drive),
+      supportsAllDrives: Data.get(params, :supports_all_drives)
+    }
+    |> Data.compact()
+  end
+
   defp list_fields, do: "nextPageToken,files(#{default_file_fields()})"
 
   defp permission_list_fields,
     do: "nextPageToken,permissions(#{default_permission_fields()})"
+
+  defp change_list_fields,
+    do: "nextPageToken,newStartPageToken,changes(#{default_change_fields()})"
 end

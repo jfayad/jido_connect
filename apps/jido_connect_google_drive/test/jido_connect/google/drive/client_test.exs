@@ -1,7 +1,7 @@
 defmodule Jido.Connect.Google.Drive.ClientTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Connect.Google.Drive.{Client, File, Folder, Permission}
+  alias Jido.Connect.Google.Drive.{Change, Client, File, Folder, Permission}
 
   setup {Req.Test, :verify_on_exit!}
 
@@ -328,5 +328,60 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
 
     assert permission.permission_id == "perm456"
     assert permission.role == "reader"
+  end
+
+  test "gets a change start page token" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/v3/changes/startPageToken"
+      assert conn.query_params["supportsAllDrives"] == "true"
+
+      Req.Test.json(conn, %{"startPageToken" => "start-token"})
+    end)
+
+    assert {:ok, %{start_page_token: "start-token"}} =
+             Client.get_start_page_token(%{supports_all_drives: true}, "token")
+  end
+
+  test "lists file changes" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/v3/changes"
+      assert conn.query_params["pageToken"] == "start-token"
+      assert conn.query_params["pageSize"] == "50"
+      assert conn.query_params["includeRemoved"] == "true"
+      assert conn.query_params["fields"] =~ "newStartPageToken,changes"
+
+      Req.Test.json(conn, %{
+        "changes" => [
+          %{
+            "changeId" => "change123",
+            "fileId" => "file123",
+            "removed" => false,
+            "time" => "2026-05-05T12:00:00Z",
+            "changeType" => "file",
+            "file" => %{
+              "id" => "file123",
+              "name" => "Budget.pdf",
+              "mimeType" => "application/pdf"
+            }
+          }
+        ],
+        "newStartPageToken" => "next-token"
+      })
+    end)
+
+    assert {:ok, %{changes: [%Change{} = change], new_start_page_token: "next-token"}} =
+             Client.list_changes(
+               %{
+                 page_token: "start-token",
+                 page_size: 50,
+                 include_removed: true
+               },
+               "token"
+             )
+
+    assert change.change_id == "change123"
+    assert change.file.file_id == "file123"
   end
 end

@@ -177,6 +177,43 @@ defmodule Jido.Connect.Google.DriveTest do
          email_address: "reader@example.com"
        })}
     end
+
+    def get_start_page_token(%{supports_all_drives: false}, "token") do
+      {:ok, %{start_page_token: "start-token"}}
+    end
+
+    def list_changes(
+          %{
+            page_token: "start-token",
+            page_size: 100,
+            spaces: "drive",
+            include_items_from_all_drives: false,
+            include_removed: true,
+            restrict_to_my_drive: false,
+            supports_all_drives: false
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         changes: [
+           Drive.Change.new!(%{
+             change_id: "change123",
+             file_id: "file123",
+             removed?: false,
+             time: "2026-05-05T12:00:00Z",
+             change_type: "file",
+             file:
+               Drive.File.new!(%{
+                 file_id: "file123",
+                 name: "Budget.pdf",
+                 mime_type: "application/pdf"
+               })
+           })
+         ],
+         new_start_page_token: "next-token"
+       }}
+    end
   end
 
   test "declares Google Drive provider metadata" do
@@ -223,6 +260,16 @@ defmodule Jido.Connect.Google.DriveTest do
              "domain",
              "anyone"
            ]
+
+    assert {:ok,
+            %{
+              id: "google.drive.file.changed",
+              kind: :poll,
+              checkpoint: :page_token,
+              dedupe: %{key: [:change_id, :file_id]},
+              scope_resolver: Jido.Connect.Google.Drive.ScopeResolver
+            }} =
+             Connect.trigger(spec, "google.drive.file.changed")
   end
 
   test "invokes list files through injected client and lease" do
@@ -530,6 +577,46 @@ defmodule Jido.Connect.Google.DriveTest do
                %{file_id: "file123", type: "user", role: "reader"},
                context: context,
                credential_lease: lease
+             )
+  end
+
+  test "file change poll initializes checkpoint without replaying history" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok, %{signals: [], checkpoint: "start-token"}} =
+             Connect.poll(
+               Drive.integration(),
+               "google.drive.file.changed",
+               %{},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "file change poll emits normalized changes and advances checkpoint" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              signals: [
+                %{
+                  change_id: "change123",
+                  file_id: "file123",
+                  removed: false,
+                  time: "2026-05-05T12:00:00Z",
+                  change_type: "file",
+                  file: %{file_id: "file123", name: "Budget.pdf"}
+                }
+              ],
+              checkpoint: "next-token"
+            }} =
+             Connect.poll(
+               Drive.integration(),
+               "google.drive.file.changed",
+               %{},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "start-token"
              )
   end
 
