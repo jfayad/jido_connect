@@ -51,4 +51,9 @@ defmodule Jido.Connect.Gmail do
       revoke?(true)
     end
   end
+
+  defdelegate catalog_packs, to: Jido.Connect.Gmail.CatalogPacks, as: :all
+  defdelegate metadata_pack, to: Jido.Connect.Gmail.CatalogPacks, as: :metadata
+  defdelegate triage_pack, to: Jido.Connect.Gmail.CatalogPacks, as: :triage
+  defdelegate send_pack, to: Jido.Connect.Gmail.CatalogPacks, as: :send
 end
