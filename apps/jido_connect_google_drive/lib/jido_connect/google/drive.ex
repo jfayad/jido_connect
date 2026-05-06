@@ -53,4 +53,8 @@ defmodule Jido.Connect.Google.Drive do
       revoke?(true)
     end
   end
+
+  defdelegate catalog_packs, to: Jido.Connect.Google.Drive.CatalogPacks, as: :all
+  defdelegate readonly_pack, to: Jido.Connect.Google.Drive.CatalogPacks, as: :readonly
+  defdelegate file_writer_pack, to: Jido.Connect.Google.Drive.CatalogPacks, as: :file_writer
 end
