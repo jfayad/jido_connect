@@ -49,6 +49,125 @@ defmodule Jido.Connect.Google.CalendarTest do
        }}
     end
 
+    def list_events(
+          %{
+            calendar_id: "primary",
+            page_token: "page-2",
+            sync_token: "paged-sync",
+            page_size: 250,
+            single_events: true,
+            show_deleted: true,
+            show_hidden_invitations: false
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         events: [
+           Calendar.Event.new!(%{
+             event_id: "event123",
+             calendar_id: "primary",
+             status: "confirmed",
+             summary: "Planning duplicate",
+             start: "2026-05-06T09:00:00-05:00",
+             end: "2026-05-06T10:00:00-05:00",
+             updated: "2026-05-06T12:00:00Z"
+           }),
+           Calendar.Event.new!(%{
+             event_id: "event456",
+             calendar_id: "primary",
+             status: "cancelled",
+             summary: "Cancelled",
+             updated: "2026-05-06T12:05:00Z"
+           })
+         ],
+         next_sync_token: "paged-next-sync"
+       }}
+    end
+
+    def list_events(
+          %{
+            calendar_id: "primary",
+            sync_token: "paged-sync",
+            page_size: 250,
+            single_events: true,
+            show_deleted: true,
+            show_hidden_invitations: false
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         events: [
+           Calendar.Event.new!(%{
+             event_id: "event123",
+             calendar_id: "primary",
+             status: "confirmed",
+             summary: "Planning",
+             start: "2026-05-06T09:00:00-05:00",
+             end: "2026-05-06T10:00:00-05:00",
+             updated: "2026-05-06T12:00:00Z"
+           })
+         ],
+         next_page_token: "page-2"
+       }}
+    end
+
+    def list_events(
+          %{
+            calendar_id: "primary",
+            sync_token: "sync-1",
+            page_size: 250,
+            single_events: true,
+            show_deleted: true,
+            show_hidden_invitations: false
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         events: [
+           Calendar.Event.new!(%{
+             event_id: "event123",
+             calendar_id: "primary",
+             status: "confirmed",
+             summary: "Planning",
+             start: "2026-05-06T09:00:00-05:00",
+             end: "2026-05-06T10:00:00-05:00",
+             updated: "2026-05-06T12:00:00Z"
+           })
+         ],
+         next_sync_token: "sync-2"
+       }}
+    end
+
+    def list_events(
+          %{
+            calendar_id: "primary",
+            page_size: 250,
+            single_events: true,
+            show_deleted: true,
+            show_hidden_invitations: false
+          },
+          "token"
+        ) do
+      {:ok,
+       %{
+         events: [
+           Calendar.Event.new!(%{
+             event_id: "old-event",
+             calendar_id: "primary",
+             status: "confirmed",
+             summary: "Existing",
+             start: "2026-05-05T09:00:00-05:00",
+             end: "2026-05-05T10:00:00-05:00",
+             updated: "2026-05-05T12:00:00Z"
+           })
+         ],
+         next_sync_token: "sync-1"
+       }}
+    end
+
     def get_event(%{calendar_id: "primary", event_id: "event123"}, "token") do
       {:ok,
        Calendar.Event.new!(%{
@@ -165,8 +284,6 @@ defmodule Jido.Connect.Google.CalendarTest do
              "google.calendar.availability.find"
            ]
 
-    assert spec.triggers == []
-
     assert [%{id: :user, kind: :oauth2, refresh?: true, pkce?: true} = profile] =
              spec.auth_profiles
 
@@ -184,6 +301,16 @@ defmodule Jido.Connect.Google.CalendarTest do
     delete_action = Enum.find(spec.actions, &(&1.id == "google.calendar.event.delete"))
     assert delete_action.risk == :destructive
     assert delete_action.confirmation == :always
+
+    assert {:ok,
+            %{
+              id: "google.calendar.event.changed",
+              kind: :poll,
+              checkpoint: :sync_token,
+              dedupe: %{key: [:event_id, :updated]},
+              scope_resolver: Jido.Connect.Google.Calendar.ScopeResolver
+            }} =
+             Connect.trigger(spec, "google.calendar.event.changed")
   end
 
   test "invokes list calendars through injected client and lease" do
@@ -582,6 +709,77 @@ defmodule Jido.Connect.Google.CalendarTest do
                },
                context: context,
                credential_lease: lease
+             )
+  end
+
+  test "event change poll initializes checkpoint without replaying history" do
+    {context, lease} = context_and_lease(scopes: event_read_scopes())
+
+    assert {:ok, %{signals: [], checkpoint: "sync-1"}} =
+             Connect.poll(
+               Calendar.integration(),
+               "google.calendar.event.changed",
+               %{calendar_id: "primary"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "event change poll emits normalized events and advances checkpoint" do
+    {context, lease} = context_and_lease(scopes: event_read_scopes())
+
+    assert {:ok,
+            %{
+              signals: [
+                %{
+                  event_id: "event123",
+                  calendar_id: "primary",
+                  status: "confirmed",
+                  change_type: "updated",
+                  summary: "Planning",
+                  updated: "2026-05-06T12:00:00Z",
+                  event: %{event_id: "event123", summary: "Planning"}
+                }
+              ],
+              checkpoint: "sync-2"
+            }} =
+             Connect.poll(
+               Calendar.integration(),
+               "google.calendar.event.changed",
+               %{calendar_id: "primary"},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "sync-1"
+             )
+  end
+
+  test "event change poll drains pages, dedupes events, and advances checkpoint" do
+    {context, lease} = context_and_lease(scopes: event_read_scopes())
+
+    assert {:ok,
+            %{
+              signals: [
+                %{
+                  event_id: "event123",
+                  change_type: "updated",
+                  event: %{summary: "Planning"}
+                },
+                %{
+                  event_id: "event456",
+                  status: "cancelled",
+                  change_type: "cancelled",
+                  event: %{summary: "Cancelled"}
+                }
+              ],
+              checkpoint: "paged-next-sync"
+            }} =
+             Connect.poll(
+               Calendar.integration(),
+               "google.calendar.event.changed",
+               %{calendar_id: "primary"},
+               context: context,
+               credential_lease: lease,
+               checkpoint: "paged-sync"
              )
   end
 
