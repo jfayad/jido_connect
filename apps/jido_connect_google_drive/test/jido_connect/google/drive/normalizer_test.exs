@@ -17,6 +17,14 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
                "modifiedTime" => "2026-05-02T10:00:00Z",
                "parents" => ["folder123"],
                "owners" => [%{"emailAddress" => "owner@example.com"}],
+               "permissions" => [
+                 %{
+                   "id" => "perm123",
+                   "type" => "user",
+                   "role" => "reader",
+                   "emailAddress" => "reader@example.com"
+                 }
+               ],
                "shared" => true
              })
 
@@ -24,6 +32,10 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
     assert file.name == "Budget.pdf"
     assert file.size == 1024
     assert file.parents == ["folder123"]
+
+    assert [%Permission{permission_id: "perm123", email_address: "reader@example.com"}] =
+             file.permissions
+
     assert file.shared?
   end
 
@@ -35,12 +47,21 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
                "mimeType" => "application/vnd.google-apps.folder",
                "webViewLink" => "https://drive.google.com/drive/folders/folder123",
                "parents" => ["root"],
+               "permissions" => [
+                 %{
+                   "id" => "perm456",
+                   "type" => "domain",
+                   "role" => "commenter",
+                   "domain" => "example.com"
+                 }
+               ],
                "shared" => false
              })
 
     assert folder.folder_id == "folder123"
     assert folder.name == "Reports"
     assert folder.parents == ["root"]
+    assert [%Permission{permission_id: "perm456", domain: "example.com"}] = folder.permissions
     refute folder.shared?
   end
 
@@ -100,6 +121,7 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
     ConnectorContracts.assert_struct_defaults(File, %{file_id: "file123", name: "Budget.pdf"},
       parents: [],
       owners: [],
+      permissions: [],
       shared?: false,
       trashed?: false,
       starred?: false,
@@ -110,6 +132,7 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
 
     ConnectorContracts.assert_struct_defaults(Folder, %{folder_id: "folder123", name: "Reports"},
       parents: [],
+      permissions: [],
       shared?: false,
       trashed?: false,
       metadata: %{}

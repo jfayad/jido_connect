@@ -28,6 +28,7 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
       assert conn.query_params["q"] == "mimeType = 'application/pdf'"
       assert conn.query_params["pageSize"] == "10"
       assert conn.query_params["spaces"] == "drive"
+      refute String.contains?(conn.query_params["fields"], "permissions(")
 
       Req.Test.json(conn, %{
         "files" => [
@@ -35,7 +36,15 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
             "id" => "file123",
             "name" => "Budget.pdf",
             "mimeType" => "application/pdf",
-            "parents" => ["folder123"]
+            "parents" => ["folder123"],
+            "permissions" => [
+              %{
+                "id" => "perm123",
+                "type" => "user",
+                "role" => "reader",
+                "emailAddress" => "reader@example.com"
+              }
+            ]
           }
         ],
         "nextPageToken" => "next"
@@ -50,6 +59,9 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
 
     assert file.file_id == "file123"
     assert file.name == "Budget.pdf"
+
+    assert [%Permission{permission_id: "perm123", email_address: "reader@example.com"}] =
+             file.permissions
   end
 
   test "returns provider errors for malformed Drive list items" do
@@ -69,6 +81,40 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
               provider: :google,
               reason: :invalid_response
             }} = Client.list_files(%{}, "token")
+  end
+
+  test "lists files with explicitly requested permissions" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/v3/files"
+      assert conn.query_params["fields"] =~ "permissions(id,type,role,emailAddress)"
+
+      Req.Test.json(conn, %{
+        "files" => [
+          %{
+            "id" => "file123",
+            "name" => "Budget.pdf",
+            "permissions" => [
+              %{
+                "id" => "perm123",
+                "type" => "user",
+                "role" => "reader",
+                "emailAddress" => "reader@example.com"
+              }
+            ]
+          }
+        ]
+      })
+    end)
+
+    assert {:ok, %{files: [%File{} = file]}} =
+             Client.list_files(
+               %{fields: "nextPageToken,files(id,name,permissions(id,type,role,emailAddress))"},
+               "token"
+             )
+
+    assert [%Permission{permission_id: "perm123", email_address: "reader@example.com"}] =
+             file.permissions
   end
 
   test "gets file metadata" do
@@ -156,7 +202,15 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
         "id" => "folder456",
         "name" => "Reports",
         "mimeType" => "application/vnd.google-apps.folder",
-        "parents" => ["root"]
+        "parents" => ["root"],
+        "permissions" => [
+          %{
+            "id" => "perm456",
+            "type" => "domain",
+            "role" => "reader",
+            "domain" => "example.com"
+          }
+        ]
       })
     end)
 
@@ -165,6 +219,7 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
 
     assert folder.folder_id == "folder456"
     assert folder.parents == ["root"]
+    assert [%Permission{permission_id: "perm456", domain: "example.com"}] = folder.permissions
   end
 
   test "copies files" do

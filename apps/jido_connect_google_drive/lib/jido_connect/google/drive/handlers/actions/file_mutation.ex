@@ -26,7 +26,14 @@ defmodule Jido.Connect.Google.Drive.Handlers.Actions.FileMutation do
       defp public_map(struct) when is_struct(struct),
         do: struct |> Map.from_struct() |> public_map()
 
-      defp public_map(map) when is_map(map), do: map
+      defp public_map(list) when is_list(list), do: Enum.map(list, &public_map/1)
+
+      defp public_map(map) when is_map(map) do
+        map
+        |> Map.update(:owners, [], &public_map/1)
+        |> Map.update(:permissions, [], &public_map/1)
+      end
+
       defp public_map(value), do: value
     end
   end

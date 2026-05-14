@@ -10,6 +10,8 @@ defmodule Jido.Connect.Google.Drive.Folder do
               created_time: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
               modified_time: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
               parents: Zoi.list(Zoi.string()) |> Zoi.default([]),
+              permissions:
+                Zoi.list(Jido.Connect.Google.Drive.Permission.schema()) |> Zoi.default([]),
               trashed?: Zoi.boolean() |> Zoi.default(false),
               shared?: Zoi.boolean() |> Zoi.default(false),
               drive_id: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),

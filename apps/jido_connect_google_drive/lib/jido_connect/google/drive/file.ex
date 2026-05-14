@@ -18,6 +18,8 @@ defmodule Jido.Connect.Google.Drive.File do
               modified_time: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
               parents: Zoi.list(Zoi.string()) |> Zoi.default([]),
               owners: Zoi.list(Zoi.map()) |> Zoi.default([]),
+              permissions:
+                Zoi.list(Jido.Connect.Google.Drive.Permission.schema()) |> Zoi.default([]),
               shared?: Zoi.boolean() |> Zoi.default(false),
               trashed?: Zoi.boolean() |> Zoi.default(false),
               starred?: Zoi.boolean() |> Zoi.default(false),

@@ -157,6 +157,7 @@ defmodule Jido.Connect.Google.Drive.Client.Response do
       "createdTime" => file.created_time,
       "modifiedTime" => file.modified_time,
       "parents" => file.parents,
+      "permissions" => file.permissions,
       "trashed" => file.trashed?,
       "shared" => file.shared?,
       "driveId" => file.drive_id

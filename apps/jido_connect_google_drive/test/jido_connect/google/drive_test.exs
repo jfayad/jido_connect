@@ -45,7 +45,15 @@ defmodule Jido.Connect.Google.DriveTest do
              file_id: "file123",
              name: "Budget.pdf",
              mime_type: "application/pdf",
-             parents: ["folder123"]
+             parents: ["folder123"],
+             permissions: [
+               Drive.Permission.new!(%{
+                 permission_id: "perm123",
+                 type: "user",
+                 role: "reader",
+                 email_address: "reader@example.com"
+               })
+             ]
            })
          ],
          next_page_token: "next"
@@ -61,7 +69,15 @@ defmodule Jido.Connect.Google.DriveTest do
          file_id: "file123",
          name: "Budget.pdf",
          mime_type: "application/pdf",
-         parents: ["folder123"]
+         parents: ["folder123"],
+         permissions: [
+           Drive.Permission.new!(%{
+             permission_id: "perm123",
+             type: "user",
+             role: "reader",
+             email_address: "reader@example.com"
+           })
+         ]
        })}
     end
 
@@ -91,7 +107,15 @@ defmodule Jido.Connect.Google.DriveTest do
        Drive.Folder.new!(%{
          folder_id: "folder456",
          name: "Reports",
-         parents: ["root"]
+         parents: ["root"],
+         permissions: [
+           Drive.Permission.new!(%{
+             permission_id: "perm456",
+             type: "domain",
+             role: "reader",
+             domain: "example.com"
+           })
+         ]
        })}
     end
 
@@ -230,7 +254,15 @@ defmodule Jido.Connect.Google.DriveTest do
                Drive.File.new!(%{
                  file_id: "file123",
                  name: "Budget.pdf",
-                 mime_type: "application/pdf"
+                 mime_type: "application/pdf",
+                 permissions: [
+                   Drive.Permission.new!(%{
+                     permission_id: "perm123",
+                     type: "user",
+                     role: "reader",
+                     email_address: "reader@example.com"
+                   })
+                 ]
                })
            })
          ],
@@ -497,7 +529,15 @@ defmodule Jido.Connect.Google.DriveTest do
                   file_id: "file123",
                   name: "Budget.pdf",
                   mime_type: "application/pdf",
-                  parents: ["folder123"]
+                  parents: ["folder123"],
+                  permissions: [
+                    %{
+                      permission_id: "perm123",
+                      type: "user",
+                      role: "reader",
+                      email_address: "reader@example.com"
+                    }
+                  ]
                 }
               ],
               next_page_token: "next"
@@ -519,7 +559,15 @@ defmodule Jido.Connect.Google.DriveTest do
               file: %{
                 file_id: "file123",
                 name: "Budget.pdf",
-                mime_type: "application/pdf"
+                mime_type: "application/pdf",
+                permissions: [
+                  %{
+                    permission_id: "perm123",
+                    type: "user",
+                    role: "reader",
+                    email_address: "reader@example.com"
+                  }
+                ]
               }
             }} =
              Connect.invoke(
@@ -585,7 +633,22 @@ defmodule Jido.Connect.Google.DriveTest do
   test "invokes create folder through injected client and lease" do
     {context, lease} = context_and_lease(scopes: write_scopes())
 
-    assert {:ok, %{folder: %{folder_id: "folder456", name: "Reports", parents: ["root"]}}} =
+    assert {:ok,
+            %{
+              folder: %{
+                folder_id: "folder456",
+                name: "Reports",
+                parents: ["root"],
+                permissions: [
+                  %{
+                    permission_id: "perm456",
+                    type: "domain",
+                    role: "reader",
+                    domain: "example.com"
+                  }
+                ]
+              }
+            }} =
              Connect.invoke(
                Drive.integration(),
                "google.drive.folder.create",
@@ -837,7 +900,18 @@ defmodule Jido.Connect.Google.DriveTest do
                   removed: false,
                   time: "2026-05-05T12:00:00Z",
                   change_type: "file",
-                  file: %{file_id: "file123", name: "Budget.pdf"}
+                  file: %{
+                    file_id: "file123",
+                    name: "Budget.pdf",
+                    permissions: [
+                      %{
+                        permission_id: "perm123",
+                        type: "user",
+                        role: "reader",
+                        email_address: "reader@example.com"
+                      }
+                    ]
+                  }
                 }
               ],
               checkpoint: "next-token"
