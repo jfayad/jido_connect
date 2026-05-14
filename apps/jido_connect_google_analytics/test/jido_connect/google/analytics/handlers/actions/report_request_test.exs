@@ -181,4 +181,96 @@ defmodule Jido.Connect.Google.Analytics.Handlers.Actions.ReportRequestTest do
                ]
              })
   end
+
+  test "normalizes realtime report input into Google Analytics request JSON" do
+    assert {:ok, %{property: "properties/1234", body: body}} =
+             ReportRequest.realtime_report_input(%{
+               property: " 1234 ",
+               dimensions: ["city"],
+               metrics: ["activeUsers"],
+               dimension_filter: %{
+                 filter: %{
+                   field_name: "city",
+                   string_filter: %{match_type: "EXACT", value: "Chicago"}
+                 }
+               },
+               metric_filter: %{
+                 filter: %{
+                   field_name: "activeUsers",
+                   numeric_filter: %{operation: "GREATER_THAN", value: %{int64_value: "0"}}
+                 }
+               },
+               limit: "25",
+               metric_aggregations: ["TOTAL"],
+               order_bys: [%{metric: %{metric_name: "activeUsers"}, desc: true}],
+               return_property_quota: true,
+               minute_ranges: [%{name: "last30", start_minutes_ago: 29, end_minutes_ago: 0}]
+             })
+
+    assert body == %{
+             "dimensions" => [%{"name" => "city"}],
+             "metrics" => [%{"name" => "activeUsers"}],
+             "dimensionFilter" => %{
+               "filter" => %{
+                 "fieldName" => "city",
+                 "stringFilter" => %{"matchType" => "EXACT", "value" => "Chicago"}
+               }
+             },
+             "metricFilter" => %{
+               "filter" => %{
+                 "fieldName" => "activeUsers",
+                 "numericFilter" => %{
+                   "operation" => "GREATER_THAN",
+                   "value" => %{"int64Value" => "0"}
+                 }
+               }
+             },
+             "limit" => "25",
+             "metricAggregations" => ["TOTAL"],
+             "orderBys" => [%{"metric" => %{"metricName" => "activeUsers"}, "desc" => true}],
+             "returnPropertyQuota" => true,
+             "minuteRanges" => [
+               %{"name" => "last30", "startMinutesAgo" => 29, "endMinutesAgo" => 0}
+             ]
+           }
+  end
+
+  test "validates realtime report shape" do
+    invalid_inputs = [
+      %{property: "properties/1234", minute_ranges: [%{start_minutes_ago: 29}]},
+      %{property: "properties/1234", metrics: []},
+      %{property: "properties/1234", metrics: ["activeUsers"], minute_ranges: "bad"},
+      %{
+        property: "properties/1234",
+        metrics: ["activeUsers"],
+        minute_ranges: [%{start_minutes_ago: 60, end_minutes_ago: 0}]
+      },
+      %{
+        property: "properties/1234",
+        metrics: ["activeUsers"],
+        minute_ranges: [%{start_minutes_ago: 0, end_minutes_ago: 29}]
+      },
+      %{
+        property: "properties/1234",
+        metrics: ["activeUsers"],
+        minute_ranges: [
+          %{start_minutes_ago: 29, end_minutes_ago: 20},
+          %{start_minutes_ago: 19, end_minutes_ago: 10},
+          %{start_minutes_ago: 9, end_minutes_ago: 0}
+        ]
+      },
+      %{
+        property: "properties/1234",
+        metrics: ["activeUsers"],
+        minute_ranges: [%{name: "RESERVED_total", start_minutes_ago: 29, end_minutes_ago: 0}]
+      }
+    ]
+
+    for input <- invalid_inputs do
+      assert {:error, %Error.ValidationError{reason: reason}} =
+               ReportRequest.realtime_report_input(input)
+
+      assert reason in [:invalid_report_request, :invalid_realtime_report_request]
+    end
+  end
 end

@@ -77,7 +77,8 @@ defmodule Jido.Connect.Google.Analytics.NormalizerTest do
               row_count: 1,
               currency_code: "USD",
               time_zone: "America/Chicago",
-              property_quota: %{"tokensPerDay" => %{"remaining" => 199_990}}
+              property_quota: %{"tokensPerDay" => %{"remaining" => 199_990}},
+              kind: "analyticsData#runReport"
             }} =
              Normalizer.report(%{
                "dimensionHeaders" => [%{"name" => "country"}],
@@ -91,6 +92,7 @@ defmodule Jido.Connect.Google.Analytics.NormalizerTest do
                "totals" => [%{"metricValues" => [%{"value" => "42"}]}],
                "metadata" => %{"currencyCode" => "USD", "timeZone" => "America/Chicago"},
                "propertyQuota" => %{"tokensPerDay" => %{"remaining" => 199_990}},
+               "kind" => "analyticsData#runReport",
                "rowCount" => 1
              })
   end

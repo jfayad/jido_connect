@@ -57,7 +57,8 @@ defmodule Jido.Connect.Google.Analytics.Normalizer do
         metadata: metadata,
         currency_code: Data.get(metadata, "currencyCode"),
         time_zone: Data.get(metadata, "timeZone"),
-        property_quota: Data.get(payload, "propertyQuota", %{})
+        property_quota: Data.get(payload, "propertyQuota", %{}),
+        kind: Data.get(payload, "kind")
       }
       |> Data.compact()
       |> Report.new()

@@ -17,7 +17,8 @@ defmodule Jido.Connect.Google.Analytics.Report do
               currency_code: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
               time_zone: Zoi.string() |> Zoi.nullish() |> Zoi.optional(),
               metadata: Zoi.map() |> Zoi.default(%{}),
-              property_quota: Zoi.map() |> Zoi.default(%{})
+              property_quota: Zoi.map() |> Zoi.default(%{}),
+              kind: Zoi.string() |> Zoi.nullish() |> Zoi.optional()
             },
             coerce: true
           )

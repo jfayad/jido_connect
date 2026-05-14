@@ -154,6 +154,48 @@ defmodule Jido.Connect.Google.Analytics.ClientTest do
              )
   end
 
+  test "runs Analytics realtime reports for a property" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "POST"
+      assert conn.request_path == "/v1beta/properties/1234:runRealtimeReport"
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer token"]
+
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+
+      assert Jason.decode!(body) == %{
+               "dimensions" => [%{"name" => "city"}],
+               "metrics" => [%{"name" => "activeUsers"}],
+               "limit" => "25",
+               "minuteRanges" => [%{"startMinutesAgo" => 29, "endMinutesAgo" => 0}]
+             }
+
+      Req.Test.json(conn, Map.put(report_payload(), "kind", "analyticsData#runRealtimeReport"))
+    end)
+
+    assert {:ok,
+            %Report{
+              kind: "analyticsData#runRealtimeReport",
+              row_count: 1,
+              rows: [row],
+              metric_headers: [%Metric{name: "activeUsers"}]
+            }} =
+             Client.run_realtime_report(
+               %{
+                 property: "properties/1234",
+                 body: %{
+                   "dimensions" => [%{"name" => "city"}],
+                   "metrics" => [%{"name" => "activeUsers"}],
+                   "limit" => "25",
+                   "minuteRanges" => [%{"startMinutesAgo" => 29, "endMinutesAgo" => 0}]
+                 }
+               },
+               "token"
+             )
+
+    assert [%Dimension{name: "country", value: "US"}] = row.dimensions
+    assert [%Metric{name: "activeUsers", value: "42", type: "TYPE_INTEGER"}] = row.metrics
+  end
+
   test "returns provider errors for invalid report success payloads" do
     Req.Test.stub(__MODULE__, fn conn ->
       Req.Test.json(conn, %{"rows" => :invalid})

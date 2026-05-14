@@ -8,6 +8,8 @@ defmodule Jido.Connect.Google.Analytics.Handlers.Actions.ReportRequest do
   @max_dimensions 9
   @max_metrics 10
   @max_limit 250_000
+  @max_minute_ranges 2
+  @max_minutes_ago 59
 
   @date_pattern ~r/^\d{4}-\d{2}-\d{2}$/
   @relative_date_pattern ~r/^\d+daysAgo$/
@@ -23,6 +25,13 @@ defmodule Jido.Connect.Google.Analytics.Handlers.Actions.ReportRequest do
     with {:ok, property} <- ResourceHelpers.normalize_property(Data.get(input, :property)),
          {:ok, requests} <- batch_requests(input, property) do
       {:ok, %{property: property, body: %{"requests" => requests}}}
+    end
+  end
+
+  def realtime_report_input(input) do
+    with {:ok, property} <- ResourceHelpers.normalize_property(Data.get(input, :property)),
+         {:ok, body} <- realtime_body(input) do
+      {:ok, %{property: property, body: body}}
     end
   end
 
@@ -140,6 +149,31 @@ defmodule Jido.Connect.Google.Analytics.Handlers.Actions.ReportRequest do
     end
   end
 
+  defp realtime_body(input) do
+    with {:ok, dimensions} <-
+           named_collection(input, :dimensions, @max_dimensions, required?: false),
+         {:ok, metrics} <- named_collection(input, :metrics, @max_metrics, required?: true),
+         {:ok, dimension_filter} <- optional_map(input, :dimension_filter),
+         {:ok, metric_filter} <- optional_map(input, :metric_filter),
+         {:ok, limit} <- optional_integer_string(input, :limit, min: 1, max: @max_limit),
+         {:ok, metric_aggregations} <- optional_string_list(input, :metric_aggregations),
+         {:ok, order_bys} <- optional_map_list(input, :order_bys),
+         {:ok, return_property_quota} <- optional_boolean(input, :return_property_quota),
+         {:ok, minute_ranges} <- minute_ranges(input) do
+      {:ok,
+       %{}
+       |> put_not_empty("dimensions", dimensions)
+       |> put_present("metrics", metrics)
+       |> put_present("dimensionFilter", dimension_filter)
+       |> put_present("metricFilter", metric_filter)
+       |> put_present("limit", limit)
+       |> put_not_empty("metricAggregations", metric_aggregations)
+       |> put_not_empty("orderBys", order_bys)
+       |> put_present("returnPropertyQuota", return_property_quota)
+       |> put_not_empty("minuteRanges", minute_ranges)}
+    end
+  end
+
   defp date_ranges(input) do
     case Data.get(input, :date_ranges) do
       ranges when is_list(ranges) and ranges != [] ->
@@ -219,6 +253,138 @@ defmodule Jido.Connect.Google.Analytics.Handlers.Actions.ReportRequest do
       index: index,
       value: value,
       expected: "YYYY-MM-DD, today, yesterday, or NdaysAgo"
+    )
+  end
+
+  defp minute_ranges(input) do
+    case Data.get(input, :minute_ranges, []) do
+      ranges when is_list(ranges) ->
+        cond do
+          length(ranges) > @max_minute_ranges ->
+            validation_error("Google Analytics realtime report minute_ranges exceeds limit",
+              reason: :invalid_realtime_report_request,
+              field: :minute_ranges,
+              max_count: @max_minute_ranges,
+              count: length(ranges)
+            )
+
+          true ->
+            normalize_minute_ranges(ranges)
+        end
+
+      value ->
+        validation_error("Google Analytics realtime report minute_ranges must be a list",
+          reason: :invalid_realtime_report_request,
+          field: :minute_ranges,
+          value: value
+        )
+    end
+  end
+
+  defp normalize_minute_ranges(ranges) do
+    ranges
+    |> Enum.with_index()
+    |> Enum.reduce_while({:ok, []}, fn {range, index}, {:ok, acc} ->
+      case minute_range(range, index) do
+        {:ok, range} -> {:cont, {:ok, [range | acc]}}
+        {:error, error} -> {:halt, {:error, error}}
+      end
+    end)
+    |> case do
+      {:ok, ranges} -> {:ok, Enum.reverse(ranges)}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp minute_range(range, index) when is_map(range) do
+    with {:ok, start_minutes_ago} <- optional_minute(range, :start_minutes_ago, index),
+         {:ok, end_minutes_ago} <- optional_minute(range, :end_minutes_ago, index),
+         :ok <- validate_minute_order(start_minutes_ago, end_minutes_ago, index),
+         {:ok, name} <- minute_range_name(range, index) do
+      {:ok,
+       %{}
+       |> put_present("name", name)
+       |> put_present("startMinutesAgo", start_minutes_ago)
+       |> put_present("endMinutesAgo", end_minutes_ago)}
+    end
+  end
+
+  defp minute_range(_range, index) do
+    validation_error("Google Analytics realtime report minute range must be a map",
+      reason: :invalid_realtime_report_request,
+      field: :minute_ranges,
+      index: index
+    )
+  end
+
+  defp optional_minute(range, field, index) do
+    case get_any(range, minute_keys(field)) do
+      nil ->
+        {:ok, nil}
+
+      value ->
+        case parse_integer(value) do
+          {:ok, integer} when integer >= 0 and integer <= @max_minutes_ago ->
+            {:ok, integer}
+
+          _invalid ->
+            validation_error("Google Analytics realtime report minute ranges are invalid",
+              reason: :invalid_realtime_report_request,
+              field: field,
+              index: index,
+              value: value,
+              min: 0,
+              max: @max_minutes_ago
+            )
+        end
+    end
+  end
+
+  defp minute_keys(:start_minutes_ago),
+    do: [:start_minutes_ago, "start_minutes_ago", :startMinutesAgo, "startMinutesAgo"]
+
+  defp minute_keys(:end_minutes_ago),
+    do: [:end_minutes_ago, "end_minutes_ago", :endMinutesAgo, "endMinutesAgo"]
+
+  defp validate_minute_order(nil, _end_minutes_ago, _index), do: :ok
+  defp validate_minute_order(_start_minutes_ago, nil, _index), do: :ok
+
+  defp validate_minute_order(start_minutes_ago, end_minutes_ago, _index)
+       when start_minutes_ago >= end_minutes_ago, do: :ok
+
+  defp validate_minute_order(start_minutes_ago, end_minutes_ago, index) do
+    validation_error(
+      "Google Analytics realtime report start_minutes_ago must be older than end_minutes_ago",
+      reason: :invalid_realtime_report_request,
+      field: :minute_ranges,
+      index: index,
+      start_minutes_ago: start_minutes_ago,
+      end_minutes_ago: end_minutes_ago
+    )
+  end
+
+  defp minute_range_name(range, index) do
+    case optional_string(range, :name) do
+      {:ok, nil} ->
+        {:ok, nil}
+
+      {:ok, "date_range_" <> _rest = name} ->
+        invalid_minute_range_name(name, index)
+
+      {:ok, "RESERVED_" <> _rest = name} ->
+        invalid_minute_range_name(name, index)
+
+      {:ok, name} ->
+        {:ok, name}
+    end
+  end
+
+  defp invalid_minute_range_name(name, index) do
+    validation_error("Google Analytics realtime report minute range name is reserved",
+      reason: :invalid_realtime_report_request,
+      field: :name,
+      index: index,
+      value: name
     )
   end
 

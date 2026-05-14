@@ -9,7 +9,8 @@ defmodule Jido.Connect.Google.AnalyticsTest do
   @analytics_action_modules [
     Jido.Connect.Google.Analytics.Actions.GetMetadata,
     Jido.Connect.Google.Analytics.Actions.RunReport,
-    Jido.Connect.Google.Analytics.Actions.BatchRunReports
+    Jido.Connect.Google.Analytics.Actions.BatchRunReports,
+    Jido.Connect.Google.Analytics.Actions.RunRealtimeReport
   ]
   @analytics_dsl_fragments [
     Jido.Connect.Google.Analytics.Actions.Metadata,
@@ -68,6 +69,24 @@ defmodule Jido.Connect.Google.AnalyticsTest do
          ]
        }}
     end
+
+    def run_realtime_report(%{property: "properties/1234"}, "token") do
+      {:ok,
+       Analytics.Report.new!(%{
+         kind: "analyticsData#runRealtimeReport",
+         dimension_headers: [Analytics.Dimension.new!(%{name: "city"})],
+         metric_headers: [Analytics.Metric.new!(%{name: "activeUsers", type: "TYPE_INTEGER"})],
+         rows: [
+           Analytics.Row.new!(%{
+             dimensions: [Analytics.Dimension.new!(%{name: "city", value: "Chicago"})],
+             metrics: [
+               Analytics.Metric.new!(%{name: "activeUsers", value: "7", type: "TYPE_INTEGER"})
+             ]
+           })
+         ],
+         row_count: 1
+       })}
+    end
   end
 
   test "declares Google Analytics provider metadata" do
@@ -83,7 +102,8 @@ defmodule Jido.Connect.Google.AnalyticsTest do
     assert Enum.map(spec.actions, & &1.id) == [
              "google.analytics.metadata.get",
              "google.analytics.report.run",
-             "google.analytics.report.batch_run"
+             "google.analytics.report.batch_run",
+             "google.analytics.report.realtime.run"
            ]
 
     assert spec.triggers == []
@@ -179,6 +199,36 @@ defmodule Jido.Connect.Google.AnalyticsTest do
                      metrics: ["activeUsers"]
                    }
                  ]
+               },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes realtime report through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: [@analytics_readonly_scope])
+
+    assert {:ok,
+            %{
+              report: %{
+                kind: "analyticsData#runRealtimeReport",
+                row_count: 1,
+                rows: [
+                  %{
+                    dimensions: [%{name: "city", value: "Chicago"}],
+                    metrics: [%{name: "activeUsers", value: "7", type: "TYPE_INTEGER"}]
+                  }
+                ]
+              }
+            }} =
+             Connect.invoke(
+               Analytics.integration(),
+               "google.analytics.report.realtime.run",
+               %{
+                 property: "1234",
+                 metrics: ["activeUsers"],
+                 dimensions: ["city"],
+                 minute_ranges: [%{start_minutes_ago: 29, end_minutes_ago: 0}]
                },
                context: context,
                credential_lease: lease

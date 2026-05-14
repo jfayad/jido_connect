@@ -11,9 +11,9 @@ surfaces are added.
 
 This scaffold declares the provider package, user OAuth profile, Analytics
 scope resolver, generated Jido plugin shell, shared Google transport boundary,
-normalized Zoi-backed structs, metadata lookup, and core report actions.
-Property discovery, catalog pack, and trigger work is intentionally split into
-later Beadwork tasks.
+normalized Zoi-backed structs, metadata lookup, core report actions, and
+realtime report actions. Property discovery, catalog pack, and trigger work is
+intentionally split into later Beadwork tasks.
 
 ## Normalized Structs
 
@@ -48,10 +48,11 @@ configurable through application environment for tests.
 - `google.analytics.metadata.get`
 - `google.analytics.report.run`
 - `google.analytics.report.batch_run`
+- `google.analytics.report.realtime.run`
 
 No Analytics triggers are exposed yet. The generated plugin and provider
-metadata are present so later tasks can add realtime and property-discovery
-action families without changing package wiring.
+metadata are present so later tasks can add property-discovery action families
+without changing package wiring.
 
 ## Query Shape
 
@@ -71,6 +72,15 @@ Report actions accept provider-native GA4 request concepts:
   `cohort_spec`: GA4-shaped maps/lists. Snake-case keys are converted to
   Google lower camelCase keys at the connector boundary.
 - `limit`: positive integer up to 250,000 rows. `offset`: non-negative integer.
+
+Realtime reports use a separate input shape:
+
+- `metrics`: non-empty list of realtime metric names or provider metric maps.
+- `dimensions`: optional list of realtime dimension names or provider maps.
+- `minute_ranges`: optional list of up to two minute range maps with
+  `start_minutes_ago`/`end_minutes_ago` or Google's lower camelCase keys.
+- `dimension_filter`, `metric_filter`, `order_bys`, `metric_aggregations`, and
+  `return_property_quota`: GA4 realtime request fields, mapped provider-locally.
 
 ## Tool Availability
 

@@ -25,6 +25,17 @@ defmodule Jido.Connect.Google.Analytics.Client.Reports do
     |> Response.handle_batch_report_response()
   end
 
+  def run_realtime_report(%{property: property, body: body}, access_token)
+      when is_binary(property) and is_map(body) and is_binary(access_token) do
+    access_token
+    |> Transport.data_request()
+    |> Req.post(
+      url: "/v1beta/#{encode_resource_name(property)}:runRealtimeReport",
+      json: body
+    )
+    |> Response.handle_realtime_report_response()
+  end
+
   defp encode_resource_name(name) do
     name
     |> String.split("/")

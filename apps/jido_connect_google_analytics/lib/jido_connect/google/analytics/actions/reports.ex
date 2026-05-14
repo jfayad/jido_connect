@@ -95,5 +95,50 @@ defmodule Jido.Connect.Google.Analytics.Actions.Reports do
         field(:kind, :string)
       end
     end
+
+    action :run_realtime_report do
+      id("google.analytics.report.realtime.run")
+      resource(:report)
+      verb(:search)
+      data_classification(:workspace_metadata)
+      label("Run Analytics realtime report")
+      description("Run a Google Analytics Data API realtime report for one GA4 property.")
+      handler(Jido.Connect.Google.Analytics.Handlers.Actions.RunRealtimeReport)
+      effect(:read)
+
+      access do
+        auth(:user)
+        scopes([@readonly_scope], resolver: @scope_resolver)
+      end
+
+      input do
+        field(:property, :string,
+          required?: true,
+          example: "properties/1234"
+        )
+
+        field(:metrics, {:array, :string},
+          required?: true,
+          example: ["activeUsers"]
+        )
+
+        field(:dimensions, {:array, :string}, default: [])
+        field(:dimension_filter, :map)
+        field(:metric_filter, :map)
+        field(:limit, :integer)
+        field(:metric_aggregations, {:array, :string}, default: [])
+        field(:order_bys, {:array, :map}, default: [])
+        field(:return_property_quota, :boolean)
+
+        field(:minute_ranges, {:array, :map},
+          default: [],
+          example: [%{start_minutes_ago: 29, end_minutes_ago: 0}]
+        )
+      end
+
+      output do
+        field(:report, :map)
+      end
+    end
   end
 end
