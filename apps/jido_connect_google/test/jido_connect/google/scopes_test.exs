@@ -48,6 +48,7 @@ defmodule Jido.Connect.Google.ScopesTest do
              :search_console
            )
 
+    assert "https://www.googleapis.com/auth/webmasters" in Scopes.product(:search_console)
     assert Scopes.product(:unknown) == []
     assert Scopes.catalog().identity == ["openid", "email", "profile"]
     assert "https://www.googleapis.com/auth/drive" in Scopes.user_optional()
