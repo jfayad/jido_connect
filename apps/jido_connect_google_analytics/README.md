@@ -12,8 +12,8 @@ surfaces are added.
 This scaffold declares the provider package, user OAuth profile, Analytics
 scope resolver, generated Jido plugin shell, shared Google transport boundary,
 normalized Zoi-backed structs, metadata lookup, core report actions, and
-realtime report actions. Property discovery, catalog pack, and trigger work is
-intentionally split into later Beadwork tasks.
+realtime report actions, and property discovery. Catalog pack and trigger work
+is intentionally split into later Beadwork tasks.
 
 ## Normalized Structs
 
@@ -49,10 +49,11 @@ configurable through application environment for tests.
 - `google.analytics.report.run`
 - `google.analytics.report.batch_run`
 - `google.analytics.report.realtime.run`
+- `google.analytics.property_summaries.list`
 
 No Analytics triggers are exposed yet. The generated plugin and provider
-metadata are present so later tasks can add property-discovery action families
-without changing package wiring.
+metadata are present so later tasks can add catalog packs without changing
+package wiring.
 
 ## Query Shape
 
@@ -81,6 +82,10 @@ Realtime reports use a separate input shape:
   `start_minutes_ago`/`end_minutes_ago` or Google's lower camelCase keys.
 - `dimension_filter`, `metric_filter`, `order_bys`, `metric_aggregations`, and
   `return_property_quota`: GA4 realtime request fields, mapped provider-locally.
+
+Property discovery uses the Analytics Admin API `accountSummaries.list`
+endpoint and returns flattened `Jido.Connect.Google.Analytics.PropertySummary`
+values with account context in `metadata`.
 
 ## Tool Availability
 

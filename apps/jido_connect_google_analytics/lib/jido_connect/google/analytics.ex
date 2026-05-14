@@ -9,7 +9,8 @@ defmodule Jido.Connect.Google.Analytics do
   use Jido.Connect,
     fragments: [
       Jido.Connect.Google.Analytics.Actions.Metadata,
-      Jido.Connect.Google.Analytics.Actions.Reports
+      Jido.Connect.Google.Analytics.Actions.Reports,
+      Jido.Connect.Google.Analytics.Actions.Properties
     ]
 
   integration do

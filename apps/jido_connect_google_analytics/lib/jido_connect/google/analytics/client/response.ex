@@ -62,6 +62,25 @@ defmodule Jido.Connect.Google.Analytics.Client.Response do
 
   def handle_realtime_report_response(response), do: Transport.handle_error_response(response)
 
+  def handle_property_summaries_response({:ok, %{status: status, body: body}})
+      when status in 200..299 and is_map(body) do
+    normalize_one(
+      body,
+      &Normalizer.property_summaries/1,
+      "Google Analytics property summaries response was invalid"
+    )
+  end
+
+  def handle_property_summaries_response({:ok, %{status: status, body: body}})
+      when status in 200..299 do
+    Transport.invalid_success_response(
+      "Google Analytics property summaries response was invalid",
+      body
+    )
+  end
+
+  def handle_property_summaries_response(response), do: Transport.handle_error_response(response)
+
   defp normalize_one(body, normalizer, message) do
     case normalizer.(body) do
       {:ok, item} -> {:ok, item}

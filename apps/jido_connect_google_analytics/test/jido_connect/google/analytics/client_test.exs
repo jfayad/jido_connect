@@ -1,7 +1,7 @@
 defmodule Jido.Connect.Google.Analytics.ClientTest do
   use ExUnit.Case, async: false
 
-  alias Jido.Connect.Google.Analytics.{Client, Dimension, Metric, Report}
+  alias Jido.Connect.Google.Analytics.{Client, Dimension, Metric, PropertySummary, Report}
 
   setup {Req.Test, :verify_on_exit!}
 
@@ -16,6 +16,7 @@ defmodule Jido.Connect.Google.Analytics.ClientTest do
 
     on_exit(fn ->
       Application.delete_env(:jido_connect_google_analytics, :google_analytics_data_api_base_url)
+      Application.delete_env(:jido_connect_google_analytics, :google_analytics_admin_api_base_url)
       Application.delete_env(:jido_connect_google, :google_req_options)
     end)
   end
@@ -203,6 +204,60 @@ defmodule Jido.Connect.Google.Analytics.ClientTest do
 
     assert {:error, %Jido.Connect.Error.ProviderError{reason: :invalid_response}} =
              Client.run_report(%{property: "properties/1234", body: %{}}, "token")
+  end
+
+  test "lists Analytics property summaries" do
+    Application.put_env(
+      :jido_connect_google_analytics,
+      :google_analytics_admin_api_base_url,
+      "https://analytics-admin.test"
+    )
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/v1beta/accountSummaries"
+      assert conn.query_params["pageSize"] == "100"
+      assert conn.query_params["pageToken"] == "token_1"
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["Bearer token"]
+
+      Req.Test.json(conn, %{
+        "accountSummaries" => [
+          %{
+            "name" => "accountSummaries/1000",
+            "account" => "accounts/1000",
+            "displayName" => "Acme",
+            "propertySummaries" => [
+              %{
+                "property" => "properties/1234",
+                "displayName" => "Jido Web",
+                "propertyType" => "PROPERTY_TYPE_ORDINARY",
+                "parent" => "accounts/1000"
+              }
+            ]
+          }
+        ],
+        "nextPageToken" => "token_2"
+      })
+    end)
+
+    assert {:ok,
+            %{
+              property_summaries: [
+                %PropertySummary{
+                  property: "properties/1234",
+                  display_name: "Jido Web",
+                  property_type: "PROPERTY_TYPE_ORDINARY",
+                  parent: "accounts/1000",
+                  account: "accounts/1000",
+                  metadata: %{
+                    account_summary: "accountSummaries/1000",
+                    account_display_name: "Acme"
+                  }
+                }
+              ],
+              next_page_token: "token_2"
+            }} =
+             Client.list_property_summaries(%{page_size: 100, page_token: "token_1"}, "token")
   end
 
   defp report_payload do

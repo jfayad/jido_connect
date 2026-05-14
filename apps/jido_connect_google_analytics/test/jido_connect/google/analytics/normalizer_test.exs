@@ -1,7 +1,14 @@
 defmodule Jido.Connect.Google.Analytics.NormalizerTest do
   use ExUnit.Case, async: true
 
-  alias Jido.Connect.Google.Analytics.{Dimension, Metric, Normalizer, Report, Row}
+  alias Jido.Connect.Google.Analytics.{
+    Dimension,
+    Metric,
+    Normalizer,
+    PropertySummary,
+    Report,
+    Row
+  }
 
   test "normalizes Analytics metadata payloads" do
     assert {:ok,
@@ -109,5 +116,52 @@ defmodule Jido.Connect.Google.Analytics.NormalizerTest do
     assert {:error, :invalid_report_payload} = Normalizer.report(:bad)
     assert {:error, :invalid_report_collection} = Normalizer.report(%{"rows" => :bad})
     assert {:error, :invalid_report_collection} = Normalizer.batch_report(%{"reports" => :bad})
+  end
+
+  test "normalizes account summaries into property summaries" do
+    assert {:ok,
+            %{
+              property_summaries: [
+                %PropertySummary{
+                  property: "properties/1234",
+                  display_name: "Jido Web",
+                  property_type: "PROPERTY_TYPE_ORDINARY",
+                  parent: "accounts/1000",
+                  account: "accounts/1000",
+                  metadata: %{
+                    account_summary: "accountSummaries/1000",
+                    account_display_name: "Acme"
+                  }
+                }
+              ],
+              next_page_token: "next"
+            }} =
+             Normalizer.property_summaries(%{
+               "accountSummaries" => [
+                 %{
+                   "name" => "accountSummaries/1000",
+                   "account" => "accounts/1000",
+                   "displayName" => "Acme",
+                   "propertySummaries" => [
+                     %{
+                       "property" => "properties/1234",
+                       "displayName" => "Jido Web",
+                       "propertyType" => "PROPERTY_TYPE_ORDINARY",
+                       "parent" => "accounts/1000"
+                     }
+                   ]
+                 }
+               ],
+               "nextPageToken" => "next"
+             })
+  end
+
+  test "rejects invalid property summary payloads" do
+    assert {:error, :invalid_property_summary_payload} = Normalizer.property_summaries(:bad)
+
+    assert {:error, :invalid_property_summary_collection} =
+             Normalizer.property_summaries(%{"accountSummaries" => :bad})
+
+    assert {:error, _error} = Normalizer.property_summary(%{"displayName" => "Missing property"})
   end
 end

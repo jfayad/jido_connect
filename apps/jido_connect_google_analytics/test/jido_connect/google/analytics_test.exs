@@ -10,11 +10,13 @@ defmodule Jido.Connect.Google.AnalyticsTest do
     Jido.Connect.Google.Analytics.Actions.GetMetadata,
     Jido.Connect.Google.Analytics.Actions.RunReport,
     Jido.Connect.Google.Analytics.Actions.BatchRunReports,
-    Jido.Connect.Google.Analytics.Actions.RunRealtimeReport
+    Jido.Connect.Google.Analytics.Actions.RunRealtimeReport,
+    Jido.Connect.Google.Analytics.Actions.ListPropertySummaries
   ]
   @analytics_dsl_fragments [
     Jido.Connect.Google.Analytics.Actions.Metadata,
-    Jido.Connect.Google.Analytics.Actions.Reports
+    Jido.Connect.Google.Analytics.Actions.Reports,
+    Jido.Connect.Google.Analytics.Actions.Properties
   ]
 
   defmodule FakeAnalyticsClient do
@@ -87,6 +89,22 @@ defmodule Jido.Connect.Google.AnalyticsTest do
          row_count: 1
        })}
     end
+
+    def list_property_summaries(%{page_size: 50}, "token") do
+      {:ok,
+       %{
+         property_summaries: [
+           Analytics.PropertySummary.new!(%{
+             property: "properties/1234",
+             display_name: "Jido Web",
+             property_type: "PROPERTY_TYPE_ORDINARY",
+             parent: "accounts/1000",
+             account: "accounts/1000"
+           })
+         ],
+         next_page_token: "next"
+       }}
+    end
   end
 
   test "declares Google Analytics provider metadata" do
@@ -103,7 +121,8 @@ defmodule Jido.Connect.Google.AnalyticsTest do
              "google.analytics.metadata.get",
              "google.analytics.report.run",
              "google.analytics.report.batch_run",
-             "google.analytics.report.realtime.run"
+             "google.analytics.report.realtime.run",
+             "google.analytics.property_summaries.list"
            ]
 
     assert spec.triggers == []
@@ -230,6 +249,30 @@ defmodule Jido.Connect.Google.AnalyticsTest do
                  dimensions: ["city"],
                  minute_ranges: [%{start_minutes_ago: 29, end_minutes_ago: 0}]
                },
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes property summary listing through injected client and lease" do
+    {context, lease} = context_and_lease(scopes: [@analytics_readonly_scope])
+
+    assert {:ok,
+            %{
+              property_summaries: [
+                %{
+                  property: "properties/1234",
+                  display_name: "Jido Web",
+                  property_type: "PROPERTY_TYPE_ORDINARY",
+                  account: "accounts/1000"
+                }
+              ],
+              next_page_token: "next"
+            }} =
+             Connect.invoke(
+               Analytics.integration(),
+               "google.analytics.property_summaries.list",
+               %{page_size: 50},
                context: context,
                credential_lease: lease
              )

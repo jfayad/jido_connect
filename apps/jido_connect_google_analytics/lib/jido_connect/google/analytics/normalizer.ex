@@ -2,7 +2,7 @@ defmodule Jido.Connect.Google.Analytics.Normalizer do
   @moduledoc "Normalizes Google Analytics API payloads into stable package structs."
 
   alias Jido.Connect.Data
-  alias Jido.Connect.Google.Analytics.{Dimension, Metric, Report, Row}
+  alias Jido.Connect.Google.Analytics.{Dimension, Metric, PropertySummary, Report, Row}
 
   @doc "Normalizes a Google Analytics metadata payload."
   def metadata(payload) when is_map(payload) do
@@ -86,6 +86,23 @@ defmodule Jido.Connect.Google.Analytics.Normalizer do
 
   def batch_report(_payload), do: {:error, :invalid_report_payload}
 
+  @doc "Normalizes Google Analytics Admin API account summaries into property summaries."
+  def property_summaries(payload) when is_map(payload) do
+    with {:ok, property_summaries} <-
+           payload
+           |> Data.get("accountSummaries", [])
+           |> flatten_property_summaries() do
+      {:ok,
+       %{
+         property_summaries: property_summaries,
+         next_page_token: Data.get(payload, "nextPageToken")
+       }
+       |> Data.compact()}
+    end
+  end
+
+  def property_summaries(_payload), do: {:error, :invalid_property_summary_payload}
+
   @doc "Normalizes a Google Analytics dimension metadata payload."
   def dimension(payload) when is_map(payload) do
     %{
@@ -120,6 +137,59 @@ defmodule Jido.Connect.Google.Analytics.Normalizer do
   end
 
   def metric(_payload), do: {:error, :invalid_metric_payload}
+
+  def property_summary(payload, account_context \\ %{})
+
+  def property_summary(payload, account_context)
+      when is_map(payload) and is_map(account_context) do
+    %{
+      property: Data.get(payload, "property"),
+      display_name: Data.get(payload, "displayName"),
+      property_type: Data.get(payload, "propertyType"),
+      parent: Data.get(payload, "parent"),
+      account: Data.get(account_context, "account"),
+      metadata:
+        %{
+          account_summary: Data.get(account_context, "name"),
+          account_display_name: Data.get(account_context, "displayName")
+        }
+        |> Data.compact()
+    }
+    |> Data.compact()
+    |> PropertySummary.new()
+  end
+
+  def property_summary(_payload, _account_context),
+    do: {:error, :invalid_property_summary_payload}
+
+  defp flatten_property_summaries(account_summaries) when is_list(account_summaries) do
+    account_summaries
+    |> Enum.reduce_while({:ok, []}, fn account_summary, {:ok, acc} ->
+      case account_property_summaries(account_summary) do
+        {:ok, property_summaries} -> {:cont, {:ok, Enum.reverse(property_summaries) ++ acc}}
+        {:error, error} -> {:halt, {:error, error}}
+      end
+    end)
+    |> case do
+      {:ok, property_summaries} -> {:ok, Enum.reverse(property_summaries)}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp flatten_property_summaries(_account_summaries),
+    do: {:error, :invalid_property_summary_collection}
+
+  defp account_property_summaries(account_summary) when is_map(account_summary) do
+    account_summary
+    |> Data.get("propertySummaries", [])
+    |> normalize_items(
+      &property_summary(&1, account_summary),
+      :invalid_property_summary_collection
+    )
+  end
+
+  defp account_property_summaries(_account_summary),
+    do: {:error, :invalid_property_summary_collection}
 
   defp dimension_header(payload) when is_map(payload) do
     %{
