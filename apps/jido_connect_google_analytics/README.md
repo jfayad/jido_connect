@@ -12,8 +12,8 @@ surfaces are added.
 This scaffold declares the provider package, user OAuth profile, Analytics
 scope resolver, generated Jido plugin shell, shared Google transport boundary,
 normalized Zoi-backed structs, metadata lookup, core report actions, and
-realtime report actions, and property discovery. Catalog pack and trigger work
-is intentionally split into later Beadwork tasks.
+realtime report actions, property discovery, and curated catalog packs. Trigger
+work is intentionally split into later Beadwork tasks.
 
 ## Normalized Structs
 
@@ -52,8 +52,28 @@ configurable through application environment for tests.
 - `google.analytics.property_summaries.list`
 
 No Analytics triggers are exposed yet. The generated plugin and provider
-metadata are present so later tasks can add catalog packs without changing
-package wiring.
+metadata are present so later tasks can add triggers without changing package
+wiring.
+
+## Catalog Packs
+
+`Jido.Connect.Google.Analytics.catalog_packs/0` returns storage-free catalog
+packs that hosts can pass to the catalog boundary:
+
+- `Jido.Connect.Google.Analytics.reader_pack/0` exposes discovery-only tools:
+  metadata lookup and accessible property summaries.
+- `Jido.Connect.Google.Analytics.reporter_pack/0` includes the reader tools plus
+  standard, batch, and realtime report execution.
+
+Use packs with catalog search, description, and invocation:
+
+```elixir
+Jido.Connect.Catalog.search_tools("analytics",
+  modules: [Jido.Connect.Google.Analytics],
+  packs: Jido.Connect.Google.Analytics.catalog_packs(),
+  pack: :google_analytics_reporter
+)
+```
 
 ## Query Shape
 

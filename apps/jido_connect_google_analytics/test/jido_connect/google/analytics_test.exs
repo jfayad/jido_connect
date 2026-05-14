@@ -151,6 +151,19 @@ defmodule Jido.Connect.Google.AnalyticsTest do
     ConnectorContracts.assert_spark_fragments(@analytics_dsl_fragments)
   end
 
+  test "exposes curated catalog pack delegates" do
+    ConnectorContracts.assert_catalog_pack_delegates(Analytics,
+      reader_pack: :google_analytics_reader,
+      reporter_pack: :google_analytics_reporter
+    )
+
+    ConnectorContracts.assert_google_naming_and_catalog_conventions(Analytics,
+      id_prefix: "google.analytics.",
+      pack_id_prefix: "google_analytics_",
+      module_namespace: Jido.Connect.Google.Analytics
+    )
+  end
+
   test "invokes get metadata through injected client and lease" do
     {context, lease} = context_and_lease(scopes: [@analytics_readonly_scope])
 

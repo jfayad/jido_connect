@@ -54,4 +54,8 @@ defmodule Jido.Connect.Google.Analytics do
       revoke?(true)
     end
   end
+
+  defdelegate catalog_packs, to: Jido.Connect.Google.Analytics.CatalogPacks, as: :all
+  defdelegate reader_pack, to: Jido.Connect.Google.Analytics.CatalogPacks, as: :reader
+  defdelegate reporter_pack, to: Jido.Connect.Google.Analytics.CatalogPacks, as: :reporter
 end
