@@ -39,8 +39,11 @@ helps prove reusable core abstractions.
 
 ## Status Legend
 
-- `seeded`: exists now and is used to harden the architecture.
-- `next`: should be built soon.
+- `shipped`: package exists in `apps/` and the tracked roadmap scope is complete.
+- `in_progress`: package exists or work has started, but the roadmap scope is not
+  complete yet.
+- `ready`: Beadwork or the roadmap says this should be built soon, but no package
+  exists yet.
 - `planned`: important, but after the first connector families are stable.
 - `later`: useful breadth once the core package is mature.
 
@@ -48,51 +51,57 @@ helps prove reusable core abstractions.
 
 | Rank | Package | Provider | Status | Auth shape | First actions | First triggers/sensors | Why this rank |
 | ---: | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `jido_connect_google` | Google shared foundation | next | OAuth2 user, service account later | token exchange, refresh, scope catalog, transport helpers | n/a | Build once so Sheets, Gmail, Drive, and Calendar share auth/client behavior. |
-| 2 | `jido_connect_google_sheets` | Google Sheets | next | OAuth2 user, service account later | read sheet, append row, update row, search rows, create sheet | new row poll | Lindy top popular item; proves tabular data workflows. |
-| 3 | `jido_connect_gmail` | Gmail | next | OAuth2 user | list messages, get message, send email, draft reply, add label | new email poll, label email poll | Core personal assistant workflow; proves restricted scopes and sensitive auth UX. |
-| 4 | `jido_connect_google_drive` | Google Drive | next | OAuth2 user, service account later | search files, get file metadata, download/export file, upload file, create folder | new file poll | File context is essential for agents; shares Google auth foundation. |
-| 5 | `jido_connect_google_calendar` | Google Calendar | next | OAuth2 user | list events, create event, update event, find availability | upcoming event poll, event changed poll | Natural pair with Gmail and scheduling workflows. |
-| 6 | `jido_connect_calcom` | Cal.com | next | OAuth2 user, API key, webhook signing | list event types, list bookings, get booking, cancel/reschedule booking | booking created/canceled/rescheduled webhook | Open scheduling connector; proves booking/event-type APIs and webhook setup. |
-| 7 | `jido_connect_hubspot` | HubSpot | next | OAuth2 app, private app token | search contacts, create/update contact, create note, create deal | new contact poll, deal stage change poll | High-value sales automation; good CRM reference model. |
-| 8 | `jido_connect_airtable` | Airtable | next | OAuth2, personal access token | list records, get record, create/update record, delete record | changed records poll | Flexible database-like app; useful for many agent workflows. |
-| 9 | `jido_connect_jira` | Jira / Jira Service Management | next | OAuth2, API token | search issues, create issue, update issue, add comment | issue created/updated webhook | Work-management anchor and future `jido_chat` issue workflow target. |
-| 10 | `jido_connect_linear` | Linear | next | OAuth2, API key | search issues, create issue, update issue, add comment | issue created/updated webhook | Modern product/dev workflow and clean `jido_chat` handoff target. |
-| 11 | `jido_connect_posthog` | PostHog | next | project API key, personal API key, self-hosted host override | capture event, batch events, evaluate feature flag, query HogQL, list insights | annotation or alert webhook later | Product-engineering connector for launch metrics, flags, and usage analysis. |
-| 12 | `jido_connect_http` | Generic HTTP | next | API key, bearer token, basic auth, custom headers | request, get JSON, post JSON, transform response | n/a | Covers long-tail APIs while custom connectors catch up. |
-| 13 | `jido_connect_webhook` | Generic Webhook | next | shared secret/HMAC, static token, unsigned dev mode | normalize inbound payload, verify signature | inbound webhook | Long-tail trigger coverage and shared webhook host/demo harness. |
-| 14 | `jido_connect_mcp` | MCP bridge | seeded | host-provided endpoint credentials, OAuth/bearer passthrough | list tools, call tool | resource/prompt discovery later | Protocol bridge for MCP servers; pairs with HTTP/Webhook as the generic bridge family. |
-| 15 | `jido_connect_mercury` | Mercury banking | planned | API token, read-only/read-write/custom tier metadata | list accounts, balances, transactions, recipients, invoices | transaction/invoice poll later | Finance/ops connector; start read-only and require strict policy for money movement. |
-| 16 | `jido_connect_calendly` | Calendly | planned | OAuth2 user, webhook signing | list events, get event, cancel event | invitee created webhook, invitee canceled webhook | Scheduling breadth after Cal.com establishes the package shape. |
-| 17 | `jido_connect_salesforce` | Salesforce | planned | OAuth2, refresh token, connected app | query SOQL, get record, create/update lead, create task | record changed poll/webhook later | Enterprise CRM anchor; more complex auth and schemas. |
-| 18 | `jido_connect_microsoft_outlook` | Microsoft Outlook Mail | planned | OAuth2 Microsoft Graph | list messages, get message, send email, create draft | new email poll | Mirrors Gmail for Microsoft tenants. |
-| 19 | `jido_connect_microsoft_calendar` | Microsoft Calendar | planned | OAuth2 Microsoft Graph | list events, create/update event, find availability | event changed poll | Completes Microsoft assistant workflow. |
-| 20 | `jido_connect_microsoft_onedrive` | OneDrive | planned | OAuth2 Microsoft Graph | search files, download file, upload file | new file poll | Complements Outlook and Microsoft 365 file workflows. |
-| 21 | `jido_connect_slack` | Slack | seeded | OAuth2 bot | list channels, post message | message/event webhooks | Existing collaboration reference connector. |
-| 22 | `jido_connect_github` | GitHub | seeded | OAuth2 user, GitHub App installation | list issues, create issue | new issues poll, webhooks | Existing dev-work connector and GitHub App auth reference. |
-| 23 | `jido_connect_zendesk` | Zendesk | planned | OAuth2, API token | search tickets, create ticket, update ticket, add comment | new ticket poll, ticket updated webhook | Strong support category anchor from Lindy's support list. |
-| 24 | `jido_connect_intercom` | Intercom | planned | OAuth2, access token | search contacts, create conversation, reply to conversation | conversation created webhook | Support and sales assistant workflows. |
-| 25 | `jido_connect_freshdesk` | Freshdesk | planned | API key, OAuth later | list tickets, create ticket, update ticket, add note | new ticket poll | Support breadth; simpler API-key connector. |
-| 26 | `jido_connect_notion` | Notion | planned | OAuth2, internal integration token | search pages, read page, create page, update database item | database item changed poll | High agent utility for knowledge/workspace data. |
-| 27 | `jido_connect_asana` | Asana | planned | OAuth2, personal access token | list tasks, create task, update task, add comment | task changed webhook | Common task management automation. |
-| 28 | `jido_connect_trello` | Trello | planned | OAuth1/API key token | list cards, create card, move card, comment | card changed webhook | Lightweight project workflow. |
-| 29 | `jido_connect_monday` | monday.com | planned | API token, OAuth later | list boards, create item, update column value | item changed webhook/poll | Appears in Lindy sales list; broad ops use. |
-| 30 | `jido_connect_gitlab` | GitLab | planned | OAuth2, personal access token | list issues, create issue, comment, list merge requests | issue/MR webhook | Natural follow-on to GitHub. |
-| 31 | `jido_connect_azure_devops` | Azure DevOps | planned | OAuth2/PAT | list work items, create work item, update work item | work item updated webhook | Enterprise dev workflow; visible in Lindy catalog. |
-| 32 | `jido_connect_shopify` | Shopify | planned | OAuth2 app, admin API token | list orders, get order, update order, create customer | order created webhook | Commerce anchor; Lindy lists Shopify OAuth. |
-| 33 | `jido_connect_stripe` | Stripe | planned | API key, restricted key, webhook signing | list customers, create customer, create invoice, get payment | payment succeeded webhook | Payments/revenue operations; same policy tier as Mercury. |
-| 34 | `jido_connect_sftp` | SFTP | planned | password, key-based auth | list files, download file, upload file, move file | new file poll | Lindy lists password and key SFTP; proves non-HTTP credentials. |
-| 35 | `jido_connect_bigcommerce` | BigCommerce | later | OAuth2/API token | list orders, get order, update order | order webhook | Commerce breadth; Lindy visible in catalog. |
-| 36 | `jido_connect_discord` | Discord | later | OAuth2 bot | list channels, send message | message webhook/gateway later | Collaboration breadth after Slack/Teams. |
-| 37 | `jido_connect_zoom` | Zoom | planned | OAuth2 server-to-server/user | list meetings, create meeting, get recording | meeting ended webhook, recording ready webhook | Meetings and assistant workflows. |
-| 38 | `jido_connect_google_meet` | Google Meet | later | OAuth2 user | create conference via Calendar, get conference records | meeting artifact poll | Likely through Calendar first; split later if needed. |
-| 39 | `jido_connect_youtube` | YouTube Data API | later | OAuth2/API key | search videos, get video, list channel videos | new channel video poll | Complements the Google family once core Google auth is proven. |
-| 40 | `jido_connect_typeform` | Typeform | planned | OAuth2, personal token, webhook signing | list forms, get responses | new response webhook | Forms are high-value lead/support triggers. |
-| 41 | `jido_connect_google_forms` | Google Forms | later | OAuth2 user | list forms, get responses | new response poll | Complements Google family. |
-| 42 | `jido_connect_mailchimp` | Mailchimp | later | OAuth2/API key | list audiences, add/update member, create campaign | subscriber event webhook | Marketing automation category. |
-| 43 | `jido_connect_activecampaign` | ActiveCampaign | later | API key | search contacts, create/update contact, add tag | contact updated webhook/poll | Marketing/sales automation. |
-| 44 | `jido_connect_zoho_crm` | Zoho CRM | later | OAuth2 | search leads, create lead, update contact | record changed poll | Lindy marketing list includes Zoho CRM. |
-| 45 | `jido_connect_zoho_desk` | Zoho Desk | later | OAuth2 | list tickets, create ticket, update ticket | ticket changed poll | Lindy support list includes Zoho Desk. |
+| 1 | `jido_connect_google` | Google shared foundation | shipped | OAuth2 user, service account, delegated service account | token exchange, refresh, scope catalog, service-account minting, transport helpers | n/a | Shared foundation is now the Google-family base package. |
+| 2 | `jido_connect_google_sheets` | Google Sheets | shipped | OAuth2 user, service account later | spreadsheet/values read, append/update/clear values, sheet management | new row poll | Lindy top popular item; proves tabular data workflows. |
+| 3 | `jido_connect_gmail` | Gmail | shipped | OAuth2 user | list/get/search messages and threads, send/draft/reply, labels, watch lifecycle | new email poll, Gmail watch | Core personal assistant workflow with restricted scopes and privacy boundaries. |
+| 4 | `jido_connect_google_drive` | Google Drive | shipped | OAuth2 user, service account, delegated service account | files, folders, content download/export, permissions, comments, replies, revisions, shared drives, watch lifecycle | file changed poll, Drive watch channels | File context is essential for agents; shares Google auth foundation. |
+| 5 | `jido_connect_google_calendar` | Google Calendar | shipped | OAuth2 user | calendars, calendar lists, events, ACLs, freebusy, availability, watch lifecycle | event changed poll, Calendar watch channels | Natural pair with Gmail and scheduling workflows. |
+| 6 | `jido_connect_google_contacts` | Google Contacts | shipped | OAuth2 user | people, other contacts, directory, contact groups, batch writes | n/a | Completes core personal workspace context after Gmail/Calendar. |
+| 7 | `jido_connect_google_analytics` | Google Analytics | shipped | OAuth2 user | GA4 reports, batch reports, realtime reports, metadata, property summaries | n/a | Product and marketing analytics connector is implemented. |
+| 8 | `jido_connect_google_meet` | Google Meet | in_progress | OAuth2 user | meeting spaces, conference records, recordings, transcripts | Workspace Events spike only | Package exists and child tasks are closed; Beadwork epic still needs final cleanup/closure. |
+| 9 | `jido_connect_google_search_console` | Google Search Console | in_progress | OAuth2 user | scaffold landed; site, analytics, sitemap, URL inspection actions remain | n/a | SEO/search reporting package exists but Beadwork tasks remain open. |
+| 10 | `jido_connect_calcom` | Cal.com | in_progress | API key, OAuth2 user, webhook signing later | list event types, list bookings, get booking, cancel/reschedule booking | booking webhook lifecycle later | Recovered from the old Pi factory worktree; package compiles and has offline tests, but webhook support still needs tasks. |
+| 11 | `jido_connect_google_docs` | Google Docs | ready | OAuth2 user | get/create documents, batch update | Drive-backed change strategy later | Ready Beadwork epic; next Google document-content package. |
+| 12 | `jido_connect_google_slides` | Google Slides | ready | OAuth2 user | get/create presentations, batch update, pages, thumbnails | Drive-backed change strategy later | Ready Beadwork epic; complements Docs for workspace authoring. |
+| 13 | `jido_connect_google_forms` | Google Forms | ready | OAuth2 user | list/get/create forms, batch update, response reads | Forms watches/triggers where supported | Ready Beadwork epic; high-value lead/support intake connector. |
+| 14 | `jido_connect_google_tasks` | Google Tasks | ready | OAuth2 user | task lists, task CRUD, move/clear tasks | task polling where viable | Ready Beadwork epic; lightweight personal task automation. |
+| 15 | `jido_connect_hubspot` | HubSpot | ready | OAuth2 app, private app token | search contacts, create/update contact, create note, create deal | new contact poll, deal stage change poll | High-value sales automation; good CRM reference model. |
+| 16 | `jido_connect_airtable` | Airtable | ready | OAuth2, personal access token | list records, get record, create/update record, delete record | changed records poll | Flexible database-like app; useful for many agent workflows. |
+| 17 | `jido_connect_jira` | Jira / Jira Service Management | ready | OAuth2, API token | search issues, create issue, update issue, add comment | issue created/updated webhook | Work-management anchor and future `jido_chat` issue workflow target. |
+| 18 | `jido_connect_linear` | Linear | ready | OAuth2, API key | search issues, create issue, update issue, add comment | issue created/updated webhook | Modern product/dev workflow and clean `jido_chat` handoff target. |
+| 19 | `jido_connect_posthog` | PostHog | ready | project API key, personal API key, self-hosted host override | capture event, batch events, evaluate feature flag, query HogQL, list insights | annotation or alert webhook later | Product-engineering connector for launch metrics, flags, and usage analysis. |
+| 20 | `jido_connect_http` | Generic HTTP | ready | API key, bearer token, basic auth, custom headers | request, get JSON, post JSON, transform response | n/a | Covers long-tail APIs while custom connectors catch up. |
+| 21 | `jido_connect_webhook` | Generic Webhook | ready | shared secret/HMAC, static token, unsigned dev mode | normalize inbound payload, verify signature | inbound webhook | Long-tail trigger coverage and shared webhook host/demo harness. |
+| 22 | `jido_connect_mcp` | MCP bridge | shipped | host-provided endpoint credentials, OAuth/bearer passthrough | list tools, call tool | resource/prompt discovery later | Protocol bridge for MCP servers; pairs with HTTP/Webhook as the generic bridge family. |
+| 23 | `jido_connect_slack` | Slack | shipped | OAuth2 bot/user | channels, messages, users, reactions, files, search, pins, scheduled messages | Events API webhooks | Existing collaboration reference connector. |
+| 24 | `jido_connect_github` | GitHub | shipped | OAuth2 user, GitHub App installation | repositories, issues, PRs, Actions, files, releases, search, installations | polls and webhooks | Existing dev-work connector and GitHub App auth reference. |
+| 25 | `jido_connect_mercury` | Mercury banking | planned | API token, read-only/read-write/custom tier metadata | list accounts, balances, transactions, recipients, invoices | transaction/invoice poll later | Finance/ops connector; start read-only and require strict policy for money movement. |
+| 26 | `jido_connect_calendly` | Calendly | planned | OAuth2 user, webhook signing | list events, get event, cancel event | invitee created webhook, invitee canceled webhook | Scheduling breadth after Cal.com establishes the package shape. |
+| 27 | `jido_connect_salesforce` | Salesforce | planned | OAuth2, refresh token, connected app | query SOQL, get record, create/update lead, create task | record changed poll/webhook later | Enterprise CRM anchor; more complex auth and schemas. |
+| 28 | `jido_connect_microsoft_outlook` | Microsoft Outlook Mail | planned | OAuth2 Microsoft Graph | list messages, get message, send email, create draft | new email poll | Mirrors Gmail for Microsoft tenants. |
+| 29 | `jido_connect_microsoft_calendar` | Microsoft Calendar | planned | OAuth2 Microsoft Graph | list events, create/update event, find availability | event changed poll | Completes Microsoft assistant workflow. |
+| 30 | `jido_connect_microsoft_onedrive` | OneDrive | planned | OAuth2 Microsoft Graph | search files, download file, upload file | new file poll | Complements Outlook and Microsoft 365 file workflows. |
+| 31 | `jido_connect_zendesk` | Zendesk | planned | OAuth2, API token | search tickets, create ticket, update ticket, add comment | new ticket poll, ticket updated webhook | Strong support category anchor from Lindy's support list. |
+| 32 | `jido_connect_intercom` | Intercom | planned | OAuth2, access token | search contacts, create conversation, reply to conversation | conversation created webhook | Support and sales assistant workflows. |
+| 33 | `jido_connect_freshdesk` | Freshdesk | planned | API key, OAuth later | list tickets, create ticket, update ticket, add note | new ticket poll | Support breadth; simpler API-key connector. |
+| 34 | `jido_connect_notion` | Notion | planned | OAuth2, internal integration token | search pages, read page, create page, update database item | database item changed poll | High agent utility for knowledge/workspace data. |
+| 35 | `jido_connect_asana` | Asana | planned | OAuth2, personal access token | list tasks, create task, update task, add comment | task changed webhook | Common task management automation. |
+| 36 | `jido_connect_trello` | Trello | planned | OAuth1/API key token | list cards, create card, move card, comment | card changed webhook | Lightweight project workflow. |
+| 37 | `jido_connect_monday` | monday.com | planned | API token, OAuth later | list boards, create item, update column value | item changed webhook/poll | Appears in Lindy sales list; broad ops use. |
+| 38 | `jido_connect_gitlab` | GitLab | planned | OAuth2, personal access token | list issues, create issue, comment, list merge requests | issue/MR webhook | Natural follow-on to GitHub. |
+| 39 | `jido_connect_azure_devops` | Azure DevOps | planned | OAuth2/PAT | list work items, create work item, update work item | work item updated webhook | Enterprise dev workflow; visible in Lindy catalog. |
+| 40 | `jido_connect_shopify` | Shopify | planned | OAuth2 app, admin API token | list orders, get order, update order, create customer | order created webhook | Commerce anchor; Lindy lists Shopify OAuth. |
+| 41 | `jido_connect_stripe` | Stripe | planned | API key, restricted key, webhook signing | list customers, create customer, create invoice, get payment | payment succeeded webhook | Payments/revenue operations; same policy tier as Mercury. |
+| 42 | `jido_connect_sftp` | SFTP | planned | password, key-based auth | list files, download file, upload file, move file | new file poll | Lindy lists password and key SFTP; proves non-HTTP credentials. |
+| 43 | `jido_connect_zoom` | Zoom | planned | OAuth2 server-to-server/user | list meetings, create meeting, get recording | meeting ended webhook, recording ready webhook | Meetings and assistant workflows. |
+| 44 | `jido_connect_typeform` | Typeform | planned | OAuth2, personal token, webhook signing | list forms, get responses | new response webhook | Forms are high-value lead/support triggers. |
+| 45 | `jido_connect_youtube` | YouTube Data API | later | OAuth2/API key | search videos, get video, list channel videos | new channel video poll | Complements the Google family once core Google auth is proven. |
+| 46 | `jido_connect_mailchimp` | Mailchimp | later | OAuth2/API key | list audiences, add/update member, create campaign | subscriber event webhook | Marketing automation category. |
+| 47 | `jido_connect_activecampaign` | ActiveCampaign | later | API key | search contacts, create/update contact, add tag | contact updated webhook/poll | Marketing/sales automation. |
+| 48 | `jido_connect_zoho_crm` | Zoho CRM | later | OAuth2 | search leads, create lead, update contact | record changed poll | Lindy marketing list includes Zoho CRM. |
+| 49 | `jido_connect_zoho_desk` | Zoho Desk | later | OAuth2 | list tickets, create ticket, update ticket | ticket changed poll | Lindy support list includes Zoho Desk. |
+| 50 | `jido_connect_bigcommerce` | BigCommerce | later | OAuth2/API token | list orders, get order, update order | order webhook | Commerce breadth; Lindy visible in catalog. |
+| 51 | `jido_connect_discord` | Discord | later | OAuth2 bot | list channels, send message | message webhook/gateway later | Collaboration breadth after Slack/Teams. |
 
 ## Suggested Build Waves
 
@@ -106,7 +115,7 @@ These already exist and should remain the reference connectors for auth
 alternatives, generated Jido modules, webhook normalization, plugin availability,
 and provider client organization.
 
-### Wave 1: Google And Assistant Core
+### Wave 1: Shipped Google And Assistant Core
 
 - Google OAuth foundation
 - Google Sheets
@@ -114,10 +123,31 @@ and provider client organization.
 - Google Drive
 - Google Calendar
 
-This wave proves shared OAuth app setup, sensitive scopes, refresh handling,
-cross-package auth reuse, and high-frequency assistant workflows.
+This wave is implemented. It proves shared OAuth app setup, sensitive scopes,
+refresh handling, cross-package auth reuse, and high-frequency assistant
+workflows.
 
-### Wave 2: Scheduling, Sales, And Data
+### Wave 2: Current Google Expansion
+
+- Google Contacts
+- Google Analytics
+- Google Meet
+- Google Search Console
+
+Contacts and Analytics are implemented. Meet exists and needs Beadwork cleanup.
+Search Console is the active unfinished Google package.
+
+### Wave 3: Ready Google Workspace Tail
+
+- Google Docs
+- Google Slides
+- Google Forms
+- Google Tasks
+
+These ready Beadwork epics should be split into leaf tasks before Pi works
+through them.
+
+### Wave 4: Scheduling, Sales, And Data
 
 - Cal.com
 - HubSpot
@@ -126,10 +156,10 @@ cross-package auth reuse, and high-frequency assistant workflows.
 - Salesforce
 
 This wave proves scheduling APIs, CRM object models, search/list/create/update
-patterns, webhook/poll parity, and richer schema metadata. Build Cal.com before
-Calendly so the scheduling shape starts with an open scheduling provider.
+patterns, webhook/poll parity, and richer schema metadata. Cal.com now has a
+partial recovered package; finish webhooks and hardening before Calendly.
 
-### Wave 3: Work Management And Chat Handoffs
+### Wave 5: Work Management And Chat Handoffs
 
 - Jira
 - Linear
@@ -140,7 +170,7 @@ This wave proves issue normalization, threaded comments, assignees/statuses,
 webhook dedupe, and `jido_chat` handoff workflows such as "turn this
 conversation into an issue" or "summarize this issue thread."
 
-### Wave 4: Product Analytics And Generic Bridge
+### Wave 6: Product Analytics And Generic Bridge
 
 - PostHog
 - Generic HTTP
@@ -152,7 +182,7 @@ long-tail bridge family. Keep HTTP, Webhook, and MCP as separate provider
 packages, but make them share auth, credential lease, policy, transport, error,
 and catalog contracts.
 
-### Wave 5: Support, Commerce, Payments, And Finance
+### Wave 7: Support, Commerce, Payments, And Finance
 
 - Zendesk
 - Intercom
@@ -165,7 +195,7 @@ This wave rounds out support and revenue operations. Mercury and Stripe should
 start with read-only or low-risk actions and require explicit host policy for
 money movement, payment creation, or account mutation.
 
-### Wave 6: Additional Breadth
+### Wave 8: Additional Breadth
 
 - Notion
 - Asana
@@ -182,14 +212,16 @@ money movement, payment creation, or account mutation.
 These remain useful breadth once the highest-signal assistant, sales, work,
 analytics, and bridge packages have established repeatable patterns.
 
-## Core Work Needed Before Scaling Past 10 Connectors
+## Core Work Remaining While Scaling
 
-- Shared OAuth client helpers with provider-specific overrides.
-- Standard pagination and cursor helpers.
+- Keep Beadwork aligned with package state; close stale completed epics and split
+  ready epics into leaf tasks before handing them to Pi.
+- Standard pagination and cursor helpers across non-Google providers.
 - Standard rate-limit and retry metadata in provider errors.
-- Dynamic scope requirements at action and input level.
+- Dynamic scope requirements at action and input level for every new provider.
 - Connection health checks and availability diagnostics.
-- Webhook verification helpers with replay/dedupe contracts.
+- Webhook verification helpers with replay/dedupe contracts for non-Google
+  providers.
 - Finance-grade policy defaults for high-risk write actions.
 - Chat handoff conventions for work-management connectors that pair with
   `jido_chat`.
