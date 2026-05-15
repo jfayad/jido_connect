@@ -8,6 +8,7 @@ schemas, normalized structs, and tests in this package.
 
 ## Actions
 
+- `google.drive.about.get`
 - `google.drive.files.list`
 - `google.drive.file.get`
 - `google.drive.file.create`
@@ -98,6 +99,7 @@ Fields.revision_list()
 Fields.comment_list()
 Fields.reply_list()
 Fields.shared_drive_list()
+Fields.about_metadata()
 ```
 
 For example, pass `Fields.file_list_with_permissions()` to
@@ -116,9 +118,9 @@ fields.metadata.presets.with_permissions
 
 ## Catalog Packs
 
-- `:google_drive_readonly` includes metadata reads, content reads, permission
-  reads, revision reads, comment/reply reads, shared-drive reads, file-change
-  polling, and file-change webhook metadata.
+- `:google_drive_readonly` includes account/quota metadata, file metadata reads,
+  content reads, permission reads, revision reads, comment/reply reads,
+  shared-drive reads, file-change polling, and file-change webhook metadata.
 - `:google_drive_file_writer` adds common file metadata writes and folder
   creation. It intentionally excludes destructive delete, permission sharing,
   permission lifecycle mutations, revision lifecycle mutations, comment/reply

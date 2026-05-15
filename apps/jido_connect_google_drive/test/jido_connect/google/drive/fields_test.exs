@@ -12,6 +12,7 @@ defmodule Jido.Connect.Google.Drive.FieldsTest do
     assert Fields.comment_metadata() =~ "replies(id,kind,createdTime,modifiedTime,action"
     assert Fields.reply_metadata() =~ "id,kind,createdTime,modifiedTime,action"
     assert Fields.shared_drive_metadata() =~ "id,name,kind,colorRgb"
+    assert Fields.about_metadata() =~ "user,storageQuota,importFormats"
 
     assert Fields.file_list() ==
              "nextPageToken,files(#{Fields.file_metadata()})"
@@ -47,5 +48,6 @@ defmodule Jido.Connect.Google.Drive.FieldsTest do
     assert Fields.reply_list_presets().default == Fields.reply_list()
     assert Fields.shared_drive_presets().default == Fields.shared_drive_metadata()
     assert Fields.shared_drive_list_presets().default == Fields.shared_drive_list()
+    assert Fields.about_presets().default == Fields.about_metadata()
   end
 end

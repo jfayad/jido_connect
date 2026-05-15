@@ -2,6 +2,7 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
   use ExUnit.Case, async: false
 
   alias Jido.Connect.Google.Drive.{
+    About,
     Change,
     Channel,
     Client,
@@ -100,7 +101,7 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
              )
 
     assert [
-             %{
+             %Permission{
                permission_id: "perm123",
                type: "user",
                role: "reader",
@@ -148,6 +149,27 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
     assert file.name == "Budget.pdf"
   end
 
+  test "gets Drive about metadata" do
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert conn.method == "GET"
+      assert conn.request_path == "/v3/about"
+      assert conn.query_params["fields"] =~ "storageQuota"
+
+      Req.Test.json(conn, %{
+        "kind" => "drive#about",
+        "user" => %{"emailAddress" => "owner@example.com"},
+        "storageQuota" => %{"limit" => "1000", "usage" => "25"},
+        "maxUploadSize" => "12345"
+      })
+    end)
+
+    assert {:ok, %About{} = about} = Client.get_about(%{}, "token")
+    assert about.user == %{"emailAddress" => "owner@example.com"}
+    assert about.storage_quota == %{"limit" => "1000", "usage" => "25"}
+    assert about.max_upload_size == "12345"
+    assert about.metadata.kind == "drive#about"
+  end
+
   test "passes custom get file fields unchanged" do
     Req.Test.stub(__MODULE__, fn conn ->
       assert conn.method == "GET"
@@ -179,7 +201,8 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
                "token"
              )
 
-    assert [%{permission_id: "perm123", type: "anyone", role: "reader"}] = file.permissions
+    assert [%Permission{permission_id: "perm123", type: "anyone", role: "reader"}] =
+             file.permissions
   end
 
   test "returns provider errors for malformed Drive single-object responses" do

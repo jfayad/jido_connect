@@ -4,6 +4,7 @@ defmodule Jido.Connect.Google.Drive.Normalizer do
   alias Jido.Connect.Data
 
   alias Jido.Connect.Google.Drive.{
+    About,
     Change,
     Channel,
     Comment,
@@ -52,19 +53,22 @@ defmodule Jido.Connect.Google.Drive.Normalizer do
   @doc "Normalizes a Google Drive folder payload."
   @spec folder(map()) :: {:ok, Folder.t()} | {:error, term()}
   def folder(payload) when is_map(payload) do
-    %{
-      folder_id: Data.get(payload, "id"),
-      name: Data.get(payload, "name"),
-      web_view_link: Data.get(payload, "webViewLink"),
-      created_time: Data.get(payload, "createdTime"),
-      modified_time: Data.get(payload, "modifiedTime"),
-      parents: Data.get(payload, "parents", []),
-      trashed?: Data.get(payload, "trashed", false),
-      shared?: Data.get(payload, "shared", false),
-      drive_id: Data.get(payload, "driveId")
-    }
-    |> Data.compact()
-    |> Folder.new()
+    with {:ok, permissions} <- normalize_embedded_permissions(Data.get(payload, "permissions")) do
+      %{
+        folder_id: Data.get(payload, "id"),
+        name: Data.get(payload, "name"),
+        web_view_link: Data.get(payload, "webViewLink"),
+        created_time: Data.get(payload, "createdTime"),
+        modified_time: Data.get(payload, "modifiedTime"),
+        parents: Data.get(payload, "parents", []),
+        permissions: permissions,
+        trashed?: Data.get(payload, "trashed", false),
+        shared?: Data.get(payload, "shared", false),
+        drive_id: Data.get(payload, "driveId")
+      }
+      |> Data.compact()
+      |> Folder.new()
+    end
   end
 
   def folder(_payload), do: {:error, :invalid_folder_payload}
@@ -88,6 +92,27 @@ defmodule Jido.Connect.Google.Drive.Normalizer do
   end
 
   def permission(_payload), do: {:error, :invalid_permission_payload}
+
+  @doc "Normalizes a Google Drive about payload."
+  @spec about(map()) :: {:ok, About.t()} | {:error, term()}
+  def about(payload) when is_map(payload) do
+    %{
+      user: Data.get(payload, "user", %{}),
+      storage_quota: Data.get(payload, "storageQuota", %{}),
+      import_formats: Data.get(payload, "importFormats", %{}),
+      export_formats: Data.get(payload, "exportFormats", %{}),
+      max_upload_size: normalize_string(Data.get(payload, "maxUploadSize")),
+      app_installed?: Data.get(payload, "appInstalled"),
+      folder_color_palette: Data.get(payload, "folderColorPalette", []),
+      metadata: %{
+        kind: Data.get(payload, "kind")
+      }
+    }
+    |> Data.compact()
+    |> About.new()
+  end
+
+  def about(_payload), do: {:error, :invalid_about_payload}
 
   @doc "Normalizes a Google Drive change payload."
   @spec change(map()) :: {:ok, Change.t()} | {:error, term()}
@@ -255,8 +280,8 @@ defmodule Jido.Connect.Google.Drive.Normalizer do
   defp normalize_embedded_permissions(permissions) when is_list(permissions) do
     permissions
     |> Enum.reduce_while({:ok, []}, fn payload, {:ok, acc} ->
-      case permission(payload) do
-        {:ok, permission} -> {:cont, {:ok, [Map.from_struct(permission) | acc]}}
+      case normalize_permission(payload) do
+        {:ok, permission} -> {:cont, {:ok, [permission | acc]}}
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
@@ -267,6 +292,9 @@ defmodule Jido.Connect.Google.Drive.Normalizer do
   end
 
   defp normalize_embedded_permissions(_permissions), do: {:error, :invalid_permission_payload}
+
+  defp normalize_permission(%Permission{} = permission), do: {:ok, permission}
+  defp normalize_permission(payload), do: permission(payload)
 
   defp normalize_embedded_replies(nil), do: {:ok, []}
   defp normalize_embedded_replies([]), do: {:ok, []}

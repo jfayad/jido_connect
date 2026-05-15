@@ -2,6 +2,7 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
   use ExUnit.Case, async: true
 
   alias Jido.Connect.Google.Drive.{
+    About,
     Change,
     Channel,
     Comment,
@@ -29,6 +30,14 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
                "modifiedTime" => "2026-05-02T10:00:00Z",
                "parents" => ["folder123"],
                "owners" => [%{"emailAddress" => "owner@example.com"}],
+               "permissions" => [
+                 %{
+                   "id" => "perm123",
+                   "type" => "user",
+                   "role" => "reader",
+                   "emailAddress" => "reader@example.com"
+                 }
+               ],
                "shared" => true
              })
 
@@ -36,6 +45,10 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
     assert file.name == "Budget.pdf"
     assert file.size == 1024
     assert file.parents == ["folder123"]
+
+    assert [%Permission{permission_id: "perm123", email_address: "reader@example.com"}] =
+             file.permissions
+
     assert file.shared?
   end
 
@@ -47,12 +60,24 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
                "mimeType" => "application/vnd.google-apps.folder",
                "webViewLink" => "https://drive.google.com/drive/folders/folder123",
                "parents" => ["root"],
+               "permissions" => [
+                 %{
+                   "id" => "perm456",
+                   "type" => "domain",
+                   "role" => "commenter",
+                   "domain" => "example.com"
+                 }
+               ],
                "shared" => false
              })
 
     assert folder.folder_id == "folder123"
     assert folder.name == "Reports"
     assert folder.parents == ["root"]
+
+    assert [%Permission{permission_id: "perm456", domain: "example.com"}] =
+             folder.permissions
+
     refute folder.shared?
   end
 
@@ -72,6 +97,27 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
     assert permission.role == "reader"
     assert permission.email_address == "reader@example.com"
     refute permission.allow_file_discovery?
+  end
+
+  test "normalizes about payloads" do
+    assert {:ok, %About{} = about} =
+             Normalizer.about(%{
+               "kind" => "drive#about",
+               "user" => %{"emailAddress" => "owner@example.com"},
+               "storageQuota" => %{"limit" => "1000", "usage" => "25"},
+               "importFormats" => %{"text/plain" => ["application/vnd.google-apps.document"]},
+               "exportFormats" => %{"application/vnd.google-apps.document" => ["text/plain"]},
+               "maxUploadSize" => 12_345,
+               "appInstalled" => true,
+               "folderColorPalette" => ["#0B57D0"]
+             })
+
+    assert about.user == %{"emailAddress" => "owner@example.com"}
+    assert about.storage_quota == %{"limit" => "1000", "usage" => "25"}
+    assert about.max_upload_size == "12345"
+    assert about.app_installed?
+    assert about.folder_color_palette == ["#0B57D0"]
+    assert about.metadata.kind == "drive#about"
   end
 
   test "normalizes revision payloads" do
@@ -223,6 +269,7 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
     ConnectorContracts.assert_struct_defaults(File, %{file_id: "file123", name: "Budget.pdf"},
       parents: [],
       owners: [],
+      permissions: [],
       shared?: false,
       trashed?: false,
       starred?: false,
@@ -233,12 +280,24 @@ defmodule Jido.Connect.Google.Drive.NormalizerTest do
 
     ConnectorContracts.assert_struct_defaults(Folder, %{folder_id: "folder123", name: "Reports"},
       parents: [],
+      permissions: [],
       shared?: false,
       trashed?: false,
       metadata: %{}
     )
 
     assert {:error, _error} = Folder.new(%{name: "Missing id"})
+
+    ConnectorContracts.assert_struct_defaults(
+      About,
+      %{},
+      user: %{},
+      storage_quota: %{},
+      import_formats: %{},
+      export_formats: %{},
+      folder_color_palette: [],
+      metadata: %{}
+    )
 
     ConnectorContracts.assert_struct_defaults(
       Permission,

@@ -6,6 +6,7 @@ defmodule Jido.Connect.Google.DriveTest do
   alias Jido.Connect.Google.Drive
 
   @drive_action_modules [
+    Jido.Connect.Google.Drive.Actions.GetAbout,
     Jido.Connect.Google.Drive.Actions.ListFiles,
     Jido.Connect.Google.Drive.Actions.GetFile,
     Jido.Connect.Google.Drive.Actions.CreateFile,
@@ -47,6 +48,7 @@ defmodule Jido.Connect.Google.DriveTest do
   ]
 
   @drive_dsl_fragments [
+    Jido.Connect.Google.Drive.Actions.About,
     Jido.Connect.Google.Drive.Actions.Read,
     Jido.Connect.Google.Drive.Actions.Write,
     Jido.Connect.Google.Drive.Actions.FileContent,
@@ -60,6 +62,14 @@ defmodule Jido.Connect.Google.DriveTest do
   ]
 
   defmodule FakeDriveClient do
+    def get_about(%{}, "token") do
+      {:ok,
+       Drive.About.new!(%{
+         user: %{"emailAddress" => "owner@example.com"},
+         storage_quota: %{"limit" => "1000", "usage" => "25"}
+       })}
+    end
+
     def list_files(
           %{
             query: "mimeType = 'application/pdf'",
@@ -792,6 +802,7 @@ defmodule Jido.Connect.Google.DriveTest do
            ]
 
     assert Enum.map(spec.actions, & &1.id) == [
+             "google.drive.about.get",
              "google.drive.files.list",
              "google.drive.file.get",
              "google.drive.file.create",
@@ -1155,6 +1166,25 @@ defmodule Jido.Connect.Google.DriveTest do
                Drive.integration(),
                "google.drive.file.get",
                %{file_id: "file123"},
+               context: context,
+               credential_lease: lease
+             )
+  end
+
+  test "invokes Drive about through injected client and lease" do
+    {context, lease} = context_and_lease()
+
+    assert {:ok,
+            %{
+              about: %{
+                user: %{"emailAddress" => "owner@example.com"},
+                storage_quota: %{"limit" => "1000", "usage" => "25"}
+              }
+            }} =
+             Connect.invoke(
+               Drive.integration(),
+               "google.drive.about.get",
+               %{},
                context: context,
                credential_lease: lease
              )

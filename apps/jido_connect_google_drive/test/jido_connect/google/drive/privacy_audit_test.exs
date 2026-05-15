@@ -9,6 +9,9 @@ defmodule Jido.Connect.Google.Drive.PrivacyAuditTest do
     ConnectorContracts.assert_privacy_matrix(
       Drive,
       [
+        action("google.drive.about.get", :workspace_metadata, :read, :none,
+          text_includes: ["quota", "metadata"]
+        ),
         action("google.drive.files.list", :workspace_metadata, :read, :none),
         action("google.drive.file.get", :workspace_metadata, :read, :none,
           text_includes: ["metadata"]

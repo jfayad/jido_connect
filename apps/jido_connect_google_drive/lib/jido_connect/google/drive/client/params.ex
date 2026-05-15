@@ -32,6 +32,9 @@ defmodule Jido.Connect.Google.Drive.Client.Params do
   @doc "Default shared-drive metadata fields used by shared-drive actions."
   defdelegate default_shared_drive_fields, to: Fields, as: :shared_drive_metadata
 
+  @doc "Default about metadata fields used by Drive about reads."
+  defdelegate default_about_fields, to: Fields, as: :about_metadata
+
   @doc "Default change metadata fields used by Drive change pollers."
   def default_change_fields, do: Enum.join(@default_change_fields, ",")
 
@@ -59,6 +62,14 @@ defmodule Jido.Connect.Google.Drive.Client.Params do
       fields: Data.get(params, :fields, default_file_fields()),
       includePermissionsForView: Data.get(params, :include_permissions_for_view),
       supportsAllDrives: Data.get(params, :supports_all_drives)
+    }
+    |> Data.compact()
+  end
+
+  @doc "Builds query params for `about.get`."
+  def about_params(params) do
+    %{
+      fields: Data.get(params, :fields, default_about_fields())
     }
     |> Data.compact()
   end

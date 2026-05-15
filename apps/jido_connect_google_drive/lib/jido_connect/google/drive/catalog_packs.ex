@@ -4,6 +4,7 @@ defmodule Jido.Connect.Google.Drive.CatalogPacks do
   alias Jido.Connect.Catalog.Pack
 
   @readonly_tools [
+    "google.drive.about.get",
     "google.drive.files.list",
     "google.drive.file.get",
     "google.drive.file.export",

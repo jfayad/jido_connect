@@ -99,6 +99,16 @@ defmodule Jido.Connect.Google.Drive.Fields do
     "orgUnitId"
   ]
 
+  @about_metadata [
+    "user",
+    "storageQuota",
+    "importFormats",
+    "exportFormats",
+    "maxUploadSize",
+    "appInstalled",
+    "folderColorPalette"
+  ]
+
   @permission_views ["published"]
 
   @doc "Google Drive permission views accepted by `includePermissionsForView`."
@@ -121,6 +131,9 @@ defmodule Jido.Connect.Google.Drive.Fields do
 
   @doc "Default Drive shared-drive metadata fields."
   def shared_drive_metadata, do: join(@shared_drive_metadata)
+
+  @doc "Default Drive about metadata fields."
+  def about_metadata, do: join(@about_metadata)
 
   @doc "Drive file metadata with embedded permission metadata."
   def file_with_permissions do
@@ -237,6 +250,13 @@ defmodule Jido.Connect.Google.Drive.Fields do
     %{
       default: shared_drive_list(),
       shared_drive_metadata: shared_drive_metadata()
+    }
+  end
+
+  @doc "Field presets for Drive about metadata."
+  def about_presets do
+    %{
+      default: about_metadata()
     }
   end
 

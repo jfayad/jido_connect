@@ -12,6 +12,12 @@ defmodule Jido.Connect.Google.Drive.ScopeResolverTest do
   test "declares Drive metadata, content, broad, and mutation scope matrix" do
     ConnectorContracts.assert_scope_matrix(ScopeResolver, [
       %{
+        label: "about metadata defaults to metadata read scope",
+        operation: "google.drive.about.get",
+        granted: [],
+        expected: @metadata_scope
+      },
+      %{
         label: "missing product grant falls back to metadata read scope",
         operation: "google.drive.file.get",
         granted: [],

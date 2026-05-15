@@ -2,6 +2,7 @@ defmodule Jido.Connect.Google.Drive.Client do
   @moduledoc "Google Drive API client facade."
 
   alias Jido.Connect.Google.Drive.Client.{
+    About,
     Changes,
     Channels,
     Comments,
@@ -12,6 +13,7 @@ defmodule Jido.Connect.Google.Drive.Client do
     SharedDrives
   }
 
+  defdelegate get_about(params, access_token), to: About
   defdelegate list_files(params, access_token), to: Files
   defdelegate get_file(params, access_token), to: Files
   defdelegate create_file(params, access_token), to: Files
