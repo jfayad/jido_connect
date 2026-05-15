@@ -1,0 +1,415 @@
+#!/usr/bin/env bun
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+
+type Issue = {
+  id: string;
+  title: string;
+  description?: string;
+  type: string;
+  status: string;
+  priority?: number;
+  parent?: string;
+  labels?: string[];
+  blocked_by?: string[];
+  blocks?: string[];
+};
+
+type Args = {
+  positional: string[];
+  options: Record<string, string | boolean>;
+};
+
+type RunResult = {
+  stdout: string;
+  stderr: string;
+};
+
+const factoryRoot = resolve(import.meta.dir, "..");
+const repoRoot = resolve(factoryRoot, "..");
+
+async function main() {
+  loadDotEnv(join(factoryRoot, ".env"));
+  loadDotEnv(join(repoRoot, ".env"));
+
+  const [command = "help", ...rest] = process.argv.slice(2);
+  const args = parseArgs(rest);
+
+  switch (command) {
+    case "doctor":
+      doctor();
+      break;
+    case "prompt":
+      prompt(args);
+      break;
+    case "step":
+      step(args);
+      break;
+    case "loop":
+      loop(args);
+      break;
+    case "help":
+    case "--help":
+    case "-h":
+      help();
+      break;
+    default:
+      fail(`Unknown command: ${command}`);
+  }
+}
+
+function help() {
+  console.log(`Pi Connector Factory
+
+Usage:
+  bun run doctor
+  bun run prompt [--issue <id>] [--allow-epic]
+  bun run step [--issue <id>] [--allow-epic]
+  bun run loop [--limit <n>] [--allow-epic]
+
+Beadwork owns the backlog. This wrapper selects one ready Beadwork task and
+asks Pi + Z.ai to produce exactly one clean Git commit.
+`);
+}
+
+function doctor() {
+  const checks = [
+    ["bun", commandExists("bun")],
+    ["pi", commandExists("pi")],
+    ["bw", commandExists("bw")],
+    ["git", commandExists("git")],
+    ["ZAI_API_KEY", Boolean(process.env.ZAI_API_KEY)],
+    ["repo root", existsSync(join(repoRoot, "mix.exs"))],
+    ["Beadwork", canRun("bw", ["ready", "--json"])]
+  ] as const;
+
+  for (const [name, ok] of checks) {
+    console.log(`${ok ? "ok " : "NO "} ${name}`);
+  }
+
+  const ready = readyIssues();
+  const nextTask = ready.find((issue) => issue.type !== "epic");
+
+  console.log("");
+  console.log(`Repo:        ${repoRoot}`);
+  console.log(`Pi provider: ${piProvider()}`);
+  console.log(`Pi model:    ${piModel()}`);
+  console.log(`Thinking:    ${piThinking()}`);
+  console.log(`Ready tasks: ${ready.filter((issue) => issue.type !== "epic").length}`);
+
+  if (nextTask) {
+    console.log(`Next task:   ${nextTask.id} ${nextTask.title}`);
+  } else {
+    console.log("Next task:   none; split a ready epic into child tasks first");
+  }
+}
+
+function prompt(args: Args) {
+  const issue = selectIssue(args);
+  const promptText = renderPrompt(issue);
+  const runDir = ensureRunDir(issue, "prompt");
+
+  writeFileSync(join(runDir, "prompt.md"), promptText);
+  console.log(promptText);
+  console.log("");
+  console.log(`wrote ${relativeToRepo(join(runDir, "prompt.md"))}`);
+}
+
+function step(args: Args) {
+  ensureCleanGit("before starting Pi");
+
+  const issue = selectIssue(args);
+  const beforeHead = git(["rev-parse", "HEAD"]).stdout.trim();
+  const runDir = ensureRunDir(issue, "step");
+
+  startIssue(issue);
+
+  const startedIssue = showIssue(issue.id);
+  const promptText = renderPrompt(startedIssue);
+  writeFileSync(join(runDir, "prompt.md"), promptText);
+
+  console.log(`issue: ${startedIssue.id} ${startedIssue.title}`);
+  console.log(`run:   ${relativeToRepo(runDir)}`);
+
+  const piOutput = runPi(promptText, runDir);
+  writeFileSync(join(runDir, "pi.stdout.log"), piOutput.stdout);
+  writeFileSync(join(runDir, "pi.stderr.log"), piOutput.stderr);
+
+  const afterHead = git(["rev-parse", "HEAD"]).stdout.trim();
+  const commitCount = Number(git(["rev-list", "--count", `${beforeHead}..${afterHead}`]).stdout);
+
+  if (afterHead === beforeHead || commitCount !== 1) {
+    fail(`Pi must create exactly one Git commit; found ${commitCount}`);
+  }
+
+  ensureCleanGit("after Pi commit");
+
+  const shortSha = git(["rev-parse", "--short", "HEAD"]).stdout.trim();
+  const finalIssue = showIssue(issue.id);
+
+  if (finalIssue.status !== "closed") {
+    run("bw", ["close", issue.id, "--reason", `Implemented in ${shortSha} by pi-connector-factory`], {
+      cwd: repoRoot
+    });
+  }
+
+  console.log(`done: ${issue.id} -> ${shortSha}`);
+}
+
+function loop(args: Args) {
+  const limit = Number(args.options.limit || "5");
+  if (!Number.isFinite(limit) || limit < 1) fail("--limit must be a positive number");
+
+  for (let index = 0; index < limit; index += 1) {
+    const issue = selectIssue({ ...args, options: { ...args.options, issue: false } }, true);
+
+    if (!issue) {
+      console.log("No ready Beadwork task left.");
+      return;
+    }
+
+    console.log(`\n[${index + 1}/${limit}] ${issue.id} ${issue.title}`);
+    step({ positional: [], options: { ...args.options, issue: issue.id } });
+  }
+}
+
+function selectIssue(args: Args, nullable?: false): Issue;
+function selectIssue(args: Args, nullable: true): Issue | undefined;
+function selectIssue(args: Args, nullable = false) {
+  const issueId = stringOption(args.options.issue);
+  const allowEpic = args.options["allow-epic"] === true;
+  const issue = issueId ? showIssue(issueId) : readyIssues().find((item) => allowEpic || item.type !== "epic");
+
+  if (!issue) {
+    if (nullable) return undefined;
+    fail("No ready non-epic Beadwork task found. Split a ready epic into child tasks first.");
+  }
+
+  if (issue.type === "epic" && !allowEpic) {
+    fail(`${issue.id} is an epic. Use a child task, or pass --allow-epic deliberately.`);
+  }
+
+  if (!["open", "in_progress"].includes(issue.status)) {
+    fail(`${issue.id} has status ${issue.status}; expected open or in_progress`);
+  }
+
+  return issue;
+}
+
+function startIssue(issue: Issue) {
+  if (issue.status === "in_progress") return;
+
+  run("bw", ["start", issue.id], { cwd: repoRoot });
+}
+
+function readyIssues() {
+  return parseJson<Issue[]>(run("bw", ["ready", "--json"], { cwd: repoRoot, capture: true }).stdout);
+}
+
+function showIssue(id: string) {
+  return parseJson<Issue>(run("bw", ["show", id, "--json"], { cwd: repoRoot, capture: true }).stdout);
+}
+
+function renderPrompt(issue: Issue) {
+  return renderTemplate(readFileSync(join(factoryRoot, "templates/step.md"), "utf8"), {
+    issue_id: issue.id,
+    issue_json: JSON.stringify(issue, null, 2)
+  });
+}
+
+function runPi(promptText: string, runDir: string): RunResult {
+  if (!process.env.ZAI_API_KEY) {
+    fail("ZAI_API_KEY is missing. Put it in pi-connector-factory/.env or the repo root .env.");
+  }
+
+  const sessionDir = join(runDir, "sessions");
+  mkdirSync(sessionDir, { recursive: true });
+
+  const result = spawnSync(
+    "pi",
+    [
+      "--provider",
+      piProvider(),
+      "--model",
+      piModel(),
+      "--thinking",
+      piThinking(),
+      "--mode",
+      "text",
+      "--session-dir",
+      sessionDir,
+      "--no-extensions",
+      "--no-skills",
+      "--no-prompt-templates",
+      "--tools",
+      "read,bash,edit,write,grep,find,ls",
+      "-p",
+      promptText
+    ],
+    {
+      cwd: repoRoot,
+      env: process.env,
+      encoding: "utf8",
+      maxBuffer: 512 * 1024 * 1024,
+      timeout: Number(process.env.PI_TIMEOUT_MS || "900000")
+    }
+  );
+
+  if (result.error) fail(result.error.message);
+
+  if (result.status !== 0) {
+    writeFileSync(join(runDir, "pi.stdout.log"), result.stdout || "");
+    writeFileSync(join(runDir, "pi.stderr.log"), result.stderr || "");
+    fail(`pi exited with status ${result.status}`);
+  }
+
+  return {
+    stdout: result.stdout || "",
+    stderr: result.stderr || ""
+  };
+}
+
+function ensureCleanGit(reason: string) {
+  const status = git(["status", "--short"]).stdout.trim();
+  if (status) {
+    fail(`Git worktree must be clean ${reason}:\n${status}`);
+  }
+}
+
+function git(args: string[]) {
+  return run("git", args, { cwd: repoRoot, capture: true });
+}
+
+function run(
+  command: string,
+  args: string[],
+  opts: { cwd?: string; capture?: boolean } = {}
+): RunResult {
+  const result = spawnSync(command, args, {
+    cwd: opts.cwd || repoRoot,
+    env: process.env,
+    stdio: opts.capture ? "pipe" : "inherit",
+    encoding: "utf8",
+    maxBuffer: 128 * 1024 * 1024
+  });
+
+  if (result.error) fail(result.error.message);
+  if (result.status !== 0) fail(`${command} ${args.join(" ")} exited with status ${result.status}`);
+
+  return {
+    stdout: result.stdout || "",
+    stderr: result.stderr || ""
+  };
+}
+
+function parseArgs(args: string[]): Args {
+  const positional: string[] = [];
+  const options: Record<string, string | boolean> = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+
+    if (!arg.startsWith("--")) {
+      positional.push(arg);
+      continue;
+    }
+
+    const key = arg.slice(2);
+    const next = args[index + 1];
+
+    if (!next || next.startsWith("--")) {
+      options[key] = true;
+      continue;
+    }
+
+    options[key] = next;
+    index += 1;
+  }
+
+  return { positional, options };
+}
+
+function stringOption(value: string | boolean | undefined) {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function ensureRunDir(issue: Issue, command: string) {
+  const timestamp = new Date().toISOString().replaceAll(/[:.]/g, "-");
+  const dir = join(factoryRoot, "runs", `${timestamp}-${issue.id}-${command}`);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function loadDotEnv(path: string) {
+  if (!existsSync(path)) return;
+
+  for (const line of readFileSync(path, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+
+    const [, key, rawValue] = match;
+    if (process.env[key]) continue;
+
+    process.env[key] = rawValue.replace(/^['"]|['"]$/g, "");
+  }
+}
+
+function commandExists(command: string) {
+  return canRun("sh", ["-lc", `command -v ${escapeShell(command)}`]);
+}
+
+function canRun(command: string, args: string[]) {
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    env: process.env,
+    stdio: "ignore"
+  });
+
+  return result.status === 0;
+}
+
+function piProvider() {
+  return process.env.PI_PROVIDER || "zai";
+}
+
+function piModel() {
+  return process.env.PI_MODEL || "glm-5.1";
+}
+
+function piThinking() {
+  return process.env.PI_THINKING || "medium";
+}
+
+function parseJson<T>(value: string) {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    fail(`Failed to parse JSON:\n${value}`);
+  }
+}
+
+function renderTemplate(template: string, values: Record<string, string>) {
+  return template.replaceAll(/\{\{([a-zA-Z0-9_]+)\}\}/g, (_match, key: string) => {
+    return values[key] ?? "";
+  });
+}
+
+function relativeToRepo(path: string) {
+  return path.startsWith(repoRoot) ? path.slice(repoRoot.length + 1) : path;
+}
+
+function escapeShell(value: string) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function fail(message: string): never {
+  console.error(`error: ${message}`);
+  process.exit(1);
+}
+
+await main();

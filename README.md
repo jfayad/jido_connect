@@ -205,3 +205,17 @@ end
 Direct Git dependency syntax for individual apps should be finalized with the
 package release strategy; the reliable local development path today is an
 explicit checkout plus path dependencies.
+
+## Pi Connector Factory
+
+`pi-connector-factory/` is a small Beadwork-driven wrapper for connector build
+tasks. Beadwork owns the backlog; the factory asks Pi + Z.ai to implement one
+ready task at a time and requires exactly one clean Git commit before closing
+the task.
+
+```sh
+cd pi-connector-factory
+bun run doctor
+bun run step
+bun run loop -- --limit 5
+```
