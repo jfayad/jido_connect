@@ -16,6 +16,8 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
     Revision
   }
 
+  alias Jido.Connect.Google.Drive.Client.Response
+
   setup {Req.Test, :verify_on_exit!}
 
   setup do
@@ -365,6 +367,33 @@ defmodule Jido.Connect.Google.Drive.ClientTest do
     assert content.content == "name,total\nBudget,10\n"
     assert content.encoding == "utf-8"
     assert content.binary == false
+  end
+
+  test "normalizes parsed row payload for exported files" do
+    rows = [
+      ["Domaines", "Problemes"],
+      ["SAV", "Tracabilite des demandes clients"],
+      ["Production", "Pas de suivi en temps reel"]
+    ]
+
+    assert {:ok, content} =
+             Response.handle_file_content_response(
+               {:ok,
+                %{
+                  status: 200,
+                  body: rows,
+                  headers: %{"content-type" => "text/csv"}
+                }},
+               %{file_id: "file123", mime_type: "text/csv"}
+             )
+
+    assert content.file_id == "file123"
+    assert content.mime_type == "text/csv"
+    assert content.content == rows
+    assert content.size == length(rows)
+    assert content.encoding == "rows"
+    assert content.binary == false
+    refute Map.has_key?(content, :content_base64)
   end
 
   test "downloads binary files" do
