@@ -1,0 +1,15 @@
+{
+  "assignee": "Julien",
+  "blocked_by": [],
+  "blocks": [],
+  "closed_at": "2026-08-13T17:53:48Z",
+  "created": "2026-08-13T17:37:12Z",
+  "description": "Add google.drive.file.upload to the Google Drive connector with multipart upload client support, handler, catalog pack entry, scope/privacy metadata, and tests.",
+  "id": "jido_con-l3g",
+  "labels": [],
+  "priority": 2,
+  "status": "closed",
+  "title": "Add Google Drive file upload action",
+  "type": "task",
+  "updated_at": "2026-08-13T17:53:48Z"
+}
